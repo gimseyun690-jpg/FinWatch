@@ -29,7 +29,8 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/v1/health', { signal: controller.signal })
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)])
+    fetch('/api/v1/health', { signal })
       .then(async (response) => {
         if (!response.ok) throw new Error('API health check failed')
         return response.json() as Promise<HealthResponse>

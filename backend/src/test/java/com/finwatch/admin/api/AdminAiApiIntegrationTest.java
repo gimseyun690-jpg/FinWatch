@@ -20,7 +20,7 @@ import com.finwatch.ai.repository.AiAnalysisRepository;
 import com.finwatch.ai.repository.AiUsageLogRepository;
 import com.finwatch.news.repository.NewsArticleRepository;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.ai.allowed-prompt-versions=admin-metrics-v1")
 @AutoConfigureMockMvc
 @ActiveProfiles("demo")
 class AdminAiApiIntegrationTest {

@@ -38,6 +38,7 @@ export const demoPriceHistory: PriceHistory = {
 export const demoTechnical: TechnicalAnalysis = {
   symbol: '000660',
   calculatedAt: '2026-07-13T06:00:00Z',
+  calculationVersion: 'technical-v2-wilder',
   summarySignal: 'BUY',
   movingAverages: {
     ma5: 2689400,
@@ -45,8 +46,21 @@ export const demoTechnical: TechnicalAnalysis = {
     ma60: 2523100,
     signal: 'BUY',
   },
-  rsi: { period: 14, value: 68.4, signal: 'NEUTRAL' },
+  rsi: { period: 14, method: 'WILDER', value: 68.4, signal: 'NEUTRAL' },
   macd: { value: 18320.5, signalLine: 14210.1, histogram: 4110.4, signal: 'BUY' },
+  bollingerBands: {
+    period: 20,
+    deviationMultiplier: 2,
+    upper: 2745200,
+    middle: 2648200,
+    lower: 2551200,
+    bandwidthPercent: 7.325,
+  },
+  atr: { period: 14, value: 42850.7, percent: 1.574 },
+  volumeMa20: 3198500,
+  events: [
+    { time: '2026-07-08T06:00:00Z', type: 'MACD_BULLISH_CROSS', signal: 'BUY' },
+    { time: '2026-07-03T06:00:00Z', type: 'MA_GOLDEN_CROSS', signal: 'BUY' },
+  ],
   disclaimer: '기술적 신호는 투자 권유가 아닌 참고 정보입니다.',
 }
-

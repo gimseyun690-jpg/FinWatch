@@ -1,4 +1,4 @@
-import type { AiMetrics, AiUsageLogPage, ApiResponse } from '../types/admin'
+import type { AiMetrics, AiUsageLogPage, ApiResponse, DataSyncResult } from '../types/admin'
 import { authFetch } from './client'
 
 async function readData<T>(response: Response): Promise<T> {
@@ -23,4 +23,9 @@ export async function getAiUsageLogs(signal?: AbortSignal) {
   })
   const response = await authFetch(`/api/v1/admin/ai/usage-logs?${params}`, { signal })
   return readData<AiUsageLogPage>(response)
+}
+
+export async function syncExternalData() {
+  const response = await authFetch('/api/v1/admin/data/sync', { method: 'POST' })
+  return readData<DataSyncResult>(response)
 }

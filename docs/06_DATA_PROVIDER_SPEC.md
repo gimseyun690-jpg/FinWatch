@@ -489,7 +489,7 @@ source_policies
 
 ## 14. 설정과 비밀정보
 
-아래는 목표 설정이며 현재 `application.yml`에는 아직 구현되지 않았다.
+아래 장기 목표 설정 중 현재 구현은 `DATA_MODE=DEMO|LIVE`와 KIS·NAVER API HUB·Finnhub 전용 namespace다. `MIXED`, 스케줄러, 공급자별 쿼터와 circuit breaker는 아직 구현하지 않았다.
 
 ```yaml
 app:

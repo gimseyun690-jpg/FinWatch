@@ -93,4 +93,21 @@ class AiNewsSummaryIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(aiAnalysisRepository.count()).isZero();
         org.assertj.core.api.Assertions.assertThat(aiUsageLogRepository.count()).isZero();
     }
+
+    @Test
+    void rejectsUnregisteredPromptVersionBeforeCreatingAnalysis() throws Exception {
+        Long newsId = newsArticleRepository.findAllByStockSymbolOrderByPublishedAtDesc("000660")
+                .getFirst()
+                .getId();
+
+        mockMvc.perform(post("/api/v1/ai/news-summaries")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newsId\":" + newsId + ",\"promptVersion\":\"attacker-cache-bypass\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AI_PROMPT_VERSION_UNSUPPORTED"));
+
+        org.assertj.core.api.Assertions.assertThat(aiAnalysisRepository.count()).isZero();
+        org.assertj.core.api.Assertions.assertThat(aiUsageLogRepository.count()).isZero();
+    }
 }

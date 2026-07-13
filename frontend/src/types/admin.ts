@@ -51,3 +51,17 @@ export type AiUsageLogPage = {
   totalElements: number
   totalPages: number
 }
+
+export type DataSyncResult = {
+  mode: 'DEMO' | 'LIVE'
+  startedAt: string
+  finishedAt: string
+  pricesImported: number
+  newsImported: number
+  stocks: Array<{
+    symbol: string
+    market: string
+    marketPrices: { provider: string; status: 'SUCCESS' | 'SKIPPED' | 'FALLBACK'; imported: number; message: string }
+    news: { provider: string; status: 'SUCCESS' | 'SKIPPED' | 'FALLBACK'; imported: number; message: string }
+  }>
+}

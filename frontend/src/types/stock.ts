@@ -25,6 +25,20 @@ export type PricePoint = {
   low: number
   close: number
   volume: number
+  indicators?: {
+    ma5: number | null
+    ma20: number | null
+    ma60: number | null
+    volumeMa20: number | null
+    bollingerUpper: number | null
+    bollingerMiddle: number | null
+    bollingerLower: number | null
+    rsi: number | null
+    macd: number | null
+    macdSignal: number | null
+    macdHistogram: number | null
+    atr: number | null
+  }
 }
 
 export type PriceHistory = {
@@ -39,6 +53,7 @@ export type PricePeriod = '1M' | '3M' | '6M' | '1Y' | 'ALL'
 export type TechnicalAnalysis = {
   symbol: string
   calculatedAt: string
+  calculationVersion?: string
   summarySignal: Signal
   movingAverages: {
     ma5: number
@@ -48,6 +63,7 @@ export type TechnicalAnalysis = {
   }
   rsi: {
     period: number
+    method?: 'WILDER'
     value: number
     signal: Signal
   }
@@ -57,6 +73,25 @@ export type TechnicalAnalysis = {
     histogram: number
     signal: Signal
   }
+  bollingerBands?: {
+    period: number
+    deviationMultiplier: number
+    upper: number
+    middle: number
+    lower: number
+    bandwidthPercent?: number
+  }
+  atr?: {
+    period: number
+    value: number
+    percent?: number
+  }
+  volumeMa20?: number
+  events?: Array<{
+    time: string
+    type: 'MA_GOLDEN_CROSS' | 'MA_DEAD_CROSS' | 'MACD_BULLISH_CROSS' | 'MACD_BEARISH_CROSS' | 'RSI_OVERSOLD_ENTER' | 'RSI_OVERSOLD_EXIT' | 'RSI_OVERBOUGHT_ENTER' | 'RSI_OVERBOUGHT_EXIT'
+    signal: Signal
+  }>
   disclaimer: string
 }
 

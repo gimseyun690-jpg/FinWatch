@@ -85,6 +85,30 @@ public class NewsArticle {
     protected NewsArticle() {
     }
 
+    public static NewsArticle createMetadata(
+            Stock stock,
+            String externalId,
+            String title,
+            String publisher,
+            String url,
+            Instant publishedAt,
+            String source) {
+        NewsArticle article = new NewsArticle();
+        article.stock = stock;
+        article.externalId = externalId;
+        article.title = title;
+        article.publisher = publisher;
+        article.url = url;
+        article.canonicalUrl = url;
+        article.finalUrl = url;
+        article.publishedAt = publishedAt;
+        article.source = source;
+        article.contentSource = ContentSource.METADATA_ONLY;
+        article.rightsProfile = RightsProfile.METADATA_ONLY;
+        article.createdAt = Instant.now();
+        return article;
+    }
+
     public Long getId() {
         return id;
     }

@@ -11,7 +11,7 @@ FinWatch는 실제 매매 서비스가 아니라 개인 투자자의 정보 탐�
 - Database: PostgreSQL
 - Cache: Redis
 - Cloud: AWS EC2, RDS, S3, CloudWatch
-- Chart: Lightweight Charts 5.2.0 (캔들·거래량·이동평균·그리기 도구)
+- Chart: Lightweight Charts 5.2.0 (캔들·거래량·MA·볼린저·RSI·MACD·ATR·그리기 도구)
 
 ## 저장소 구조
 
@@ -69,7 +69,7 @@ ADMIN admin@finwatch.local / FinWatchAdmin123!
 
 포트폴리오는 사용자별 보유 수량과 평균 매수가를 저장하고 최신 시장 가격으로 평가합니다. 환율 공급자가 없는 MVP에서는 KRW와 USD를 합산하지 않고 통화별 평가액·손익·수익률을 보여줍니다. 가격 알림은 ABOVE/BELOW 조건과 ACTIVE/TRIGGERED/DISABLED 상태를 관리하며 현재 저장 가격 기준 조건 충족 여부를 표시합니다.
 
-상세 차트는 `1M·3M·6M·1Y·ALL` 일봉 조회, 캔들·거래량·MA5/20/60, 확대·이동·십자선 툴팁, 전체화면, 추세선·수평선 그리기를 지원합니다. 사용자 그리기는 현재 브라우저 메모리에만 유지되며 새로고침하면 초기화됩니다.
+상세 차트는 `1M·3M·6M·1Y·ALL` 일봉 조회, 캔들·거래량 MA20·MA5/20/60·볼린저 밴드·Wilder RSI·MACD·ATR, 교차 이벤트 마커, 확대·이동·십자선 툴팁, 전체화면, 추세선·수평선 그리기를 지원합니다. 지표 표시 설정은 브라우저 세션 동안 유지되며 사용자 그리기는 종목별 브라우저 메모리에 유지됩니다.
 
 뉴스 본문은 출처 정책을 통과한 경우에만 수집·AI 분석할 수 있습니다. 등록되지 않은 도메인은 기본 `METADATA_ONLY`이며 원문 링크만 제공합니다. 허용 출처 수집기는 HTTPS·공개 IP·경로 allowlist, redirect 재검증, 응답 크기 제한과 호스트별 호출 간격을 적용합니다. SEC EDGAR 수집 PoC를 실행할 때는 공식 접근 정책에 맞는 프로젝트명과 연락처를 `ARTICLE_USER_AGENT` 환경변수로 설정해야 합니다.
 
@@ -96,6 +96,14 @@ pnpm dev
 ```
 
 브라우저에서 `http://localhost:5173`으로 접속합니다. 프론트 개발 서버는 `/api` 요청을 `http://localhost:8080`으로 전달합니다.
+
+프런트 E2E 검증:
+
+```powershell
+cd frontend
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
 
 현재 개발 PC처럼 사용자 경로에 한글이 있으면 일부 Gradle 버전의 테스트 런처 classpath가 깨질 수 있습니다. 컴파일 캐시는 영문 경로로 분리할 수 있고, 전체 테스트는 저장소 자체도 영문 경로(예: `C:\Dev\FinWatch`)에서 실행하는 것이 가장 안정적입니다.
 
@@ -154,4 +162,11 @@ SK하이닉스 상세 조회
 | 공식 기업 콘텐츠 | 승인된 IR·뉴스룸·RSS |
 | AI 분석 | Gemini |
 
-공급자 선택은 확정됐지만 현재 코드는 DEMO 데이터와 Gemini/Mock만 연결되어 있습니다. LIVE 전환 전에는 각 키 발급, 이용약관, 공개 시세 표시 권한, 호출 한도와 대표 종목 PoC를 통과해야 합니다. 외부 키는 백엔드 환경변수에만 저장합니다.
+KIS 국내 일봉, NAVER API HUB 국내 뉴스와 Finnhub 미국 뉴스 클라이언트는 DB 동기화 계층에 연결되어 있습니다. `DATA_MODE=DEMO`에서는 외부 호출 없이 고정 DB 데이터를 사용하고, `DATA_MODE=LIVE`에서는 관리자 동기화 API가 공급자별로 새 행만 저장합니다. 외부 호출이 실패하면 마지막 DB 데이터가 유지되고 동기화 응답에 `FALLBACK` 상태가 표시됩니다. 미국 시세는 별도 공급자가 아직 없어 기존 DB 시세를 유지합니다.
+
+```text
+POST /api/v1/admin/data/sync
+POST /api/v1/admin/data/stocks/{symbol}/sync
+```
+
+두 API는 ADMIN JWT가 필요합니다. LIVE 전환 전에는 이용약관, 공개 표시 권한과 실제 계정 호출 한도를 확인하고 외부 키는 백엔드 환경변수에만 저장합니다.

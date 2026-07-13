@@ -1,5 +1,7 @@
 package com.finwatch.ai.provider;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -7,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -27,11 +30,19 @@ public class GeminiAiProvider implements AiProvider {
             ObjectMapper objectMapper,
             @Value("${app.ai.gemini.api-key}") String apiKey,
             @Value("${app.ai.gemini.model}") String model,
-            @Value("${app.ai.gemini.base-url}") String baseUrl) {
+            @Value("${app.ai.gemini.base-url}") String baseUrl,
+            @Value("${app.ai.gemini.connect-timeout:3s}") Duration connectTimeout,
+            @Value("${app.ai.gemini.read-timeout:15s}") Duration readTimeout) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("AI_PROVIDER=gemini 사용 시 GEMINI_API_KEY가 필요합니다.");
         }
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(readTimeout);
+        this.restClient = RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(requestFactory)
+                .build();
         this.objectMapper = objectMapper;
         this.apiKey = apiKey;
         this.model = model;
@@ -114,17 +125,20 @@ public class GeminiAiProvider implements AiProvider {
         String upstreamStatus = envelope == null || envelope.error() == null
                 ? fallbackStatus
                 : safeText(envelope.error().status(), fallbackStatus);
-        String upstreamMessage = envelope == null || envelope.error() == null
-                ? "Gemini API 요청이 거부되었습니다."
-                : safeText(envelope.error().message(), "Gemini API 요청이 거부되었습니다.");
-        HttpStatus clientStatus = exception.getStatusCode().value() == 429
-                ? HttpStatus.SERVICE_UNAVAILABLE
-                : HttpStatus.BAD_GATEWAY;
+        int status = exception.getStatusCode().value();
+        HttpStatus clientStatus = status == 429 ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.BAD_GATEWAY;
+        String code = status == 429
+                ? "AI_RATE_LIMITED"
+                : status == 401 || status == 403
+                        ? "AI_PROVIDER_AUTH_FAILED"
+                        : "AI_PROVIDER_" + upstreamStatus.toUpperCase().replaceAll("[^A-Z0-9_]", "_");
 
         return new AiProviderException(
                 clientStatus,
-                "AI_PROVIDER_" + upstreamStatus.toUpperCase().replaceAll("[^A-Z0-9_]", "_"),
-                "Gemini API 오류 (" + upstreamStatus + "): " + upstreamMessage,
+                code,
+                status == 429
+                        ? "AI 공급자 호출 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."
+                        : "AI 공급자 요청을 처리할 수 없습니다.",
                 exception);
     }
 

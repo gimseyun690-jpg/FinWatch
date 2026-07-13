@@ -22,7 +22,7 @@ import com.finwatch.news.domain.NewsArticle;
 import com.finwatch.news.dto.NewsContentRefreshResponse;
 import com.finwatch.news.repository.NewsArticleRepository;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.ai.allowed-prompt-versions=content-refresh-test-v1")
 @ActiveProfiles("demo")
 @Transactional
 class NewsContentPersistenceIntegrationTest {

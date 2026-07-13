@@ -235,6 +235,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .chart-toolbar button:hover { filter: none; border-color: var(--cyan); color: var(--text-strong); }
 .chart-toolbar button[aria-pressed="true"] { border-color: color-mix(in srgb, var(--cyan) 70%, var(--border)); color: var(--cyan); background: color-mix(in srgb, var(--cyan) 9%, #0d1720); }
 .chart-toolbar button:disabled { cursor: not-allowed; opacity: .38; }
+.chart-indicators { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: rgba(13, 23, 32, .72); }
+.chart-indicators > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.chart-indicators span { margin-right: 3px; color: var(--text-muted); font-size: 9px; font-weight: 750; letter-spacing: .06em; }
+.chart-indicators button { border: 1px solid var(--border); border-radius: 999px; padding: 5px 8px; color: var(--text-muted); background: #0d1720; font-size: 8px; font-weight: 750; }
+.chart-indicators button[aria-pressed="true"] { border-color: color-mix(in srgb, var(--cyan) 70%, var(--border)); color: var(--cyan); background: color-mix(in srgb, var(--cyan) 9%, #0d1720); }
 .chart-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-height: 33px; padding: 7px 12px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 9px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .chart-legend i { display: inline-block; width: 12px; height: 3px; border-radius: 999px; }
@@ -243,6 +248,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .chart-legend .ma5 { background: var(--amber); }
 .chart-legend .ma20 { background: var(--cyan); }
 .chart-legend .ma60 { background: #ad86ff; }
+.chart-legend .bollinger { background: #4299e1; }
 .chart-legend strong { margin-left: auto; color: var(--amber); font-size: 9px; letter-spacing: .08em; }
 .chart-canvas-wrap { position: relative; height: 460px; min-height: 330px; touch-action: pan-y; }
 .interactive-chart-canvas { width: 100%; height: 100%; }
@@ -260,7 +266,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .chart-status-row a { flex: 0 0 auto; color: var(--cyan); text-decoration: none; }
 .chart-status-row a:hover { text-decoration: underline; }
 .chart-a11y-summary { margin: 0; padding: 0 12px 10px; color: var(--text-muted); font-size: 9px; line-height: 1.6; }
-.interactive-chart-shell:fullscreen, .interactive-chart-shell.fullscreen-fallback { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; padding: 14px; border: 0; border-radius: 0; background: #070c12; }
+.interactive-chart-shell:fullscreen, .interactive-chart-shell.fullscreen-fallback { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; padding: 14px; border: 0; border-radius: 0; background: #070c12; }
 .interactive-chart-shell:fullscreen .chart-canvas-wrap, .interactive-chart-shell.fullscreen-fallback .chart-canvas-wrap { height: auto; min-height: 0; }
 .interactive-chart-shell.fullscreen-fallback { position: fixed; z-index: 1000; inset: 0; }
 .technical-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -270,6 +276,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .technical-card p { margin: 4px 0 0; color: var(--text-muted); font-size: 11px; }
 .technical-card.summary-card { grid-column: 1 / -1; }
 .technical-card:last-child { grid-column: 1 / -1; }
+.technical-events { grid-column: 1 / -1; }
+.technical-events ul { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.technical-events li { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+.technical-events li strong { font-size: 11px; }
+.technical-events time { color: var(--text-muted); font-size: 10px; }
 .buy { color: var(--green); }
 .sell { color: var(--red); }
 .neutral { color: var(--amber); }
@@ -334,6 +345,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .admin-title-row h2 { font-size: clamp(24px, 3vw, 32px); }
 .admin-title-row p:last-child { margin: 8px 0 0; color: var(--text-muted); font-size: 12px; }
 .admin-title-meta { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: 11px; }
+.data-sync-button { border: 1px solid color-mix(in srgb, var(--cyan) 55%, var(--border)); border-radius: 8px; padding: 8px 11px; color: var(--cyan); background: color-mix(in srgb, var(--cyan) 8%, var(--panel)); font-size: 10px; font-weight: 760; }
+.data-sync-button:disabled { cursor: wait; opacity: .58; }
+.data-sync-status { margin: -4px 0 14px; border: 1px solid color-mix(in srgb, var(--green) 35%, var(--border)); border-radius: 8px; padding: 9px 12px; color: var(--green); background: color-mix(in srgb, var(--green) 6%, var(--panel)); font-size: 11px; }
+.data-sync-status.error { border-color: color-mix(in srgb, var(--red) 35%, var(--border)); color: var(--red); background: color-mix(in srgb, var(--red) 6%, var(--panel)); }
 .demo-badge { border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent); border-radius: 999px; padding: 5px 8px; color: var(--amber); background: color-mix(in srgb, var(--amber) 8%, transparent); font-weight: 800; }
 .admin-metric-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
 .admin-metric-card { min-width: 0; padding: 18px; }
@@ -480,9 +495,11 @@ footer { padding: 23px 0 35px; border-top: 1px solid var(--border); color: var(-
   .price-chart-card { padding: 18px; }
   .quote-row > div:first-child strong { font-size: 27px; }
   .chart-toolbar { align-items: stretch; flex-direction: column; }
+  .chart-indicators { align-items: stretch; flex-direction: column; }
   .chart-periods, .chart-tools { display: grid; grid-template-columns: repeat(4, 1fr); }
   .chart-periods { grid-template-columns: repeat(5, 1fr); }
   .chart-toolbar button { min-height: 36px; padding: 7px 5px; }
+  .chart-indicators button { min-height: 36px; }
   .chart-canvas-wrap { height: 380px; }
   .chart-tooltip { grid-template-columns: repeat(2, auto); }
   .chart-status-row { align-items: flex-start; flex-direction: column; }

@@ -95,7 +95,7 @@
 
 ### `GET /stocks/{symbol}/prices?period=3M&interval=1D`
 
-`data.items`는 `{ "time", "open", "high", "low", "close", "volume" }` 배열이다.
+`data.items`는 `{ "time", "open", "high", "low", "close", "volume", "indicators" }` 배열이다. `indicators`에는 같은 입력 스냅샷으로 계산한 `ma5`, `ma20`, `ma60`, `volumeMa20`, 볼린저 상·중·하단, Wilder `rsi`, MACD 세 값과 `atr`이 들어간다. 계산 전 구간의 값은 `null`이다.
 
 ### `GET /stocks/{symbol}/technical`
 
@@ -107,6 +107,7 @@
   "data": {
     "symbol": "000660",
     "calculatedAt": "2026-07-13T02:30:00Z",
+    "calculationVersion": "technical-v2-wilder",
     "summarySignal": "BUY",
     "movingAverages": {
       "ma5": 2701000,
@@ -114,14 +115,57 @@
       "ma60": 2612000,
       "signal": "BUY"
     },
-    "rsi": { "period": 14, "value": 68.4, "signal": "NEUTRAL" },
+    "rsi": { "period": 14, "method": "WILDER", "value": 68.4, "signal": "NEUTRAL" },
     "macd": { "value": 18320.5, "signalLine": 14210.1, "histogram": 4110.4, "signal": "BUY" },
+    "bollingerBands": {
+      "period": 20,
+      "deviationMultiplier": 2,
+      "upper": 2750000,
+      "middle": 2689000,
+      "lower": 2628000,
+      "bandwidthPercent": 4.5370
+    },
+    "atr": { "period": 14, "value": 42850.7, "percent": 1.5744 },
+    "volumeMa20": 3198500,
+    "events": [
+      { "time": "2026-07-08T06:00:00Z", "type": "MA_GOLDEN_CROSS", "signal": "BUY" }
+    ],
     "disclaimer": "기술적 신호는 투자 권유가 아닌 참고 정보입니다."
   },
   "message": "기술적 분석 조회 성공",
   "timestamp": "2026-07-13T03:00:00Z"
 }
 ```
+
+### `POST /admin/data/sync`
+
+### `POST /admin/data/stocks/{symbol}/sync`
+
+ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급자를 호출하지 않고 `SKIPPED`, `LIVE`에서는 KRX 종목의 KIS 일봉·NAVER API HUB 뉴스와 미국 종목의 Finnhub 뉴스를 DB에 중복 없이 저장한다. 공급자 오류는 기존 DB 데이터를 삭제하지 않고 해당 결과를 `FALLBACK`으로 반환한다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "mode": "LIVE",
+    "startedAt": "2026-07-13T03:00:00Z",
+    "finishedAt": "2026-07-13T03:00:02Z",
+    "pricesImported": 2,
+    "newsImported": 12,
+    "stocks": [
+      {
+        "symbol": "005930",
+        "market": "KRX",
+        "marketPrices": { "provider": "KIS", "status": "SUCCESS", "imported": 2, "message": "동기화 완료" },
+        "news": { "provider": "NAVER_API_HUB", "status": "SUCCESS", "imported": 12, "message": "동기화 완료" }
+      }
+    ]
+  },
+  "message": "외부 데이터 동기화가 완료되었습니다."
+}
+```
+
+진단용 `GET /providers/kis/**`, `GET /providers/naver/news`, `GET /providers/finnhub/news`도 ADMIN만 접근할 수 있다.
 
 ## 4. 관심종목
 

@@ -33,12 +33,21 @@ class StockApiIntegrationTest {
                         .queryParam("interval", "1D"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.period").value("3M"))
-                .andExpect(jsonPath("$.data.items").isNotEmpty());
+                .andExpect(jsonPath("$.data.items").isNotEmpty())
+                .andExpect(jsonPath("$.data.items[-1].indicators.ma20").isNumber())
+                .andExpect(jsonPath("$.data.items[-1].indicators.rsi").isNumber())
+                .andExpect(jsonPath("$.data.items[-1].indicators.atr").isNumber());
 
         mockMvc.perform(get("/api/v1/stocks/000660/technical").with(jwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summarySignal").value("BUY"))
-                .andExpect(jsonPath("$.data.rsi.period").value(14));
+                .andExpect(jsonPath("$.data.rsi.period").value(14))
+                .andExpect(jsonPath("$.data.bollingerBands.period").value(20))
+                .andExpect(jsonPath("$.data.atr.period").value(14))
+                .andExpect(jsonPath("$.data.volumeMa20").isNumber())
+                .andExpect(jsonPath("$.data.events").isArray())
+                .andExpect(jsonPath("$.data.calculationVersion").value("technical-v2-wilder"))
+                .andExpect(jsonPath("$.data.rsi.method").value("WILDER"));
     }
 
     @Test

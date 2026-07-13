@@ -61,7 +61,7 @@ export function LoginPage({ apiState, onLogin }: Props) {
             <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
           </label>
           {errorMessage && <p className="login-error" role="alert">{errorMessage}</p>}
-          <button type="submit" disabled={submitting || apiState !== 'connected'}>
+          <button type="submit" disabled={submitting}>
             {submitting ? '인증 중…' : apiState === 'offline' ? 'API 서버 연결 필요' : '로그인'}
           </button>
         </form>

@@ -23,6 +23,8 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
 
 # Backend
 backend/.gradle/
@@ -33,4 +35,3 @@ backend/logs/
 # Temporary files
 tmp/
 *.log
-

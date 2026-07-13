@@ -1,0 +1,146 @@
+import { expect, test, type Page } from '@playwright/test'
+
+const now = '2026-07-13T06:00:00Z'
+const stock = {
+  symbol: '000660',
+  name: 'SK하이닉스',
+  market: 'KRX',
+  currency: 'KRW',
+  price: 2723000,
+  change: 38200,
+  changeRate: 1.42,
+  volume: 3870000,
+  asOf: now,
+  source: 'DEMO',
+}
+
+const prices = Array.from({ length: 90 }, (_, index) => {
+  const close = 2380000 + index * 3800 + Math.round(Math.sin(index / 4) * 18000)
+  return {
+    time: new Date(Date.UTC(2026, 3, 15 + index)).toISOString(),
+    open: close - 5000,
+    high: close + 16000,
+    low: close - 14000,
+    close,
+    volume: 2500000 + (index % 11) * 127000,
+  }
+})
+
+function response(data: unknown) {
+  return { success: true, data, message: 'fixture', timestamp: now }
+}
+
+async function mockApi(page: Page) {
+  await page.route('**/api/v1/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname
+    let body: unknown
+
+    if (path === '/api/v1/health') {
+      body = { status: 'UP', timestamp: now }
+    } else if (path === '/api/v1/auth/login') {
+      body = response({
+        accessToken: 'fixture.jwt.token',
+        tokenType: 'Bearer',
+        expiresIn: 3600,
+        user: { id: 1, email: 'admin@finwatch.local', role: 'ADMIN' },
+      })
+    } else if (path === '/api/v1/watchlists') {
+      body = response([{ id: 1, ...stock, addedAt: now }])
+    } else if (path === '/api/v1/stocks') {
+      body = response([stock])
+    } else if (path === '/api/v1/stocks/000660') {
+      body = response(stock)
+    } else if (path === '/api/v1/stocks/000660/prices') {
+      body = response({ symbol: stock.symbol, interval: '1D', period: url.searchParams.get('period') ?? '3M', items: prices })
+    } else if (path === '/api/v1/stocks/000660/technical') {
+      body = response({
+        symbol: stock.symbol,
+        calculatedAt: now,
+        calculationVersion: 'technical-v2-wilder',
+        summarySignal: 'BUY',
+        movingAverages: { ma5: 2700000, ma20: 2660000, ma60: 2520000, signal: 'BUY' },
+        rsi: { period: 14, method: 'WILDER', value: 68.4, signal: 'NEUTRAL' },
+        macd: { value: 18320, signalLine: 14210, histogram: 4110, signal: 'BUY' },
+        bollingerBands: { period: 20, deviationMultiplier: 2, upper: 2750000, middle: 2660000, lower: 2570000, bandwidthPercent: 6.76 },
+        atr: { period: 14, value: 42850, percent: 1.57 },
+        volumeMa20: 3198500,
+        events: [{ time: prices[75].time, type: 'MA_GOLDEN_CROSS', signal: 'BUY' }],
+        disclaimer: '기술적 신호는 투자 권유가 아닌 참고 정보입니다.',
+      })
+    } else if (path.endsWith('/news')) {
+      body = response([])
+    } else if (path === '/api/v1/admin/ai/metrics') {
+      body = response({
+        from: now, to: now, requestCount: 0, modelCallCount: 0, cacheHitCount: 0, cacheMissCount: 0,
+        inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCost: 0, cacheHitRate: 0,
+        savedEstimatedCost: 0, averageResponseTimeMs: 0, costCurrency: 'USD', featureUsage: [],
+      })
+    } else if (path === '/api/v1/admin/ai/usage-logs') {
+      body = response({ items: [], page: 0, size: 10, totalElements: 0, totalPages: 0 })
+    } else if (path === '/api/v1/admin/data/sync') {
+      body = response({ mode: 'DEMO', startedAt: now, finishedAt: now, pricesImported: 0, newsImported: 0, stocks: [] })
+    } else if (path === '/api/v1/portfolios') {
+      body = response({ currencySummaries: [], holdings: [] })
+    } else if (path === '/api/v1/alerts') {
+      body = response([])
+    } else {
+      body = response(null)
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  })
+}
+
+async function login(page: Page) {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '투자 정보 대시보드 로그인' })).toBeVisible()
+  await page.getByRole('button', { name: '로그인', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '개인 투자자용 메인 대시보드' })).toBeVisible()
+  await expect(page.getByRole('img', { name: /000660 3M 일봉 캔들 및 거래량 차트/ })).toBeVisible()
+}
+
+test.beforeEach(async ({ page }) => {
+  await mockApi(page)
+})
+
+test('desktop chart tools, indicator settings and drawings remain usable', async ({ page }) => {
+  await login(page)
+
+  const bollinger = page.getByRole('button', { name: '볼린저(20,2)' })
+  await bollinger.click()
+  await expect(bollinger).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'MACD', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'MACD', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  const chartCanvas = page.locator('.interactive-chart-canvas')
+  await chartCanvas.hover({ position: { x: 420, y: 160 } })
+  await expect(page.locator('.chart-tooltip')).toContainText('MA20')
+  await expect(page.locator('.chart-tooltip')).toContainText('MACD')
+
+  await page.getByRole('button', { name: '추세선', exact: true }).click()
+  const drawingLayer = page.locator('.drawing-layer')
+  await drawingLayer.click({ position: { x: 180, y: 130 }, force: true })
+  await drawingLayer.click({ position: { x: 430, y: 220 }, force: true })
+  await expect(drawingLayer.locator('line.drawing-shape.trend')).toHaveCount(1)
+
+  await page.getByRole('button', { name: '외부 데이터 동기화' }).click()
+  await expect(page.locator('.data-sync-status')).toContainText('DEMO · 시세 0건 · 뉴스 0건 반영')
+
+  await page.reload()
+  await expect(page.getByRole('button', { name: '볼린저(20,2)' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'MACD', exact: true })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('mobile chart has no horizontal overflow and exposes touch-sized controls', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await login(page)
+
+  const atrButton = page.getByRole('button', { name: 'ATR', exact: true })
+  await atrButton.click()
+  await expect(atrButton).toHaveAttribute('aria-pressed', 'true')
+  const box = await atrButton.boundingBox()
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(36)
+  const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
+  expect(hasOverflow).toBe(false)
+  await expect(page.getByText('기술적 신호와 AI 요약은 투자 권유가 아닌 참고 정보입니다.')).toBeVisible()
+})

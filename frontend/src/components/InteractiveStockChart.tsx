@@ -6,15 +6,17 @@ import {
   CrosshairMode,
   HistogramSeries,
   LineSeries,
+  createSeriesMarkers,
   createChart,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
   type LineData,
+  type SeriesMarker,
   type Time,
 } from 'lightweight-charts'
-import type { PricePeriod, PricePoint } from '../types/stock'
+import type { PricePeriod, PricePoint, TechnicalAnalysis } from '../types/stock'
 
 type Props = {
   symbol: string
@@ -25,10 +27,43 @@ type Props = {
   loading: boolean
   error: string | null
   source: 'API' | 'DEMO'
+  events?: TechnicalAnalysis['events']
   onPeriodChange: (period: PricePeriod) => void
 }
 
 type ChartTool = 'pan' | 'trend' | 'horizontal'
+type OscillatorPanel = 'rsi' | 'macd' | 'atr' | 'none'
+
+type ChartSettings = {
+  showMa5: boolean
+  showMa20: boolean
+  showMa60: boolean
+  showBollinger: boolean
+  showVolume: boolean
+  showVolumeMa20: boolean
+  showEvents: boolean
+  oscillator: OscillatorPanel
+}
+
+const defaultChartSettings: ChartSettings = {
+  showMa5: true,
+  showMa20: true,
+  showMa60: true,
+  showBollinger: false,
+  showVolume: true,
+  showVolumeMa20: true,
+  showEvents: true,
+  oscillator: 'rsi',
+}
+
+function loadChartSettings(): ChartSettings {
+  try {
+    const stored = window.sessionStorage.getItem('finwatch-chart-settings')
+    return stored ? { ...defaultChartSettings, ...JSON.parse(stored) as Partial<ChartSettings> } : defaultChartSettings
+  } catch {
+    return defaultChartSettings
+  }
+}
 
 type DrawingAnchor = {
   time: string
@@ -70,6 +105,13 @@ type HoverData = {
   low: number
   close: number
   volume: number
+  ma5?: number
+  ma20?: number
+  ma60?: number
+  volumeMa20?: number
+  bollingerUpper?: number
+  bollingerLower?: number
+  oscillatorValue?: number
 }
 
 const periods: Array<{ value: PricePeriod; label: string }> = [
@@ -98,6 +140,20 @@ function marketTimeZone(market: string) {
   return market === 'KRX' ? 'Asia/Seoul' : 'America/New_York'
 }
 
+function eventMarkerText(type: NonNullable<TechnicalAnalysis['events']>[number]['type']) {
+  const labels = {
+    MA_GOLDEN_CROSS: 'MA 골든',
+    MA_DEAD_CROSS: 'MA 데드',
+    MACD_BULLISH_CROSS: 'MACD 상향',
+    MACD_BEARISH_CROSS: 'MACD 하향',
+    RSI_OVERSOLD_ENTER: 'RSI 과매도',
+    RSI_OVERSOLD_EXIT: 'RSI 과매도 이탈',
+    RSI_OVERBOUGHT_ENTER: 'RSI 과매수',
+    RSI_OVERBOUGHT_EXIT: 'RSI 과매수 이탈',
+  }
+  return labels[type]
+}
+
 function toChartTime(value: string, market: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: marketTimeZone(market),
@@ -115,6 +171,14 @@ function normalizeTime(value: Time) {
   return `${value.year}-${String(value.month).padStart(2, '0')}-${String(value.day).padStart(2, '0')}`
 }
 
+function valueAtTime(
+  series: Array<LineData<Time> | HistogramData<Time>>,
+  time: string,
+) {
+  const point = series.find((item) => normalizeTime(item.time) === time)
+  return point && 'value' in point && typeof point.value === 'number' ? point.value : undefined
+}
+
 function movingAverage(items: PricePoint[], times: string[], windowSize: number): LineData<Time>[] {
   let rollingTotal = 0
   const result: LineData<Time>[] = []
@@ -127,6 +191,88 @@ function movingAverage(items: PricePoint[], times: string[], windowSize: number)
     }
   })
 
+  return result
+}
+
+function bollingerBands(items: PricePoint[], times: string[], windowSize = 20) {
+  const upper: LineData<Time>[] = []
+  const middle: LineData<Time>[] = []
+  const lower: LineData<Time>[] = []
+  items.forEach((_, index) => {
+    if (index < windowSize - 1) return
+    const window = items.slice(index - windowSize + 1, index + 1).map((item) => item.close)
+    const average = window.reduce((sum, value) => sum + value, 0) / windowSize
+    const variance = window.reduce((sum, value) => sum + (value - average) ** 2, 0) / windowSize
+    const width = Math.sqrt(variance) * 2
+    upper.push({ time: times[index], value: average + width })
+    middle.push({ time: times[index], value: average })
+    lower.push({ time: times[index], value: average - width })
+  })
+  return { upper, middle, lower }
+}
+
+function wilderRsi(items: PricePoint[], times: string[], period = 14): LineData<Time>[] {
+  if (items.length <= period) return []
+  let averageGain = 0
+  let averageLoss = 0
+  for (let index = 1; index <= period; index += 1) {
+    const delta = items[index].close - items[index - 1].close
+    averageGain += Math.max(delta, 0)
+    averageLoss += Math.max(-delta, 0)
+  }
+  averageGain /= period
+  averageLoss /= period
+  const result: LineData<Time>[] = []
+  const value = () => averageLoss === 0 ? (averageGain === 0 ? 50 : 100) : 100 - 100 / (1 + averageGain / averageLoss)
+  result.push({ time: times[period], value: value() })
+  for (let index = period + 1; index < items.length; index += 1) {
+    const delta = items[index].close - items[index - 1].close
+    averageGain = (averageGain * (period - 1) + Math.max(delta, 0)) / period
+    averageLoss = (averageLoss * (period - 1) + Math.max(-delta, 0)) / period
+    result.push({ time: times[index], value: value() })
+  }
+  return result
+}
+
+function exponentialMovingAverage(values: number[], period: number) {
+  if (values.length === 0) return []
+  const multiplier = 2 / (period + 1)
+  const result = [values[0]]
+  for (let index = 1; index < values.length; index += 1) {
+    result.push((values[index] - result[index - 1]) * multiplier + result[index - 1])
+  }
+  return result
+}
+
+function macd(items: PricePoint[], times: string[]) {
+  const closes = items.map((item) => item.close)
+  const fast = exponentialMovingAverage(closes, 12)
+  const slow = exponentialMovingAverage(closes, 26)
+  const values = closes.map((_, index) => fast[index] - slow[index])
+  const signalValues = exponentialMovingAverage(values, 9)
+  return {
+    histogram: values.map((value, index) => ({
+      time: times[index],
+      value: value - signalValues[index],
+      color: value - signalValues[index] >= 0 ? 'rgba(75, 227, 154, .65)' : 'rgba(255, 111, 125, .65)',
+    })),
+    signal: signalValues.map((value, index) => ({ time: times[index], value })),
+  }
+}
+
+function averageTrueRange(items: PricePoint[], times: string[], period = 14): LineData<Time>[] {
+  if (items.length <= period) return []
+  const ranges = items.slice(1).map((item, index) => Math.max(
+    item.high - item.low,
+    Math.abs(item.high - items[index].close),
+    Math.abs(item.low - items[index].close),
+  ))
+  let average = ranges.slice(0, period).reduce((sum, value) => sum + value, 0) / period
+  const result: LineData<Time>[] = [{ time: times[period], value: average }]
+  for (let index = period; index < ranges.length; index += 1) {
+    average = (average * (period - 1) + ranges[index]) / period
+    result.push({ time: times[index + 1], value: average })
+  }
   return result
 }
 
@@ -143,6 +289,7 @@ export function InteractiveStockChart({
   loading,
   error,
   source,
+  events,
   onPeriodChange,
 }: Props) {
   const shellRef = useRef<HTMLDivElement>(null)
@@ -161,6 +308,28 @@ export function InteractiveStockChart({
   const [projectedDrawings, setProjectedDrawings] = useState<ProjectedDrawing[]>([])
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fullscreenFallback, setFullscreenFallback] = useState(false)
+  const initialSettings = useRef(loadChartSettings()).current
+  const [showMa5, setShowMa5] = useState(initialSettings.showMa5)
+  const [showMa20, setShowMa20] = useState(initialSettings.showMa20)
+  const [showMa60, setShowMa60] = useState(initialSettings.showMa60)
+  const [showBollinger, setShowBollinger] = useState(initialSettings.showBollinger)
+  const [showVolume, setShowVolume] = useState(initialSettings.showVolume)
+  const [showVolumeMa20, setShowVolumeMa20] = useState(initialSettings.showVolumeMa20)
+  const [showEvents, setShowEvents] = useState(initialSettings.showEvents)
+  const [oscillator, setOscillator] = useState<OscillatorPanel>(initialSettings.oscillator)
+
+  useEffect(() => {
+    window.sessionStorage.setItem('finwatch-chart-settings', JSON.stringify({
+      showMa5,
+      showMa20,
+      showMa60,
+      showBollinger,
+      showVolume,
+      showVolumeMa20,
+      showEvents,
+      oscillator,
+    } satisfies ChartSettings))
+  }, [oscillator, showBollinger, showEvents, showMa5, showMa20, showMa60, showVolume, showVolumeMa20])
 
   const drawings = drawingsBySymbol[symbol] ?? emptyDrawings
 
@@ -178,12 +347,44 @@ export function InteractiveStockChart({
       value: item.volume,
       color: item.close >= item.open ? 'rgba(75, 227, 154, .5)' : 'rgba(255, 111, 125, .5)',
     }))
+    const volumeItems = items.map((item) => ({ ...item, close: item.volume }))
+    const indicatorLine = (selector: (item: NonNullable<PricePoint['indicators']>) => number | null) => items
+      .flatMap<LineData<Time>>((item, index) => {
+        const value = item.indicators ? selector(item.indicators) : null
+        return value == null ? [] : [{ time: times[index], value }]
+      })
+    const hasProviderIndicators = items.some((item) => item.indicators != null)
+    const fallbackBollinger = bollingerBands(items, times)
+    const fallbackMacd = macd(items, times)
     return {
       candles,
       volumes,
-      ma5: movingAverage(items, times, 5),
-      ma20: movingAverage(items, times, 20),
-      ma60: movingAverage(items, times, 60),
+      ma5: hasProviderIndicators ? indicatorLine((value) => value.ma5) : movingAverage(items, times, 5),
+      ma20: hasProviderIndicators ? indicatorLine((value) => value.ma20) : movingAverage(items, times, 20),
+      ma60: hasProviderIndicators ? indicatorLine((value) => value.ma60) : movingAverage(items, times, 60),
+      volumeMa20: hasProviderIndicators
+        ? indicatorLine((value) => value.volumeMa20)
+        : movingAverage(volumeItems, times, 20),
+      bollinger: hasProviderIndicators ? {
+        upper: indicatorLine((value) => value.bollingerUpper),
+        middle: indicatorLine((value) => value.bollingerMiddle),
+        lower: indicatorLine((value) => value.bollingerLower),
+      } : fallbackBollinger,
+      rsi: hasProviderIndicators ? indicatorLine((value) => value.rsi) : wilderRsi(items, times),
+      macd: hasProviderIndicators ? {
+        histogram: items.flatMap<HistogramData<Time>>((item, index) => {
+          const value = item.indicators?.macdHistogram
+          return value == null ? [] : [{
+            time: times[index],
+            value,
+            color: value >= 0 ? 'rgba(75, 227, 154, .65)' : 'rgba(255, 111, 125, .65)',
+          }]
+        }),
+        signal: indicatorLine((value) => value.macdSignal),
+      } : fallbackMacd,
+      atr: hasProviderIndicators ? indicatorLine((value) => value.atr) : averageTrueRange(items, times),
+      rsiUpper: times.map((time) => ({ time, value: 70 })),
+      rsiLower: times.map((time) => ({ time, value: 30 })),
     }
   }, [items, market])
 
@@ -286,29 +487,107 @@ export function InteractiveStockChart({
       },
     })
     candleSeries.setData(chartData.candles)
+    if (showEvents && events && events.length > 0) {
+      const availableTimes = new Set(chartData.candles.map((item) => String(item.time)))
+      const markers: SeriesMarker<Time>[] = events
+        .map((event) => ({ event, time: toChartTime(event.time, market) }))
+        .filter(({ time }) => availableTimes.has(time))
+        .map(({ event, time }) => ({
+          time,
+          position: event.signal === 'BUY' ? 'belowBar' : 'aboveBar',
+          shape: event.signal === 'BUY' ? 'arrowUp' : event.signal === 'SELL' ? 'arrowDown' : 'circle',
+          color: event.signal === 'BUY' ? '#4be39a' : event.signal === 'SELL' ? '#ff6f7d' : '#f5bd50',
+          text: eventMarkerText(event.type),
+        }))
+      createSeriesMarkers(candleSeries, markers)
+    }
 
-    const ma5Series = chart.addSeries(LineSeries, {
-      color: '#f5bd50', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA5',
-    })
-    const ma20Series = chart.addSeries(LineSeries, {
-      color: '#25d6c8', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA20',
-    })
-    const ma60Series = chart.addSeries(LineSeries, {
-      color: '#ad86ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA60',
-    })
-    ma5Series.setData(chartData.ma5)
-    ma20Series.setData(chartData.ma20)
-    ma60Series.setData(chartData.ma60)
+    if (showMa5) {
+      const series = chart.addSeries(LineSeries, {
+        color: '#f5bd50', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA5',
+      })
+      series.setData(chartData.ma5)
+    }
+    if (showMa20) {
+      const series = chart.addSeries(LineSeries, {
+        color: '#25d6c8', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA20',
+      })
+      series.setData(chartData.ma20)
+    }
+    if (showMa60) {
+      const series = chart.addSeries(LineSeries, {
+        color: '#ad86ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA60',
+      })
+      series.setData(chartData.ma60)
+    }
+    if (showBollinger) {
+      const upper = chart.addSeries(LineSeries, {
+        color: 'rgba(66, 153, 225, .75)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: 'BB Upper',
+      })
+      const middle = chart.addSeries(LineSeries, {
+        color: 'rgba(66, 153, 225, .45)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: 'BB Mid',
+      })
+      const lower = chart.addSeries(LineSeries, {
+        color: 'rgba(66, 153, 225, .75)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: 'BB Lower',
+      })
+      upper.setData(chartData.bollinger.upper)
+      middle.setData(chartData.bollinger.middle)
+      lower.setData(chartData.bollinger.lower)
+    }
 
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: 'volume' },
-      priceLineVisible: false,
-      lastValueVisible: false,
-    }, 1)
-    volumeSeries.setData(chartData.volumes)
-    const panes = chart.panes()
-    panes[0]?.setStretchFactor(4)
-    panes[1]?.setStretchFactor(1)
+    let volumeSeries: ISeriesApi<'Histogram'> | null = null
+    const hasVolumePane = showVolume || showVolumeMa20
+    if (showVolume) {
+      volumeSeries = chart.addSeries(HistogramSeries, {
+        priceFormat: { type: 'volume' },
+        priceLineVisible: false,
+        lastValueVisible: false,
+      }, 1)
+      volumeSeries.setData(chartData.volumes)
+    }
+    if (showVolumeMa20) {
+      const volumeAverageSeries = chart.addSeries(LineSeries, {
+        color: '#f5bd50',
+        lineWidth: 2,
+        priceFormat: { type: 'volume' },
+        priceLineVisible: false,
+        lastValueVisible: false,
+        title: 'Volume MA20',
+      }, 1)
+      volumeAverageSeries.setData(chartData.volumeMa20)
+    }
+
+    const oscillatorPane = hasVolumePane ? 2 : 1
+    if (oscillator === 'rsi') {
+      const rsiSeries = chart.addSeries(LineSeries, {
+        color: '#25d6c8', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'RSI14',
+      }, oscillatorPane)
+      const upper = chart.addSeries(LineSeries, {
+        color: 'rgba(255, 111, 125, .38)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      }, oscillatorPane)
+      const lower = chart.addSeries(LineSeries, {
+        color: 'rgba(75, 227, 154, .38)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      }, oscillatorPane)
+      rsiSeries.setData(chartData.rsi)
+      upper.setData(chartData.rsiUpper)
+      lower.setData(chartData.rsiLower)
+    } else if (oscillator === 'macd') {
+      const histogram = chart.addSeries(HistogramSeries, {
+        priceLineVisible: false, lastValueVisible: false, title: 'MACD',
+      }, oscillatorPane)
+      const signal = chart.addSeries(LineSeries, {
+        color: '#f5bd50', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'Signal',
+      }, oscillatorPane)
+      histogram.setData(chartData.macd.histogram)
+      signal.setData(chartData.macd.signal)
+    } else if (oscillator === 'atr') {
+      const atrSeries = chart.addSeries(LineSeries, {
+        color: '#ad86ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'ATR14',
+      }, oscillatorPane)
+      atrSeries.setData(chartData.atr)
+    }
+
+    chart.panes().forEach((pane, index) => pane.setStretchFactor(index === 0 ? 4 : 1))
 
     const crosshairHandler = (param: Parameters<IChartApi['subscribeCrosshairMove']>[0] extends (value: infer P) => void ? P : never) => {
       if (param.time == null) {
@@ -316,7 +595,7 @@ export function InteractiveStockChart({
         return
       }
       const candle = param.seriesData.get(candleSeries)
-      const volume = param.seriesData.get(volumeSeries)
+      const volume = volumeSeries ? param.seriesData.get(volumeSeries) : null
       if (!candle || !('open' in candle) || !('high' in candle) || !('low' in candle) || !('close' in candle)) {
         setHoverData(null)
         return
@@ -327,7 +606,20 @@ export function InteractiveStockChart({
         high: candle.high,
         low: candle.low,
         close: candle.close,
-        volume: volume && 'value' in volume ? volume.value : 0,
+        volume: volume && 'value' in volume && typeof volume.value === 'number' ? volume.value : 0,
+        ma5: valueAtTime(chartData.ma5, normalizeTime(param.time)),
+        ma20: valueAtTime(chartData.ma20, normalizeTime(param.time)),
+        ma60: valueAtTime(chartData.ma60, normalizeTime(param.time)),
+        volumeMa20: valueAtTime(chartData.volumeMa20, normalizeTime(param.time)),
+        bollingerUpper: valueAtTime(chartData.bollinger.upper, normalizeTime(param.time)),
+        bollingerLower: valueAtTime(chartData.bollinger.lower, normalizeTime(param.time)),
+        oscillatorValue: oscillator === 'rsi'
+          ? valueAtTime(chartData.rsi, normalizeTime(param.time))
+          : oscillator === 'atr'
+            ? valueAtTime(chartData.atr, normalizeTime(param.time))
+            : oscillator === 'macd'
+              ? valueAtTime(chartData.macd.histogram, normalizeTime(param.time))
+              : undefined,
       })
       queueProjection()
     }
@@ -358,7 +650,21 @@ export function InteractiveStockChart({
       candleSeriesRef.current = null
       setHoverData(null)
     }
-  }, [chartData, currency, queueProjection])
+  }, [
+    chartData,
+    currency,
+    events,
+    market,
+    oscillator,
+    queueProjection,
+    showBollinger,
+    showEvents,
+    showMa5,
+    showMa20,
+    showMa60,
+    showVolume,
+    showVolumeMa20,
+  ])
 
   const pointerToAnchor = useCallback((clientX: number, clientY: number): DrawingAnchor | null => {
     const chart = chartRef.current
@@ -478,6 +784,17 @@ export function InteractiveStockChart({
     queueProjection()
   }
 
+  function resetIndicators() {
+    setShowMa5(defaultChartSettings.showMa5)
+    setShowMa20(defaultChartSettings.showMa20)
+    setShowMa60(defaultChartSettings.showMa60)
+    setShowBollinger(defaultChartSettings.showBollinger)
+    setShowVolume(defaultChartSettings.showVolume)
+    setShowVolumeMa20(defaultChartSettings.showVolumeMa20)
+    setShowEvents(defaultChartSettings.showEvents)
+    setOscillator(defaultChartSettings.oscillator)
+  }
+
   useEffect(() => {
     let wasFullscreen = false
     const handleFullscreenChange = () => {
@@ -576,12 +893,44 @@ export function InteractiveStockChart({
         </div>
       </div>
 
+      <div className="chart-indicators" aria-label="보조 지표 선택">
+        <div>
+          <span>오버레이</span>
+          <button type="button" aria-pressed={showMa5} onClick={() => setShowMa5((value) => !value)}>MA5</button>
+          <button type="button" aria-pressed={showMa20} onClick={() => setShowMa20((value) => !value)}>MA20</button>
+          <button type="button" aria-pressed={showMa60} onClick={() => setShowMa60((value) => !value)}>MA60</button>
+          <button type="button" aria-pressed={showBollinger} onClick={() => setShowBollinger((value) => !value)}>볼린저(20,2)</button>
+          <button type="button" aria-pressed={showEvents} onClick={() => setShowEvents((value) => !value)}>이벤트</button>
+          <button type="button" aria-pressed={showVolume} onClick={() => setShowVolume((value) => !value)}>거래량</button>
+          <button type="button" aria-pressed={showVolumeMa20} onClick={() => setShowVolumeMa20((value) => !value)}>거래량 MA20</button>
+        </div>
+        <div>
+          <span>하단 패널</span>
+          {(['rsi', 'macd', 'atr', 'none'] as const).map((panel) => (
+            <button
+              key={panel}
+              type="button"
+              aria-pressed={oscillator === panel}
+              onClick={() => setOscillator(panel)}
+            >
+              {panel === 'none' ? '숨김' : panel.toUpperCase()}
+            </button>
+          ))}
+          <button type="button" onClick={resetIndicators}>지표 초기화</button>
+        </div>
+      </div>
+
       <div className="chart-legend" aria-label="차트 범례">
         <span><i className="candle-up" />상승</span>
         <span><i className="candle-down" />하락</span>
-        <span><i className="ma5" />MA5</span>
-        <span><i className="ma20" />MA20</span>
-        <span><i className="ma60" />MA60</span>
+        {showMa5 && <span><i className="ma5" />MA5</span>}
+        {showMa20 && <span><i className="ma20" />MA20</span>}
+        {showMa60 && <span><i className="ma60" />MA60</span>}
+        {showBollinger && <span><i className="bollinger" />BB(20,2)</span>}
+        {showEvents && <span>교차 이벤트</span>}
+        {showVolume && <span>거래량</span>}
+        {showVolumeMa20 && <span>거래량 MA20</span>}
+        {oscillator !== 'none' && <span>패널 {oscillator.toUpperCase()}</span>}
         <strong>{source}</strong>
       </div>
 
@@ -643,6 +992,21 @@ export function InteractiveStockChart({
             <span>저 {formatPrice(hoverData.low, currency)}</span>
             <span>종 {formatPrice(hoverData.close, currency)}</span>
             <span>거래량 {formatVolume(hoverData.volume)}</span>
+            {showMa5 && hoverData.ma5 != null && <span>MA5 {formatPrice(hoverData.ma5, currency)}</span>}
+            {showMa20 && hoverData.ma20 != null && <span>MA20 {formatPrice(hoverData.ma20, currency)}</span>}
+            {showMa60 && hoverData.ma60 != null && <span>MA60 {formatPrice(hoverData.ma60, currency)}</span>}
+            {showVolumeMa20 && hoverData.volumeMa20 != null && (
+              <span>
+                거래량 MA20 {formatVolume(hoverData.volumeMa20)}
+                {hoverData.volumeMa20 > 0 ? ` · ${(hoverData.volume / hoverData.volumeMa20).toFixed(2)}배` : ''}
+              </span>
+            )}
+            {showBollinger && hoverData.bollingerUpper != null && hoverData.bollingerLower != null && (
+              <span>BB {formatPrice(hoverData.bollingerLower, currency)}–{formatPrice(hoverData.bollingerUpper, currency)}</span>
+            )}
+            {oscillator !== 'none' && hoverData.oscillatorValue != null && (
+              <span>{oscillator.toUpperCase()} {hoverData.oscillatorValue.toFixed(2)}</span>
+            )}
           </div>
         )}
 

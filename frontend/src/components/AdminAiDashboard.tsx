@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getAiMetrics, getAiUsageLogs } from '../api/admin'
-import type { AiMetrics, AiUsageLog, AiUsageLogPage } from '../types/admin'
+import { getAiMetrics, getAiUsageLogs, syncExternalData } from '../api/admin'
+import type { AiMetrics, AiUsageLog, AiUsageLogPage, DataSyncResult } from '../types/admin'
 
 type Props = {
   refreshKey: number
@@ -81,6 +81,21 @@ export function AdminAiDashboard({ refreshKey }: Props) {
   const [logs, setLogs] = useState<AiUsageLog[]>([])
   const [loading, setLoading] = useState(true)
   const [demoMode, setDemoMode] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<DataSyncResult | null>(null)
+  const [syncError, setSyncError] = useState('')
+
+  async function runDataSync() {
+    setSyncing(true)
+    setSyncError('')
+    try {
+      setSyncResult(await syncExternalData())
+    } catch (error: unknown) {
+      setSyncError(error instanceof Error ? error.message : '외부 데이터 동기화에 실패했습니다.')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -121,8 +136,17 @@ export function AdminAiDashboard({ refreshKey }: Props) {
         <div className="admin-title-meta">
           {demoMode && <span className="demo-badge">DEMO DATA</span>}
           <span>평균 응답 {metrics.averageResponseTimeMs.toFixed(1)}ms</span>
+          <button type="button" className="data-sync-button" onClick={() => void runDataSync()} disabled={syncing}>
+            {syncing ? '데이터 동기화 중…' : '외부 데이터 동기화'}
+          </button>
         </div>
       </div>
+
+      {(syncResult || syncError) && (
+        <p className={`data-sync-status${syncError ? ' error' : ''}`} role="status">
+          {syncError || `${syncResult?.mode} · 시세 ${syncResult?.pricesImported}건 · 뉴스 ${syncResult?.newsImported}건 반영`}
+        </p>
+      )}
 
       <div className="admin-metric-grid">
         <article className="card admin-metric-card"><span>전체 요청</span><strong>{formatNumber(metrics.requestCount)}</strong><small>AI 기능 요청 수</small></article>

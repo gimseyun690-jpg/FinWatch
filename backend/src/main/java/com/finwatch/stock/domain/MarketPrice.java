@@ -52,6 +52,64 @@ public class MarketPrice {
     protected MarketPrice() {
     }
 
+    private MarketPrice(
+            Stock stock,
+            String interval,
+            BigDecimal openPrice,
+            BigDecimal highPrice,
+            BigDecimal lowPrice,
+            BigDecimal closePrice,
+            BigDecimal volume,
+            Instant recordedAt,
+            String source) {
+        this.stock = stock;
+        this.interval = interval;
+        this.openPrice = openPrice;
+        this.highPrice = highPrice;
+        this.lowPrice = lowPrice;
+        this.closePrice = closePrice;
+        this.volume = volume;
+        this.recordedAt = recordedAt;
+        this.source = source;
+    }
+
+    public static MarketPrice create(
+            Stock stock,
+            String interval,
+            BigDecimal openPrice,
+            BigDecimal highPrice,
+            BigDecimal lowPrice,
+            BigDecimal closePrice,
+            BigDecimal volume,
+            Instant recordedAt,
+            String source) {
+        return new MarketPrice(
+                stock,
+                interval,
+                openPrice,
+                highPrice,
+                lowPrice,
+                closePrice,
+                volume,
+                recordedAt,
+                source);
+    }
+
+    public void applyProviderBar(
+            BigDecimal openPrice,
+            BigDecimal highPrice,
+            BigDecimal lowPrice,
+            BigDecimal closePrice,
+            BigDecimal volume,
+            String source) {
+        this.openPrice = openPrice;
+        this.highPrice = highPrice;
+        this.lowPrice = lowPrice;
+        this.closePrice = closePrice;
+        this.volume = volume;
+        this.source = source;
+    }
+
     public BigDecimal getOpenPrice() {
         return openPrice;
     }

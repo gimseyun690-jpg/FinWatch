@@ -49,6 +49,7 @@ public class AiNewsSummaryService {
     private final AiSummaryCacheStore cacheStore;
     private final AiCostCalculator costCalculator;
     private final String activePromptVersion;
+    private final Set<String> allowedPromptVersions;
     private final Duration cacheTtl;
 
     public AiNewsSummaryService(
@@ -62,6 +63,7 @@ public class AiNewsSummaryService {
             AiSummaryCacheStore cacheStore,
             AiCostCalculator costCalculator,
             @Value("${app.ai.prompt-version}") String activePromptVersion,
+            @Value("${app.ai.allowed-prompt-versions:}") String allowedPromptVersions,
             @Value("${app.ai.cache-ttl}") Duration cacheTtl) {
         this.newsArticleRepository = newsArticleRepository;
         this.aiAnalysisRepository = aiAnalysisRepository;
@@ -73,6 +75,14 @@ public class AiNewsSummaryService {
         this.cacheStore = cacheStore;
         this.costCalculator = costCalculator;
         this.activePromptVersion = activePromptVersion;
+        LinkedHashSet<String> configuredVersions = new LinkedHashSet<>();
+        configuredVersions.add(activePromptVersion);
+        if (allowedPromptVersions != null && !allowedPromptVersions.isBlank()) {
+            for (String version : allowedPromptVersions.split("\\s*,\\s*")) {
+                if (!version.isBlank()) configuredVersions.add(version.trim());
+            }
+        }
+        this.allowedPromptVersions = Set.copyOf(configuredVersions);
         this.cacheTtl = cacheTtl;
     }
 
@@ -335,9 +345,17 @@ public class AiNewsSummaryService {
     }
 
     private String normalizePromptVersion(String requestedVersion) {
-        return requestedVersion == null || requestedVersion.isBlank()
-                ? activePromptVersion
-                : requestedVersion.trim();
+        if (requestedVersion == null || requestedVersion.isBlank()) {
+            return activePromptVersion;
+        }
+        String normalized = requestedVersion.trim();
+        if (!allowedPromptVersions.contains(normalized)) {
+            throw new com.finwatch.ai.provider.AiProviderException(
+                    HttpStatus.BAD_REQUEST,
+                    "AI_PROMPT_VERSION_UNSUPPORTED",
+                    "지원하지 않는 프롬프트 버전입니다.");
+        }
+        return normalized;
     }
 
     private String cacheKey(Long newsId, String contentHash, String promptVersion) {

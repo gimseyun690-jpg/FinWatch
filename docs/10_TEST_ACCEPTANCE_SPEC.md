@@ -30,7 +30,7 @@
 | 관리자 AI 통합 | cache 절감 지표와 사용량 정렬 1개 |
 | 관심종목 통합 | 사용자별 CRUD 격리, 중복·없는 삭제 1개 |
 
-현재 통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 실제 PostgreSQL·Redis serialization/TTL, Gemini HTTP 계약을 검증하지 않는다. 프런트엔드에는 lint와 build script만 있고 단위·컴포넌트·E2E 테스트 도구가 없다. OpenAPI 계약 테스트, 부하·보안·PWA 자동 테스트와 CI workflow도 없다.
+통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS·NAVER API HUB·Finnhub·Gemini 계약과 429·오류 정규화를 검증하며, Playwright E2E는 로그인·상세 차트·지표 설정 유지·390px 모바일 overflow와 터치 크기를 검증한다. 실제 PostgreSQL·Redis serialization/TTL, 부하 테스트와 CI workflow는 아직 별도 게이트로 남아 있다.
 
 따라서 현재 12개 테스트의 통과는 핵심 Vertical Slice의 회귀 신호이지만 MVP 전체 인수나 운영 준비 완료를 의미하지 않는다.
 
@@ -170,7 +170,7 @@ Stub은 `x-goog-api-key` header가 존재하는지만 검사하고 값을 테스
 
 ### 8.1 목표 도구와 범위
 
-현재 테스트 도구가 없으므로 도구 선택과 초기 구성이 필요하다. 권장 기본 조합은 Vitest + Testing Library + MSW, 브라우저 E2E는 Playwright다. 최종 도구는 TBD지만 **배포 전 게이트**다.
+브라우저 E2E는 Playwright를 사용한다. 계산과 API 계약은 백엔드 JUnit, 타입·번들 계약은 TypeScript build와 lint로 검증한다. 컴포넌트 단위 테스트가 필요해지면 Vitest + Testing Library를 추가한다.
 
 컴포넌트 테스트는 다음을 포함한다.
 

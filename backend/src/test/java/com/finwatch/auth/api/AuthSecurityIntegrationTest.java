@@ -3,6 +3,7 @@ package com.finwatch.auth.api;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,11 @@ class AuthSecurityIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
+        mockMvc.perform(get("/api/v1/providers/kis/quotes/005930")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(userToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
         mockMvc.perform(get("/api/v1/admin/ai/metrics")
                         .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
                 .andExpect(status().isOk());
@@ -58,6 +64,17 @@ class AuthSecurityIntegrationTest {
                         .content("{\"email\":\"user@finwatch.local\",\"password\":\"wrong\"}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    @Test
+    void loginAcceptsConfiguredFrontendOrigin() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"admin@finwatch.local\",\"password\":\"FinWatchAdmin123!\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:5173"))
+                .andExpect(jsonPath("$.data.user.role").value("ADMIN"));
     }
 
     private String login(String email, String password, String expectedRole) throws Exception {

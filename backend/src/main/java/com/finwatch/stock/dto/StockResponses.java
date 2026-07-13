@@ -28,7 +28,23 @@ public final class StockResponses {
             BigDecimal high,
             BigDecimal low,
             BigDecimal close,
-            BigDecimal volume) {
+            BigDecimal volume,
+            TechnicalSeriesPoint indicators) {
+    }
+
+    public record TechnicalSeriesPoint(
+            BigDecimal ma5,
+            BigDecimal ma20,
+            BigDecimal ma60,
+            BigDecimal volumeMa20,
+            BigDecimal bollingerUpper,
+            BigDecimal bollingerMiddle,
+            BigDecimal bollingerLower,
+            BigDecimal rsi,
+            BigDecimal macd,
+            BigDecimal macdSignal,
+            BigDecimal macdHistogram,
+            BigDecimal atr) {
     }
 
     public record PriceHistory(String symbol, String interval, String period, List<PricePoint> items) {
@@ -41,7 +57,7 @@ public final class StockResponses {
             String signal) {
     }
 
-    public record Rsi(int period, BigDecimal value, String signal) {
+    public record Rsi(int period, String method, BigDecimal value, String signal) {
     }
 
     public record Macd(
@@ -51,14 +67,36 @@ public final class StockResponses {
             String signal) {
     }
 
+    public record BollingerBands(
+            int period,
+            int deviationMultiplier,
+            BigDecimal upper,
+            BigDecimal middle,
+            BigDecimal lower,
+            BigDecimal bandwidthPercent) {
+    }
+
+    public record Atr(int period, BigDecimal value, BigDecimal percent) {
+    }
+
+    public record TechnicalEvent(
+            Instant time,
+            String type,
+            String signal) {
+    }
+
     public record TechnicalAnalysis(
             String symbol,
             Instant calculatedAt,
+            String calculationVersion,
             String summarySignal,
             MovingAverages movingAverages,
             Rsi rsi,
             Macd macd,
+            BollingerBands bollingerBands,
+            Atr atr,
+            BigDecimal volumeMa20,
+            List<TechnicalEvent> events,
             String disclaimer) {
     }
 }
-
