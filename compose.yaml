@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: finwatch-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-finwatch}
+      POSTGRES_USER: ${POSTGRES_USER:-finwatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finwatch-local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - finwatch-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    container_name: finwatch-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - finwatch-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  finwatch-postgres-data:
+  finwatch-redis-data:
+

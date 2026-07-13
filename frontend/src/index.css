@@ -1,0 +1,24 @@
+:root {
+  font-family: Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #eef4f5;
+  background: #070c12;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --bg: #070c12;
+  --panel: #111a24;
+  --panel-deep: #0c141d;
+  --panel-soft: #17222e;
+  --border: #23303d;
+  --text-strong: #f2f7f7;
+  --text-muted: #8d9aa7;
+  --cyan: #25d6c8;
+  --green: #4be39a;
+  --red: #ff6f7d;
+  --amber: #f5bd50;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 50% -10%, #102a31 0, var(--bg) 38%); }
+button, input { font: inherit; }

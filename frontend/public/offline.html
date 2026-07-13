@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070c12" />
+    <title>FinWatch · 오프라인</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, Pretendard, system-ui, sans-serif; background: #070c12; color: #f2f7f7; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 0%, #102530, #070c12 55%); }
+      main { width: min(100%, 520px); border: 1px solid #22313c; border-radius: 18px; padding: 34px; background: #0d1720; box-shadow: 0 30px 80px #0008; }
+      .mark { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 13px; color: #031315; background: linear-gradient(135deg, #25d6c8, #4be39a); font-weight: 900; }
+      p { color: #91a0aa; line-height: 1.7; }
+      small { display: block; margin-top: 18px; color: #667680; }
+      button { width: 100%; margin-top: 24px; border: 0; border-radius: 10px; padding: 13px; color: #031315; background: #25d6c8; font-weight: 800; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">F</div>
+      <h1>FinWatch 오프라인 모드</h1>
+      <p>네트워크 연결이 없어 최신 가격과 AI 분석을 불러올 수 없습니다. 저장된 앱 셸은 정상이며 연결이 복구되면 같은 화면에서 다시 시도할 수 있습니다.</p>
+      <small>기술적 신호와 AI 분석은 투자 권유가 아닌 참고 정보입니다.</small>
+      <button type="button" onclick="location.reload()">연결 다시 확인</button>
+    </main>
+  </body>
+</html>
