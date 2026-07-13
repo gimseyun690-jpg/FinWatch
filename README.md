@@ -82,7 +82,7 @@ Open DART 원문 ZIP과 SEC EDGAR HTML은 관리자 갱신 API를 통해 수집�
 ```powershell
 $env:AI_PROVIDER="gemini"
 $env:GEMINI_API_KEY="새로_발급한_키"
-$env:GEMINI_MODEL="gemini-2.5-flash-lite"
+$env:GEMINI_MODEL="gemini-3.1-flash-lite"
 ```
 
 키는 `.env.example`, `application.yml`, 프론트엔드 코드 또는 Git 커밋에 입력하지 않습니다. API 호출은 항상 Spring Boot 백엔드에서 수행합니다.

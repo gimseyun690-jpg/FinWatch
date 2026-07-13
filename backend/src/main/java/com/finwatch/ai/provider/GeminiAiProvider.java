@@ -5,9 +5,12 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -40,20 +43,51 @@ public class GeminiAiProvider implements AiProvider {
             String preprocessedContent,
             String segmentId,
             String promptVersion) {
-        GeminiGenerateResponse response = restClient.post()
-                .uri("/v1beta/models/{model}:generateContent", model)
-                .header("x-goog-api-key", apiKey)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(requestBody(title, preprocessedContent, segmentId, promptVersion))
-                .retrieve()
-                .body(GeminiGenerateResponse.class);
-
-        if (response == null || response.candidates() == null || response.candidates().isEmpty()) {
-            throw new IllegalStateException("Gemini가 분석 결과를 반환하지 않았습니다.");
+        GeminiGenerateResponse response;
+        try {
+            response = restClient.post()
+                    .uri("/v1beta/models/{model}:generateContent", model)
+                    .header("x-goog-api-key", apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(requestBody(title, preprocessedContent, segmentId, promptVersion))
+                    .retrieve()
+                    .body(GeminiGenerateResponse.class);
+        } catch (RestClientResponseException exception) {
+            throw mapUpstreamError(exception);
+        } catch (ResourceAccessException exception) {
+            throw new AiProviderException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "AI_PROVIDER_UNAVAILABLE",
+                    "Gemini API에 연결할 수 없습니다.",
+                    exception);
         }
 
-        String responseText = response.candidates().getFirst().content().parts().getFirst().text();
-        GeminiAnalysisPayload payload = objectMapper.readValue(responseText, GeminiAnalysisPayload.class);
+        if (response == null || response.candidates() == null || response.candidates().isEmpty()) {
+            String blockReason = response == null || response.promptFeedback() == null
+                    ? "UNKNOWN"
+                    : response.promptFeedback().blockReason();
+            throw AiProviderException.invalid(
+                    "Gemini가 분석 결과를 반환하지 않았습니다. blockReason=" + blockReason);
+        }
+
+        Candidate candidate = response.candidates().getFirst();
+        if (candidate.content() == null || candidate.content().parts() == null || candidate.content().parts().isEmpty()) {
+            throw AiProviderException.invalid(
+                    "Gemini 응답에 본문이 없습니다. finishReason=" + candidate.finishReason());
+        }
+
+        String responseText = candidate.content().parts().getFirst().text();
+        GeminiAnalysisPayload payload;
+        try {
+            payload = objectMapper.readValue(responseText, GeminiAnalysisPayload.class);
+        } catch (RuntimeException exception) {
+            throw new AiProviderException(
+                    HttpStatus.BAD_GATEWAY,
+                    "AI_RESPONSE_INVALID_JSON",
+                    "Gemini 응답을 JSON으로 해석할 수 없습니다.",
+                    exception);
+        }
+
         UsageMetadata usage = response.usageMetadata();
         int inputTokens = usage == null ? estimateTokens(title + preprocessedContent) : usage.promptTokenCount();
         int outputTokens = usage == null ? estimateTokens(responseText) : usage.candidatesTokenCount();
@@ -72,6 +106,45 @@ public class GeminiAiProvider implements AiProvider {
                 payload.sentiment(),
                 inputTokens,
                 outputTokens);
+    }
+
+    private AiProviderException mapUpstreamError(RestClientResponseException exception) {
+        GeminiErrorEnvelope envelope = parseErrorEnvelope(exception.getResponseBodyAsString());
+        String fallbackStatus = "HTTP_" + exception.getStatusCode().value();
+        String upstreamStatus = envelope == null || envelope.error() == null
+                ? fallbackStatus
+                : safeText(envelope.error().status(), fallbackStatus);
+        String upstreamMessage = envelope == null || envelope.error() == null
+                ? "Gemini API 요청이 거부되었습니다."
+                : safeText(envelope.error().message(), "Gemini API 요청이 거부되었습니다.");
+        HttpStatus clientStatus = exception.getStatusCode().value() == 429
+                ? HttpStatus.SERVICE_UNAVAILABLE
+                : HttpStatus.BAD_GATEWAY;
+
+        return new AiProviderException(
+                clientStatus,
+                "AI_PROVIDER_" + upstreamStatus.toUpperCase().replaceAll("[^A-Z0-9_]", "_"),
+                "Gemini API 오류 (" + upstreamStatus + "): " + upstreamMessage,
+                exception);
+    }
+
+    private GeminiErrorEnvelope parseErrorEnvelope(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(responseBody, GeminiErrorEnvelope.class);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private String safeText(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        String sanitized = value.replaceAll("[\\r\\n\\t]+", " ").trim();
+        return sanitized.length() <= 300 ? sanitized : sanitized.substring(0, 300);
     }
 
     private Map<String, Object> requestBody(
@@ -124,7 +197,9 @@ public class GeminiAiProvider implements AiProvider {
     }
 
     private List<String> safeList(List<String> values) {
-        return values == null ? List.of() : values.stream().filter(value -> value != null && !value.isBlank()).toList();
+        return values == null ? List.of() : values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .toList();
     }
 
     private int estimateTokens(String text) {
@@ -133,11 +208,15 @@ public class GeminiAiProvider implements AiProvider {
 
     private record GeminiGenerateResponse(
             List<Candidate> candidates,
+            PromptFeedback promptFeedback,
             UsageMetadata usageMetadata,
             String modelVersion) {
     }
 
-    private record Candidate(Content content) {
+    private record Candidate(Content content, String finishReason) {
+    }
+
+    private record PromptFeedback(String blockReason) {
     }
 
     private record Content(List<Part> parts) {
@@ -157,5 +236,11 @@ public class GeminiAiProvider implements AiProvider {
             List<String> mentionedCompanies,
             List<String> keywords,
             String sentiment) {
+    }
+
+    private record GeminiErrorEnvelope(GeminiError error) {
+    }
+
+    private record GeminiError(Integer code, String message, String status) {
     }
 }

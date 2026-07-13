@@ -215,7 +215,7 @@ AI_PROVIDER=gemini일 때 GEMINI_API_KEY가 비어 있으면 애플리케이션 
 | 항목 | 값 |
 |---|---|
 | base URL | https://generativelanguage.googleapis.com |
-| model | GEMINI_MODEL, 기본 gemini-2.5-flash-lite |
+| model | GEMINI_MODEL, 기본 gemini-3.1-flash-lite |
 | endpoint | /v1beta/models/{model}:generateContent |
 | 인증 | x-goog-api-key 헤더 |
 | responseMimeType | application/json |
@@ -422,8 +422,8 @@ MISS 모델 호출:
 
 | 설정 | 기본값 |
 |---|---|
-| AI_INPUT_PRICE_PER_MILLION | 0.10 |
-| AI_OUTPUT_PRICE_PER_MILLION | 0.40 |
+| AI_INPUT_PRICE_PER_MILLION | 0.25 |
+| AI_OUTPUT_PRICE_PER_MILLION | 1.50 |
 | 통화 | USD |
 
 ~~~text
