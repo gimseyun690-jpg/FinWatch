@@ -133,7 +133,10 @@ H2 테스트는 빠른 피드백용으로 유지할 수 있지만 PostgreSQL 전
 
 | 응답 조건 | 필수 검증 |
 |---|---|
-| 정상 구조화 JSON | summary, keyPoints, keywords, sentiment, modelVersion, usage token 매핑 |
+| 뉴스 정상 구조화 JSON | summary, keyPoints, keywords, sentiment, modelVersion, usage token 매핑 |
+| 기술지표 정상 구조화 JSON | explanation 필드, supporting/conflicting signals, evidenceIds, usage token 매핑 |
+| 기술지표 근거 오류 | 없는 evidence ID, 입력에 없는 숫자·이벤트, 서버 summarySignal 변경 시 저장 거부 |
+| 기술지표 금지 출력 | 목표주가·수익률 예측·직접 매매 명령 fixture를 `AI_RESPONSE_INVALID`로 거부 |
 | usage metadata 없음 | 명시된 token 추정 fallback과 비용 계산 |
 | 빈 candidate/part | 외부 공급자 오류로 변환, 성공 분석 저장 금지 |
 | malformed JSON·잘못된 enum | parser 오류 처리와 안전한 오류 응답 |
@@ -182,6 +185,7 @@ Stub은 `x-goog-api-key` header가 존재하는지만 검사하고 값을 테스
 - 포트폴리오 입력 validation과 서버 계산 결과 표시
 - 알림 상태와 trigger 시각 표시
 - AI MISS/HIT, 생성 중 중복 클릭 방지, 출처·면책문구, 공급자 실패
+- AI 기술지표 해설의 근거값·충돌 신호·STALE/DEMO 한계, MISS/HIT와 금지 출력 오류
 - ADMIN 메뉴의 role 기반 노출과 서버 403 처리
 - keyboard 탐색, focus, label, dialog와 status message의 기본 접근성
 - 상세 차트의 OHLC 변환, 기간 변경 요청 취소, 로딩·빈 결과·DEMO 상태와 늦은 응답 무시
@@ -194,8 +198,9 @@ Stub은 `x-goog-api-key` header가 존재하는지만 검사하고 값을 테스
 3. 포트폴리오 보유 종목을 생성·수정·삭제하고 서버 계산값을 확인한다.
 4. 가격알림을 만들고 fixture 가격을 경계값 전후로 바꿔 상태 전이를 확인한다.
 5. 뉴스 AI 요약을 처음 요청해 MISS, 다시 요청해 HIT와 비용 0을 확인한다.
-6. USER는 관리자 URL·API에 접근할 수 없고, ADMIN은 지표와 사용량 로그를 본다.
-7. 만료·변조 token에서 session이 안전하게 종료되고 보호 데이터가 남지 않는다.
+6. 같은 종목·완성 일봉의 AI 기술지표 해설을 두 번 요청해 MISS/HIT, 근거값과 충돌 신호를 확인한다.
+7. USER는 관리자 URL·API에 접근할 수 없고, ADMIN은 뉴스·기술지표 해설을 구분한 사용량 로그를 본다.
+8. 만료·변조 token에서 session이 안전하게 종료되고 보호 데이터가 남지 않는다.
 
 종목 상세 E2E에서는 `11_TECHNICAL_ANALYSIS_SPEC.md`의 1M·3M·6M·1Y·ALL 기간, 캔들, 확대·이동, 십자선 OHLC, 전체화면과 추세선·수평선 생성·수정·삭제를 데스크톱에서 검증한다. 모바일에서는 기간 선택, 핀치·이동, 십자선 탐색과 그리기 도구의 최소 터치 영역을 검증한다.
 
@@ -347,7 +352,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 3. 수정·삭제, 0·음수·과도한 소수, stale 가격, 혼합 통화 경로를 검증한다.
 4. 다른 사용자의 holding ID 조작을 거부한다.
 
-판정: `07_USER_FEATURE_SPEC.md`의 계산·반올림·통화 규칙과 일치해야 한다. 현재 기능 미구현이므로 이 시나리오는 현재 통과할 수 없다.
+판정: `07_USER_FEATURE_SPEC.md`의 계산·반올림·통화 규칙과 일치해야 한다. 통합 테스트에서 WebSocket 가격 우선 선택과 통화별 평가를 검증한다.
 
 ### AC-05 가격알림
 
@@ -356,7 +361,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 3. 같은 이벤트가 반복되어도 중복 trigger가 생기지 않고 수정·비활성·재활성 규칙이 맞다.
 4. 데이터가 stale이거나 공급자가 실패하면 오탐 없이 명시된 상태가 보인다.
 
-판정: `07_USER_FEATURE_SPEC.md`의 평가 주기·경계·재알림 규칙과 일치해야 한다. 현재 기능 미구현이므로 이 시나리오는 현재 통과할 수 없다.
+판정: `07_USER_FEATURE_SPEC.md`의 평가 주기·경계·재알림 규칙과 일치해야 한다. 통합 테스트에서 API polling 없이 틱 이벤트만으로 ACTIVE 알림이 TRIGGERED로 전환되는 경로를 검증한다.
 
 ### AC-06 AI 뉴스 요약 MISS/HIT와 복구
 
@@ -403,6 +408,20 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 판정: `09_SECURITY_DEPLOYMENT_SPEC.md`의 Runbook과 목표 시간 안에 재현 가능해야 한다.
 
+### AC-11 AI 기술지표 해설 MISS/HIT와 근거 검증
+
+1. 분석이 없는 종목의 완성 일봉을 요청해 서버 계산 스냅샷, `cacheHit=false`, 구조화 해설과 SUCCESS 로그를 확인한다.
+2. 같은 `latestRecordedAt + calculationVersion + inputHash + promptVersion`을 재요청해 `cacheHit=true`, 모델 호출·토큰·실제 비용 0을 확인한다.
+3. Redis key만 삭제하면 `ai_technical_explanations`에서 복구하며 모델을 다시 호출하지 않는다.
+4. 새 완성 일봉, 과거 OHLCV 정정, 계산 버전과 프롬프트 버전 변경은 각각 새 MISS를 만든다.
+5. 클라이언트가 임의 지표 값을 보내거나 파라미터를 추가해도 서버 재조회 값만 입력에 사용한다.
+6. 존재하지 않는 evidence ID, 입력에 없는 숫자·이벤트와 서버 `summarySignal`을 바꾼 Gemini 결과는 저장·노출하지 않는다.
+7. 목표주가·수익률 예측·직접 매수/매도 명령을 포함한 결과는 `502 AI_RESPONSE_INVALID`와 FAILED 로그로 처리한다.
+8. STALE·DEMO 입력은 출처·기준 시각·한계가 표시되고 Gemini 장애 중에도 기존 결정론적 지표와 차트는 정상 동작한다.
+9. 관리자 화면에서 `TECHNICAL_EXPLANATION`의 요청·실제 호출·토큰·비용·적중률·절감액을 `NEWS_SUMMARY`와 분리해 확인한다.
+
+판정: `08_AI_OPERATION_SPEC.md` 13절의 입력 책임 경계, 근거 검증, 캐시·비용·UI 계약을 모두 만족해야 한다. 현재 기능은 계획 상태이므로 구현 전에는 이 시나리오를 통과한 것으로 표시하지 않는다.
+
 ## 14. 결함 심각도와 인수 판정
 
 | 등급 | 예 | 인수 처리 |
@@ -414,13 +433,13 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 MVP 합격 조건:
 
-1. AC-00~AC-10 중 MVP scope에 포함된 모든 시나리오가 통과한다.
+1. AC-00~AC-11 중 MVP scope에 포함된 모든 시나리오가 통과한다.
 2. Blocker·Critical·미승인 Major가 0건이다.
 3. PR/release 품질 게이트와 운영 체크리스트가 통과한다.
 4. 모든 배포 전 게이트 TBD가 값·책임자·검증 증적을 갖는다.
 5. 요구사항에서 제외할 기능이 있으면 단순히 테스트를 생략하지 않고 `01_REQUIREMENTS.md`, API/DB/세부 명세와 시연 범위를 함께 변경·승인한다.
 
-현재 포트폴리오, 가격알림, 실제 시장·뉴스 공급자, 운영 배포가 미완료이므로 전체 MVP 인수 상태는 **미합격/진행 중**이다. 기존 Vertical Slice와 테스트의 가치를 부정하는 판정이 아니라, 공개 운영 완료와 핵심 시연 완료를 구분하기 위한 상태다.
+현재 포트폴리오, 가격알림, 실제 시장·뉴스 공급자와 로컬 LIVE 시연은 구현됐지만 AWS 운영 배포와 배포 전 보안·복구 게이트가 남아 있어 전체 운영 인수 상태는 **진행 중**이다.
 
 ## 15. 증적과 서명
 

@@ -148,24 +148,27 @@ export function StockDetail({ symbol, liveQuote }: Props) {
   }
 
   const { technical } = detail
-  const stock = liveQuote == null ? detail.stock : {
+  const effectiveLiveQuote = liveQuote != null && new Date(liveQuote.asOf) >= new Date(detail.stock.asOf)
+    ? liveQuote
+    : undefined
+  const stock = effectiveLiveQuote == null ? detail.stock : {
     ...detail.stock,
-    price: liveQuote.price,
-    change: liveQuote.change,
-    changeRate: liveQuote.changeRate,
-    volume: liveQuote.volume,
-    asOf: liveQuote.asOf,
-    source: liveQuote.source,
+    price: effectiveLiveQuote.price,
+    change: effectiveLiveQuote.change,
+    changeRate: effectiveLiveQuote.changeRate,
+    volume: effectiveLiveQuote.volume,
+    asOf: effectiveLiveQuote.asOf,
+    source: effectiveLiveQuote.source,
   }
-  const chartPrices = mergeLiveCandle(prices, liveQuote)
+  const chartPrices = mergeLiveCandle(prices, effectiveLiveQuote)
   const changeClass = stock.changeRate >= 0 ? 'up' : 'down'
-  const streaming = liveQuote?.sessionStatus === 'LIVE'
+  const streaming = effectiveLiveQuote?.sessionStatus === 'LIVE'
 
   return (
     <section className="stock-detail" id="stock-detail" aria-labelledby="stock-detail-title">
       <div className="detail-title-row">
         <div>
-          <p className="eyebrow">STOCK DETAIL · {liveQuote?.source ?? detail.source}</p>
+          <p className="eyebrow">STOCK DETAIL · {effectiveLiveQuote?.source ?? detail.source}</p>
           <h2 id="stock-detail-title">{stock.name} 기술적 분석</h2>
           <p>{stock.symbol} · {stock.market} · {new Date(stock.asOf).toLocaleString('ko-KR')}</p>
         </div>

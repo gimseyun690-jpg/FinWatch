@@ -13,13 +13,20 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.finwatch.realtime.LiveQuote;
+import com.finwatch.realtime.RealtimeQuoteHub;
 import com.finwatch.user.repository.AppUserRepository;
+
+import java.math.BigDecimal;
+import java.time.Instant;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("demo")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PortfolioApiIntegrationTest {
 
     @Autowired
@@ -28,15 +35,30 @@ class PortfolioApiIntegrationTest {
     @Autowired
     private AppUserRepository userRepository;
 
+    @Autowired
+    private RealtimeQuoteHub realtimeQuoteHub;
+
     @Test
     void adminPortfolioSeparatesKrwAndUsdValuations() throws Exception {
         Long userId = userRepository.findByEmailIgnoreCase("admin@finwatch.local").orElseThrow().getId();
+        realtimeQuoteHub.publish(new LiveQuote(
+                "000660",
+                new BigDecimal("2100000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ONE,
+                "KRW",
+                Instant.parse("2099-07-14T01:00:00Z"),
+                "KIS_WS",
+                "LIVE"));
 
         mockMvc.perform(get("/api/v1/portfolios").with(jwt().jwt(token -> token.claim("userId", userId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.currencySummaries.length()").value(2))
                 .andExpect(jsonPath("$.data.holdings.length()").value(2))
-                .andExpect(jsonPath("$.data.holdings[0].valuationStatus").value("VALUED"));
+                .andExpect(jsonPath("$.data.holdings[0].valuationStatus").value("VALUED"))
+                .andExpect(jsonPath("$.data.holdings[?(@.symbol == '000660')].latestPrice").value(2100000))
+                .andExpect(jsonPath("$.data.holdings[?(@.symbol == '000660')].priceSource").value("KIS_WS"));
     }
 
     @Test

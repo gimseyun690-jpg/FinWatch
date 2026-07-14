@@ -139,10 +139,10 @@ function App() {
         {session.user.role === 'ADMIN' && <AdminAiDashboard refreshKey={adminRefreshKey} />}
 
         <section className="dashboard-grid">
-          <PortfolioPanel />
+          <PortfolioPanel liveQuotes={liveQuotes} />
 
           <div className="side-stack">
-            <AlertsPanel />
+            <AlertsPanel liveQuotes={liveQuotes} />
             <article className="card">
               <div className="section-heading compact"><h2>비용 최적화 흐름</h2><span className="muted">Redis</span></div>
               <p>뉴스 ID·본문 해시·프롬프트 버전으로 캐시 키를 만들고, 같은 본문만 재사용하며 수정된 본문은 새 분석으로 생성합니다.</p>

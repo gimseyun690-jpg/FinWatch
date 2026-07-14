@@ -185,6 +185,41 @@ UNIQUE `(host, path_prefix)`. 등록되지 않은 호스트와 경로는 DB 행�
 
 UNIQUE `(news_id, feature_type, prompt_version, content_hash)`, UNIQUE `(cache_key)`. 같은 뉴스라도 본문 hash가 바뀌면 과거 분석을 덮어쓰지 않고 새 버전을 만든다.
 
+### ai_technical_explanations (계획, 미구현)
+
+뉴스 분석과 수명주기·입력 구조가 다르므로 기술지표 해설은 별도 테이블로 저장한다. 원시 OHLCV 배열이나 전체 프롬프트는 저장하지 않는다.
+
+| 컬럼 | 타입 | 제약/설명 |
+|---|---|---|
+| id | BIGINT | PK |
+| stock_id | BIGINT | FK stocks, NOT NULL |
+| interval | VARCHAR(10) | MVP는 1D |
+| latest_recorded_at | TIMESTAMPTZ | 입력의 마지막 완성 봉 |
+| calculation_version | VARCHAR(50) | 기술지표 계산 버전 |
+| prompt_version | VARCHAR(50) | AI 해설 프롬프트 버전 |
+| input_hash | VARCHAR(64) | 정규화된 기술지표 스냅샷 SHA-256 |
+| source | VARCHAR(50) | KIS / DEMO 등 |
+| freshness | VARCHAR(20) | FRESH / STALE / DEMO |
+| summary_signal | VARCHAR(20) | 서버 결정 BUY / NEUTRAL / SELL |
+| summary | TEXT | AI 전체 요약, NOT NULL |
+| trend_explanation | TEXT | 추세 설명 |
+| momentum_explanation | TEXT | 모멘텀 설명 |
+| volatility_explanation | TEXT | 변동성 설명 |
+| volume_explanation | TEXT | 거래량 설명 |
+| supporting_signals | JSONB | text와 evidenceIds 배열 |
+| conflicting_signals | JSONB | text와 evidenceIds 배열 |
+| risk_notes | JSONB | 위험·주의 문장 배열 |
+| data_limitations | JSONB | DEMO·STALE·입력 한계 배열 |
+| evidence | JSONB | 서버 생성 ID·지표·표시값 |
+| model_name | VARCHAR(100) | 실제 공급자 모델 |
+| input_tokens | INTEGER | 0 이상 |
+| output_tokens | INTEGER | 0 이상 |
+| estimated_cost | NUMERIC(16, 8) | 원 생성 예상 비용, USD |
+| cache_key | VARCHAR(255) | NOT NULL |
+| generated_at | TIMESTAMPTZ | NOT NULL |
+
+UNIQUE `(stock_id, interval, latest_recorded_at, calculation_version, input_hash, prompt_version)`, UNIQUE `(cache_key)`. 새 완성 봉, 과거 가격 정정, 계산 버전 또는 프롬프트 변경은 기존 행을 덮어쓰지 않고 새 해설을 만든다.
+
 ### ai_usage_logs
 
 | 컬럼 | 타입 | 제약/설명 |
@@ -192,10 +227,11 @@ UNIQUE `(news_id, feature_type, prompt_version, content_hash)`, UNIQUE `(cache_k
 | id | BIGINT | PK |
 | request_id | VARCHAR(64) | 추적 ID, NOT NULL |
 | user_id | BIGINT | FK users, NULL 가능 |
-| analysis_id | BIGINT | FK ai_analyses, NULL 가능 |
+| analysis_id | BIGINT | FK ai_analyses, 뉴스 분석이면 연결, NULL 가능 |
+| technical_explanation_id | BIGINT | FK ai_technical_explanations, 기술지표 해설이면 연결, NULL 가능 |
 | feature_type | VARCHAR(40) | NOT NULL |
-| target_type | VARCHAR(40) | NEWS 등 |
-| target_id | BIGINT | 뉴스 ID 등 |
+| target_type | VARCHAR(40) | NEWS / STOCK |
+| target_id | BIGINT | 뉴스 ID 또는 종목 ID |
 | model_name | VARCHAR(100) | 캐시 적중 시 원 생성 모델 |
 | input_tokens | INTEGER | 캐시 적중은 0 |
 | output_tokens | INTEGER | 캐시 적중은 0 |
@@ -209,6 +245,8 @@ UNIQUE `(news_id, feature_type, prompt_version, content_hash)`, UNIQUE `(cache_k
 | created_at | TIMESTAMPTZ | NOT NULL |
 
 인덱스 `(created_at DESC)`, `(feature_type, created_at DESC)`, `(estimated_cost DESC)`.
+
+현재 마이그레이션에는 `technical_explanation_id`가 없다. 기술지표 해설 구현 마이그레이션에서 컬럼과 FK를 추가하고, 성공 로그는 `NEWS_SUMMARY`이면 `analysis_id`, `TECHNICAL_EXPLANATION`이면 `technical_explanation_id` 중 해당 대상 하나만 연결하도록 서비스와 통합 테스트에서 검증한다. 실패 로그는 분석 결과가 없으므로 두 FK가 모두 `NULL`일 수 있다.
 
 ### prompt_templates (후속 운영 기능, 미구현)
 

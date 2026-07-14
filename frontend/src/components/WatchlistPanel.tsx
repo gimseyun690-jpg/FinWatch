@@ -136,7 +136,10 @@ export function WatchlistPanel({
       ) : (
         <div className="stock-grid" aria-label="관심종목 목록">
           {items.map((stock) => {
-            const liveQuote = liveQuotes[stock.symbol]
+            const candidateQuote = liveQuotes[stock.symbol]
+            const liveQuote = candidateQuote != null && new Date(candidateQuote.asOf) >= new Date(stock.asOf)
+              ? candidateQuote
+              : undefined
             const streaming = liveQuote?.sessionStatus === 'LIVE'
             const price = liveQuote?.price ?? stock.price
             const changeRate = liveQuote?.changeRate ?? stock.changeRate

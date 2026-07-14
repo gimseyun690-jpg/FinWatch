@@ -105,13 +105,27 @@ DB의 `ai_analyses`는 감사와 캐시 복구를 위한 영속 결과이며 Red
 
 계산식, 초기값, 신호 경계, 데이터 품질과 Lightweight Charts 기반 상세 차트 규칙은 `11_TECHNICAL_ANALYSIS_SPEC.md`를 따른다.
 
+계획된 AI 기술지표 해설은 결정론적 계산 뒤의 선택 기능으로 둔다. Gemini 장애가 차트와 기술지표 조회를 막아서는 안 된다.
+
+```text
+서버 계산 기술지표
+  -> 정규화 스냅샷·근거 I1..In·inputHash
+  -> Redis/DB 조회
+     |- HIT: 기존 해설과 절감 로그 반환
+     `- MISS: Gemini 구조화 설명
+              -> 근거 ID·금지 출력 검증
+              -> ai_technical_explanations + Redis + usage 로그
+```
+
+Gemini는 추세·모멘텀·변동성·거래량과 충돌 신호를 설명할 뿐 지표·종합 신호를 다시 계산하거나 목표주가와 매매 명령을 만들지 않는다.
+
 ## 7. 데이터 공급자 경계
 
 시장 데이터와 뉴스 공급자는 확정했지만 외부 계약 변경과 테스트 대역을 고려해 다음 인터페이스 뒤에 구현을 둔다.
 
 - `MarketDataProvider`: 종목, 현재가, 가격 이력
 - `NewsProvider`: 종목 관련 뉴스와 원문
-- `AiProvider`: 뉴스 요약과 토큰 사용량
+- `AiProvider`: 뉴스 분석과 기술지표 해설의 구조화 결과·토큰 사용량
 
 확정 조합은 KIS(국내 일봉·현재가·체결), Finnhub(미국 현재가·체결·뉴스 발견), NAVER API HUB(국내 뉴스 발견), Open DART·SEC EDGAR·기업 공식 출처(분석 가능한 전문), Gemini(AI 분석)다. 실시간 틱은 KIS/Finnhub 어댑터에서 인메모리 최신 시세 허브로 들어오고 `/ws/quotes`로 브라우저에 fan-out한다. 실제 키 없이도 고정 데모 데이터로 전체 시연 흐름을 유지한다. 수집·정규화·신선도·저작권·장애 처리 규칙은 `06_DATA_PROVIDER_SPEC.md`, AI 호출과 캐시 운영 규칙은 `08_AI_OPERATION_SPEC.md`를 따른다.
 

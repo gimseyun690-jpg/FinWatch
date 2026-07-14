@@ -21,10 +21,10 @@ import com.finwatch.portfolio.dto.PortfolioResponse.CurrencySummary;
 import com.finwatch.portfolio.dto.PortfolioResponse.Holding;
 import com.finwatch.portfolio.dto.PortfolioUpdateRequest;
 import com.finwatch.portfolio.repository.PortfolioHoldingRepository;
-import com.finwatch.stock.domain.MarketPrice;
 import com.finwatch.stock.domain.Stock;
-import com.finwatch.stock.repository.MarketPriceRepository;
 import com.finwatch.stock.repository.StockRepository;
+import com.finwatch.stock.service.LatestPriceResolver;
+import com.finwatch.stock.service.LatestPriceResolver.LatestPrice;
 import com.finwatch.user.domain.AppUser;
 import com.finwatch.user.repository.AppUserRepository;
 
@@ -34,17 +34,17 @@ public class PortfolioService {
     private final PortfolioHoldingRepository holdingRepository;
     private final AppUserRepository userRepository;
     private final StockRepository stockRepository;
-    private final MarketPriceRepository marketPriceRepository;
+    private final LatestPriceResolver latestPriceResolver;
 
     public PortfolioService(
             PortfolioHoldingRepository holdingRepository,
             AppUserRepository userRepository,
             StockRepository stockRepository,
-            MarketPriceRepository marketPriceRepository) {
+            LatestPriceResolver latestPriceResolver) {
         this.holdingRepository = holdingRepository;
         this.userRepository = userRepository;
         this.stockRepository = stockRepository;
-        this.marketPriceRepository = marketPriceRepository;
+        this.latestPriceResolver = latestPriceResolver;
     }
 
     @Transactional(readOnly = true)
@@ -95,7 +95,7 @@ public class PortfolioService {
     private Holding toHolding(PortfolioHolding holding) {
         Stock stock = holding.getStock();
         BigDecimal purchaseAmount = money(holding.getQuantity().multiply(holding.getAveragePurchasePrice()));
-        MarketPrice latest = marketPriceRepository.findTopByStockIdOrderByRecordedAtDesc(stock.getId()).orElse(null);
+        LatestPrice latest = latestPriceResolver.resolve(stock).orElse(null);
         if (latest == null) {
             return new Holding(
                     holding.getId(), stock.getSymbol(), stock.getName(), stock.getMarket(), holding.getCurrency(),
@@ -103,7 +103,7 @@ public class PortfolioService {
                     null, null, null, "PRICE_UNAVAILABLE", holding.getUpdatedAt());
         }
 
-        BigDecimal evaluationAmount = money(holding.getQuantity().multiply(latest.getClosePrice()));
+        BigDecimal evaluationAmount = money(holding.getQuantity().multiply(latest.price()));
         BigDecimal profitLoss = money(evaluationAmount.subtract(purchaseAmount));
         BigDecimal returnRate = purchaseAmount.signum() == 0
                 ? null
@@ -111,8 +111,8 @@ public class PortfolioService {
                         .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
         return new Holding(
                 holding.getId(), stock.getSymbol(), stock.getName(), stock.getMarket(), holding.getCurrency(),
-                holding.getQuantity(), holding.getAveragePurchasePrice(), latest.getClosePrice(),
-                latest.getRecordedAt(), latest.getSource(), purchaseAmount, evaluationAmount, profitLoss,
+                holding.getQuantity(), holding.getAveragePurchasePrice(), latest.price(),
+                latest.asOf(), latest.source(), purchaseAmount, evaluationAmount, profitLoss,
                 returnRate, "VALUED", holding.getUpdatedAt());
     }
 

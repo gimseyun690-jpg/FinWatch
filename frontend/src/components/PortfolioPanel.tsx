@@ -2,9 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { createHolding, deleteHolding, getPortfolio } from '../api/portfolio'
 import { getStocks } from '../api/stocks'
 import type { Portfolio } from '../types/portfolio'
+import type { PortfolioHolding } from '../types/portfolio'
+import type { LiveQuote } from '../types/realtime'
 import type { StockSummary } from '../types/stock'
 
-export function PortfolioPanel() {
+type Props = {
+  liveQuotes: Record<string, LiveQuote>
+}
+
+export function PortfolioPanel({ liveQuotes }: Props) {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [stocks, setStocks] = useState<StockSummary[]>([])
   const [symbol, setSymbol] = useState('')
@@ -19,6 +25,10 @@ export function PortfolioPanel() {
     return stocks.filter((stock) => !held.has(stock.symbol))
   }, [portfolio, stocks])
   const selectedStock = stocks.find((stock) => stock.symbol === symbol) ?? null
+  const evaluatedPortfolio = useMemo(
+    () => applyLiveQuotes(portfolio, liveQuotes),
+    [liveQuotes, portfolio],
+  )
 
   useEffect(() => {
     const controller = new AbortController()
@@ -101,7 +111,7 @@ export function PortfolioPanel() {
       {error && <p className="portfolio-error" role="alert">{error}</p>}
 
       <div className="currency-summary-grid">
-        {portfolio?.currencySummaries.map((summary) => (
+        {evaluatedPortfolio?.currencySummaries.map((summary) => (
           <section className="currency-summary" key={summary.currency}>
             <span>{summary.currency} 평가액</span>
             <strong>{summary.totalEvaluationAmount == null ? '가격 없음' : formatMoney(summary.totalEvaluationAmount, summary.currency)}</strong>
@@ -110,21 +120,64 @@ export function PortfolioPanel() {
             </small>
           </section>
         ))}
-        {portfolio && portfolio.currencySummaries.length === 0 && <p className="portfolio-empty">보유 종목을 등록하면 최신 가격 기준 평가가 표시됩니다.</p>}
+        {evaluatedPortfolio && evaluatedPortfolio.currencySummaries.length === 0 && <p className="portfolio-empty">보유 종목을 등록하면 최신 가격 기준 평가가 표시됩니다.</p>}
       </div>
 
       <div className="holding-list">
-        {portfolio?.holdings.map((holding) => (
-          <div className="holding-row" key={holding.id}>
+        {evaluatedPortfolio?.holdings.map((holding) => {
+          const quote = liveQuotes[holding.symbol]
+          const streaming = quote?.sessionStatus === 'LIVE' && holding.priceAsOf === quote.asOf
+          return (
+          <div className={`holding-row ${streaming ? 'live' : ''}`} key={holding.id}>
             <div><strong>{holding.name}</strong><span>{holding.quantity}주 · 평균 {formatMoney(holding.averagePurchasePrice, holding.currency)}</span></div>
-            <div><strong>{holding.evaluationAmount == null ? '—' : formatMoney(holding.evaluationAmount, holding.currency)}</strong><span className={(holding.profitLoss ?? 0) >= 0 ? 'profit' : 'down'}>{signedRate(holding.returnRate)}</span></div>
+            <div>
+              <strong>{holding.evaluationAmount == null ? '—' : formatMoney(holding.evaluationAmount, holding.currency)}</strong>
+              <span className={(holding.profitLoss ?? 0) >= 0 ? 'profit' : 'down'}>{signedRate(holding.returnRate)}</span>
+              {streaming && <small className="portfolio-live-label">LIVE · {holding.priceSource}</small>}
+            </div>
             <button type="button" onClick={() => removeHolding(holding.id)} aria-label={`${holding.name} 보유 삭제`}>삭제</button>
           </div>
-        ))}
+          )
+        })}
       </div>
-      <p className="portfolio-note">KRW와 USD는 환율 없이 합산하지 않으며 각 시장의 최신 저장 가격으로 평가합니다.</p>
+      <p className="portfolio-note">KRW와 USD는 환율 없이 합산하지 않으며 실시간 시세를 우선하고, 없으면 최신 저장 가격으로 평가합니다.</p>
     </article>
   )
+}
+
+function applyLiveQuotes(portfolio: Portfolio | null, liveQuotes: Record<string, LiveQuote>): Portfolio | null {
+  if (portfolio == null) return null
+  const holdings = portfolio.holdings.map((holding) => applyLiveQuote(holding, liveQuotes[holding.symbol]))
+  const currencies = [...new Set(holdings.map((holding) => holding.currency))]
+  const currencySummaries = currencies.map((currency) => {
+    const items = holdings.filter((holding) => holding.currency === currency)
+    const totalPurchaseAmount = items.reduce((sum, holding) => sum + holding.purchaseAmount, 0)
+    const valuationComplete = items.every((holding) => holding.evaluationAmount != null)
+    if (!valuationComplete) {
+      return { currency, totalPurchaseAmount, totalEvaluationAmount: null, profitLoss: null, returnRate: null, valuationComplete }
+    }
+    const totalEvaluationAmount = items.reduce((sum, holding) => sum + (holding.evaluationAmount ?? 0), 0)
+    const profitLoss = totalEvaluationAmount - totalPurchaseAmount
+    const returnRate = totalPurchaseAmount === 0 ? null : profitLoss / totalPurchaseAmount * 100
+    return { currency, totalPurchaseAmount, totalEvaluationAmount, profitLoss, returnRate, valuationComplete }
+  })
+  return { holdings, currencySummaries }
+}
+
+function applyLiveQuote(holding: PortfolioHolding, quote?: LiveQuote): PortfolioHolding {
+  if (quote == null || (holding.priceAsOf != null && new Date(quote.asOf) < new Date(holding.priceAsOf))) return holding
+  const evaluationAmount = holding.quantity * quote.price
+  const profitLoss = evaluationAmount - holding.purchaseAmount
+  return {
+    ...holding,
+    latestPrice: quote.price,
+    priceAsOf: quote.asOf,
+    priceSource: quote.source,
+    evaluationAmount,
+    profitLoss,
+    returnRate: holding.purchaseAmount === 0 ? null : profitLoss / holding.purchaseAmount * 100,
+    valuationStatus: 'VALUED',
+  }
 }
 
 function formatMoney(value: number, currency: string) {

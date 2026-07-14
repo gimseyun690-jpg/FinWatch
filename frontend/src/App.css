@@ -429,11 +429,13 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .portfolio-empty { grid-column: 1 / -1; color: var(--text-muted); font-size: 12px; }
 .holding-list { display: grid; gap: 7px; margin-top: 14px; }
 .holding-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; border-bottom: 1px solid var(--border); padding: 10px 2px; }
+.holding-row.live { border-bottom-color: color-mix(in srgb, var(--green) 22%, var(--border)); }
 .holding-row > div { display: grid; gap: 4px; }
 .holding-row > div:nth-child(2) { text-align: right; }
 .holding-row span { color: var(--text-muted); font-size: 9px; }
 .holding-row button { border: 0; padding: 6px; color: var(--text-muted); background: transparent; font-size: 9px; }
 .holding-row button:hover { color: var(--red); filter: none; }
+.portfolio-live-label, .alert-live-label { color: var(--green) !important; font-size: 8px !important; font-weight: 800; letter-spacing: .05em; }
 .portfolio-note { margin: 14px 0 0; color: var(--text-muted); font-size: 9px; line-height: 1.6; }
 .alerts-card { padding: 20px; }
 .alert-add-button { border: 1px solid var(--border); padding: 7px 9px; color: var(--cyan); background: transparent; font-size: 9px; }
@@ -443,6 +445,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .alert-error { color: var(--red); font-size: 10px; }
 .alert-list { display: grid; gap: 5px; margin-top: 14px; }
 .alert-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 7px; border-bottom: 1px solid var(--border); padding: 9px 0; }
+.alert-row.live { border-bottom-color: color-mix(in srgb, var(--green) 22%, var(--border)); }
 .alert-row > div:nth-child(2) { display: grid; gap: 4px; }
 .alert-row strong { font-size: 10px; }
 .alert-row span { color: var(--text-muted); font-size: 9px; }

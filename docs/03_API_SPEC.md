@@ -278,7 +278,7 @@ ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급
 }
 ```
 
-포트폴리오 응답은 `totalPurchaseAmount`, `totalEvaluationAmount`, `profitLoss`, `returnRate`, `holdings`를 포함한다.
+포트폴리오 응답은 `totalPurchaseAmount`, `totalEvaluationAmount`, `profitLoss`, `returnRate`, `holdings`를 포함한다. 평가 가격은 인메모리 실시간 시세와 DB 최신 가격의 `asOf`를 비교해 더 새로운 값을 사용하며, 응답의 `priceSource`와 `priceAsOf`로 근거를 제공한다.
 
 ## 6. 가격 알림
 
@@ -296,7 +296,7 @@ ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급
 }
 ```
 
-알림 상태는 `ACTIVE`, `TRIGGERED`, `DISABLED` 중 하나다.
+알림 상태는 `ACTIVE`, `TRIGGERED`, `DISABLED` 중 하나다. KIS/Finnhub 틱 수신기는 종목별 최신 틱을 250ms 단위로 병합하고 조건을 충족한 ACTIVE 알림만 조회해 `TRIGGERED`로 전환한다. 목록 조회·생성·수정 때도 같은 최신 가격 선택 정책으로 즉시 평가한다.
 
 ## 7. 뉴스
 
@@ -377,6 +377,97 @@ ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급
 }
 ```
 
+## 8.1 AI 기술지표 해설 — 계획, 미구현
+
+### `POST /ai/technical-explanations`
+
+클라이언트는 지표 값을 요청 본문으로 보내지 않는다. 서버가 `symbol`과 `interval`로 최신 완성 봉과 기술지표를 조회하고, `11_TECHNICAL_ANALYSIS_SPEC.md`의 계산 결과를 정규화해 Gemini 입력을 만든다.
+
+```json
+{
+  "symbol": "000660",
+  "interval": "1D",
+  "promptVersion": "technical-explanation-v1"
+}
+```
+
+`interval`은 MVP에서 `1D`만 허용한다. 응답 예시는 다음과 같다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "analysisId": 801,
+    "symbol": "000660",
+    "interval": "1D",
+    "latestRecordedAt": "2026-07-14T06:00:00Z",
+    "source": "KIS",
+    "freshness": "FRESH",
+    "calculationVersion": "technical-v2-wilder",
+    "promptVersion": "technical-explanation-v1",
+    "inputHash": "64-character-sha256",
+    "summarySignal": "BUY",
+    "summary": "단기 이동평균과 MACD는 상승 흐름을 나타내지만 RSI가 과매수 구간에 가까워 단기 변동성을 함께 확인해야 합니다.",
+    "trendExplanation": "MA5가 MA20과 MA60 위에 있어 단기 추세가 상대적으로 강합니다.",
+    "momentumExplanation": "MACD 히스토그램은 양수지만 RSI는 70에 근접했습니다.",
+    "volatilityExplanation": "ATR은 현재가의 1.57%이며 볼린저 밴드 폭과 함께 변동성 참고값으로 사용됩니다.",
+    "volumeExplanation": "현재 거래량은 20일 평균의 1.50배입니다.",
+    "supportingSignals": [
+      { "text": "단기 이동평균이 중기 이동평균보다 높습니다.", "evidenceIds": ["I1"] },
+      { "text": "MACD 모멘텀이 양수입니다.", "evidenceIds": ["I3"] }
+    ],
+    "conflictingSignals": [
+      { "text": "상승 모멘텀과 달리 RSI는 과매수 기준에 가깝습니다.", "evidenceIds": ["I2", "I3"] }
+    ],
+    "riskNotes": ["기술지표는 과거 가격을 변환한 값이며 미래 가격을 예측하지 않습니다."],
+    "dataLimitations": [],
+    "evidence": [
+      { "id": "I1", "indicator": "MOVING_AVERAGE", "displayValue": "MA5 270100 > MA20 268900 > MA60 261200" },
+      { "id": "I2", "indicator": "RSI", "displayValue": "Wilder RSI14 68.40" },
+      { "id": "I3", "indicator": "MACD", "displayValue": "Histogram 4110.40" }
+    ],
+    "modelName": "configured-model",
+    "cacheHit": false,
+    "inputTokens": 620,
+    "outputTokens": 220,
+    "estimatedCost": 0.000485,
+    "costCurrency": "USD",
+    "responseTimeMs": 780,
+    "generatedAt": "2026-07-14T06:01:00Z",
+    "disclaimer": "AI 해설과 기술적 신호는 투자 권유가 아닌 참고 정보입니다."
+  },
+  "message": "AI 기술지표 해설 완료",
+  "timestamp": "2026-07-14T06:01:00Z"
+}
+```
+
+서버는 다음 근거 묶음에 `I1..In`을 순서대로 부여한다.
+
+- 현재가와 MA5·MA20·MA60의 값·관계
+- Wilder RSI14와 30·70 기준
+- MACD·Signal·Histogram
+- 볼린저 밴드 20·2와 밴드 폭
+- ATR14와 현재가 대비 비율
+- 현재 거래량·Volume MA20·평균 대비 배수
+- 최근 MA·MACD·RSI 교차 이벤트
+- 출처·기준 시각·신선도·DEMO 여부
+
+Gemini가 반환한 모든 `evidenceIds`는 실제 입력 ID의 부분집합이어야 한다. 존재하지 않는 ID, 입력에 없는 수치, 목표주가·수익률 예측·직접 매수/매도 명령이 포함된 결과는 저장하지 않고 `502 AI_RESPONSE_INVALID`로 처리한다.
+
+동일 `market + symbol + interval + latestRecordedAt + calculationVersion + inputHash + promptVersion`은 같은 분석으로 간주한다. HIT 응답은 뉴스 분석과 동일하게 토큰·실제 비용 0, 원 모델·생성 시각 유지 규칙을 적용한다.
+
+추가 오류:
+
+| HTTP | 코드 | 조건 |
+|---|---|---|
+| 400 | TECHNICAL_INTERVAL_UNSUPPORTED | `1D` 이외 간격 요청 |
+| 404 | STOCK_NOT_FOUND | 종목 없음 또는 비활성 종목 |
+| 422 | TECHNICAL_DATA_INSUFFICIENT | 유효한 완성 봉 또는 필수 지표 부족 |
+| 422 | TECHNICAL_SNAPSHOT_INVALID | 지표 스냅샷 품질·버전·신선도 판정 불가 |
+| 502 | AI_RESPONSE_INVALID | 근거 ID·스키마·금지 출력 검증 실패 |
+
+## 8.2 뉴스 원문 관리
+
 ### `POST /admin/news/{newsId}/content/refresh`
 
 ADMIN 전용이다. 기사 출처 정책을 다시 확인하고 SEC EDGAR 허용 HTML 또는 Open DART 원문 API에서 본문을 가져와 저장한다. 동일 `contentHash`이면 기존 분석을 유지하고 `contentChanged=false`를 반환한다. hash가 바뀌면 이전 빠른 캐시를 삭제하고 새 hash의 분석 버전을 사용한다.
@@ -428,7 +519,8 @@ ADMIN 전용이다. 기사 출처 정책을 다시 확인하고 SEC EDGAR 허용
     "averageResponseTimeMs": 214.8,
     "costCurrency": "USD",
     "featureUsage": [
-      { "feature": "NEWS_SUMMARY", "requestCount": 1284 }
+      { "feature": "NEWS_SUMMARY", "requestCount": 1284 },
+      { "feature": "TECHNICAL_EXPLANATION", "requestCount": 426 }
     ]
   },
   "message": "AI 운영 지표 조회 성공",

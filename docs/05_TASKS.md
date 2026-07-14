@@ -79,6 +79,20 @@
 - [x] 본문 변경 시 캐시 무효화와 구간별 토큰·비용 합산
 - [x] 프롬프트 인젝션·금지 도메인·429·삭제 요청 테스트
 
+## Step 2.2 AI 기술지표 해설 Vertical Slice
+
+목표: 서버가 계산한 기술지표 스냅샷을 Gemini가 근거 ID와 충돌 신호 중심으로 설명하고, 같은 완성 일봉 요청은 Redis·DB 결과로 재사용한다.
+
+- [ ] `TECHNICAL_EXPLANATION` 공급자 계약과 `technical-explanation-v1` 구조화 스키마
+- [ ] 서버 계산 스냅샷 정규화, `I1..In` 근거 생성과 SHA-256 `inputHash`
+- [ ] `POST /api/v1/ai/technical-explanations` API와 입력값 서버 재조회
+- [ ] 목표주가·수익률 예측·직접 매수/매도 명령·존재하지 않는 근거 ID 검증
+- [ ] `ai_technical_explanations` 마이그레이션과 사용량 로그 연결
+- [ ] 일봉·계산 버전·입력 hash·프롬프트 버전 기반 Redis/DB 캐시와 single-flight
+- [ ] 종목 상세 `AI 기술 분석 해설` 카드, 근거값·충돌 신호·한계·면책 표시
+- [ ] 관리자 화면에서 `NEWS_SUMMARY`와 `TECHNICAL_EXPLANATION` 호출·비용·절감액 분리
+- [ ] Mock·Gemini 계약, MISS/HIT, 새 일봉·과거 정정 무효화와 금지 출력 테스트
+
 ## Step 3. 관리자 비용 대시보드
 
 목표: AI 요청 전후의 비용과 캐시 절감 효과가 숫자로 보인다.
@@ -95,6 +109,8 @@
 - [x] 관심종목 CRUD
 - [x] 포트폴리오 CRUD와 통화별 최신 가격 평가 계산
 - [x] 가격 알림 CRUD와 조건 충족 상태
+- [x] WebSocket 시세 기반 포트폴리오 즉시 재평가
+- [x] 틱 수신 기반 가격 알림 자동 TRIGGERED 전환
 - [x] 메인 대시보드 실제 API 연결
 
 ## Step 5. 배포와 마감

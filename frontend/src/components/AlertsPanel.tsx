@@ -2,9 +2,14 @@ import { useEffect, useState } from 'react'
 import { createAlert, deleteAlert, getAlerts, setAlertStatus } from '../api/alerts'
 import { getStocks } from '../api/stocks'
 import type { PriceAlert } from '../types/alert'
+import type { LiveQuote } from '../types/realtime'
 import type { StockSummary } from '../types/stock'
 
-export function AlertsPanel() {
+type Props = {
+  liveQuotes: Record<string, LiveQuote>
+}
+
+export function AlertsPanel({ liveQuotes }: Props) {
   const [alerts, setAlerts] = useState<PriceAlert[]>([])
   const [stocks, setStocks] = useState<StockSummary[]>([])
   const [editorOpen, setEditorOpen] = useState(false)
@@ -45,10 +50,10 @@ export function AlertsPanel() {
     }
   }
 
-  async function toggle(alert: PriceAlert) {
+  async function toggle(alert: PriceAlert, displayedStatus: PriceAlert['status'] = alert.status) {
     setError('')
     try {
-      await setAlertStatus(alert.id, alert.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE')
+      await setAlertStatus(alert.id, displayedStatus === 'ACTIVE' ? 'DISABLED' : 'ACTIVE')
       await refresh()
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : '알림 상태를 바꾸지 못했습니다.')
@@ -80,26 +85,40 @@ export function AlertsPanel() {
       )}
       {error && <p className="alert-error" role="alert">{error}</p>}
       <div className="alert-list">
-        {alerts.map((alert) => (
-          <div className="alert-row" key={alert.id}>
-            <div className={`alert-state ${alert.status.toLowerCase()}`} aria-hidden="true" />
+        {alerts.map((alert) => {
+          const candidateQuote = liveQuotes[alert.symbol]
+          const quote = candidateQuote != null && (
+            alert.priceAsOf == null || new Date(candidateQuote.asOf) >= new Date(alert.priceAsOf)
+          ) ? candidateQuote : undefined
+          const latestPrice = quote?.price ?? alert.latestPrice
+          const conditionMet = alert.status === 'TRIGGERED' || (
+            alert.status === 'ACTIVE'
+            && latestPrice != null
+            && (alert.condition === 'ABOVE' ? latestPrice >= alert.targetPrice : latestPrice <= alert.targetPrice)
+          )
+          const effectiveStatus = conditionMet ? 'TRIGGERED' : alert.status
+          return (
+          <div className={`alert-row ${quote?.sessionStatus === 'LIVE' ? 'live' : ''}`} key={alert.id}>
+            <div className={`alert-state ${effectiveStatus.toLowerCase()}`} aria-hidden="true" />
             <div>
               <strong>{alert.name} {alert.condition === 'ABOVE' ? '≥' : '≤'} {formatMoney(alert.targetPrice, alert.currency)}</strong>
-              <span>현재 {alert.latestPrice == null ? '가격 없음' : formatMoney(alert.latestPrice, alert.currency)} · {statusLabel(alert)}</span>
+              <span>현재 {latestPrice == null ? '가격 없음' : formatMoney(latestPrice, alert.currency)} · {statusLabel(effectiveStatus)}</span>
+              {quote?.sessionStatus === 'LIVE' && <small className="alert-live-label">LIVE · {quote.source}</small>}
             </div>
-            <button type="button" onClick={() => toggle(alert)}>{alert.status === 'ACTIVE' ? '끄기' : '다시 켜기'}</button>
+            <button type="button" onClick={() => toggle(alert, effectiveStatus)}>{effectiveStatus === 'ACTIVE' ? '끄기' : '다시 켜기'}</button>
             <button type="button" onClick={() => remove(alert.id)} aria-label={`${alert.name} 알림 삭제`}>삭제</button>
           </div>
-        ))}
+          )
+        })}
       </div>
       <p className="alert-note">조건 충족 상태만 표시하며 모바일 푸시·이메일 전송은 MVP 범위에서 제외합니다.</p>
     </article>
   )
 }
 
-function statusLabel(alert: PriceAlert) {
-  if (alert.status === 'TRIGGERED') return '조건 충족'
-  if (alert.status === 'DISABLED') return '꺼짐'
+function statusLabel(status: PriceAlert['status']) {
+  if (status === 'TRIGGERED') return '조건 충족'
+  if (status === 'DISABLED') return '꺼짐'
   return '대기 중'
 }
 

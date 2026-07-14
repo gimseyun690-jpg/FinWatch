@@ -104,9 +104,24 @@ async function mockApi(page: Page) {
     } else if (path === '/api/v1/admin/data/sync') {
       body = response({ mode: 'DEMO', startedAt: now, finishedAt: now, pricesImported: 0, newsImported: 0, stocks: [] })
     } else if (path === '/api/v1/portfolios') {
-      body = response({ currencySummaries: [], holdings: [] })
+      body = response({
+        currencySummaries: [{
+          currency: 'KRW', totalPurchaseAmount: 2500000, totalEvaluationAmount: 2723000,
+          profitLoss: 223000, returnRate: 8.92, valuationComplete: true,
+        }],
+        holdings: [{
+          id: 1, symbol: '000660', name: 'SK하이닉스', market: 'KRX', currency: 'KRW',
+          quantity: 1, averagePurchasePrice: 2500000, latestPrice: 2723000, priceAsOf: now,
+          priceSource: 'DEMO', purchaseAmount: 2500000, evaluationAmount: 2723000,
+          profitLoss: 223000, returnRate: 8.92, valuationStatus: 'VALUED', updatedAt: now,
+        }],
+      })
     } else if (path === '/api/v1/alerts') {
-      body = response([])
+      body = response([{
+        id: 1, symbol: '000660', name: 'SK하이닉스', market: 'KRX', condition: 'ABOVE',
+        targetPrice: 2740000, currency: 'KRW', status: 'ACTIVE', latestPrice: 2723000,
+        priceAsOf: now, evaluationStatus: 'WAITING', triggeredAt: null, createdAt: now,
+      }])
     } else {
       body = response(null)
     }
@@ -133,6 +148,10 @@ test('desktop chart tools, indicator settings and drawings remain usable', async
   await expect(page.locator('.live-quote-label')).toContainText('KIS_WS · 실시간')
   await expect(page.locator('.live-tick-badge')).toHaveText('TICK')
   await expect(page.locator('.price-chart-card .quote-row')).toContainText('₩2,750,000')
+  await expect(page.locator('.portfolio-card')).toContainText('₩2,750,000')
+  await expect(page.locator('.portfolio-card')).toContainText('LIVE · KIS_WS')
+  await expect(page.locator('.alerts-card')).toContainText('현재 ₩2,750,000 · 조건 충족')
+  await expect(page.locator('.alerts-card')).toContainText('LIVE · KIS_WS')
 
   const bollinger = page.getByRole('button', { name: '볼린저(20,2)' })
   await bollinger.click()
