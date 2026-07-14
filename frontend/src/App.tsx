@@ -27,7 +27,12 @@ function App() {
   const [session, setSession] = useState<AuthSession | null>(() => readSession())
   const [watchlistEditorOpen, setWatchlistEditorOpen] = useState(false)
   const [watchlistCount, setWatchlistCount] = useState<number | null>(null)
-  const { quotes: liveQuotes, connection: realtimeConnection, connectedProviders } = useRealtimeQuotes(session != null)
+  const {
+    quotes: liveQuotes,
+    intradayCandles,
+    connection: realtimeConnection,
+    connectedProviders,
+  } = useRealtimeQuotes(session != null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -132,7 +137,13 @@ function App() {
           liveQuotes={liveQuotes}
         />
 
-        {watchlistCount !== 0 && <StockDetail symbol={selectedSymbol} liveQuote={liveQuotes[selectedSymbol]} />}
+        {watchlistCount !== 0 && (
+          <StockDetail
+            symbol={selectedSymbol}
+            liveQuote={liveQuotes[selectedSymbol]}
+            liveCandles={intradayCandles[selectedSymbol]}
+          />
+        )}
 
         <AiNewsSummary symbol="000660" onUsageRecorded={() => setAdminRefreshKey((key) => key + 1)} />
 

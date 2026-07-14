@@ -17,18 +17,25 @@ public class RealtimeQuoteWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
     private final RealtimeQuoteHub hub;
+    private final RealtimeCandleAggregator candleAggregator;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
-    public RealtimeQuoteWebSocketHandler(ObjectMapper objectMapper, RealtimeQuoteHub hub) {
+    public RealtimeQuoteWebSocketHandler(
+            ObjectMapper objectMapper,
+            RealtimeQuoteHub hub,
+            RealtimeCandleAggregator candleAggregator) {
         this.objectMapper = objectMapper;
         this.hub = hub;
+        this.candleAggregator = candleAggregator;
         this.hub.addListener(this::broadcast);
+        this.candleAggregator.addListener(candle -> broadcast(new RealtimeEvent("candle", candle)));
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         sessions.put(session.getId(), session);
         send(session, new RealtimeEvent("snapshot", hub.snapshot()));
+        send(session, new RealtimeEvent("candles", candleAggregator.snapshot()));
     }
 
     @Override

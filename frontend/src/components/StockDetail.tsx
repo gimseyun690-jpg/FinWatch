@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
-import { getStock, getStockPrices, getTechnicalAnalysis } from '../api/stocks'
+import { getStock, getStockIntraday, getStockPrices, getTechnicalAnalysis } from '../api/stocks'
 import { demoPriceHistory, demoStock, demoTechnical } from '../mocks/stockDetail'
 import type {
   PriceHistory,
+  PriceInterval,
   PricePeriod,
   Signal,
   StockSummary,
   TechnicalAnalysis,
 } from '../types/stock'
-import type { LiveQuote } from '../types/realtime'
+import type { IntradayCandle, LiveQuote } from '../types/realtime'
 import { InteractiveStockChart } from './InteractiveStockChart'
 
 type DetailState = {
@@ -20,6 +21,7 @@ type DetailState = {
 type Props = {
   symbol: string
   liveQuote?: LiveQuote
+  liveCandles?: IntradayCandle[]
 }
 
 const signalLabels: Record<Signal, string> = {
@@ -84,13 +86,36 @@ function mergeLiveCandle(prices: PriceHistory | null, liveQuote?: LiveQuote): Pr
   return { ...prices, items }
 }
 
-export function StockDetail({ symbol, liveQuote }: Props) {
+function mergeIntradayCandles(prices: PriceHistory | null, liveCandles: IntradayCandle[] = []): PriceHistory | null {
+  if (prices == null) return null
+  const byTime = new Map(prices.items.map((item) => [item.time, item]))
+  liveCandles.forEach((candle) => byTime.set(candle.time, {
+    time: candle.time,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    volume: candle.volume,
+  }))
+  return {
+    ...prices,
+    interval: '1m',
+    period: 'SESSION',
+    items: [...byTime.values()]
+      .sort((left, right) => left.time.localeCompare(right.time))
+      .slice(-390),
+  }
+}
+
+export function StockDetail({ symbol, liveQuote, liveCandles }: Props) {
   const [detail, setDetail] = useState<DetailState | null>(null)
   const [prices, setPrices] = useState<PriceHistory | null>(null)
   const [period, setPeriod] = useState<PricePeriod>('3M')
+  const [interval, setInterval] = useState<PriceInterval>('1D')
   const [detailLoading, setDetailLoading] = useState(true)
   const [pricesLoading, setPricesLoading] = useState(true)
   const [priceSource, setPriceSource] = useState<'API' | 'DEMO'>('API')
+  const [pricesError, setPricesError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -121,8 +146,12 @@ export function StockDetail({ symbol, liveQuote }: Props) {
     const controller = new AbortController()
     setPrices(null)
     setPricesLoading(true)
+    setPricesError(null)
 
-    getStockPrices(symbol, period, controller.signal)
+    const request = interval === '1m'
+      ? getStockIntraday(symbol, controller.signal)
+      : getStockPrices(symbol, period, controller.signal)
+    request
       .then((response) => {
         if (!controller.signal.aborted) {
           setPrices(response)
@@ -132,8 +161,14 @@ export function StockDetail({ symbol, liveQuote }: Props) {
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
         if (!controller.signal.aborted) {
-          setPrices(demoPricesFor(period))
-          setPriceSource('DEMO')
+          if (interval === '1m') {
+            setPrices({ symbol, interval: '1m', period: 'SESSION', items: [] })
+            setPriceSource('API')
+            setPricesError('실시간 1분 봉을 불러오지 못했습니다.')
+          } else {
+            setPrices(demoPricesFor(period))
+            setPriceSource('DEMO')
+          }
         }
       })
       .finally(() => {
@@ -141,7 +176,7 @@ export function StockDetail({ symbol, liveQuote }: Props) {
       })
 
     return () => controller.abort()
-  }, [period, symbol])
+  }, [interval, period, symbol])
 
   if (detailLoading || !detail) {
     return <section className="card detail-loading" aria-live="polite">종목 상세 정보를 불러오는 중입니다.</section>
@@ -160,7 +195,10 @@ export function StockDetail({ symbol, liveQuote }: Props) {
     asOf: effectiveLiveQuote.asOf,
     source: effectiveLiveQuote.source,
   }
-  const chartPrices = mergeLiveCandle(prices, effectiveLiveQuote)
+  const chartPrices = interval === '1m'
+    ? mergeIntradayCandles(prices, liveCandles)
+    : mergeLiveCandle(prices, effectiveLiveQuote)
+  const hasIntradayCandles = (chartPrices?.items.length ?? 0) > 0
   const changeClass = stock.changeRate >= 0 ? 'up' : 'down'
   const streaming = effectiveLiveQuote?.sessionStatus === 'LIVE'
 
@@ -196,11 +234,13 @@ export function StockDetail({ symbol, liveQuote }: Props) {
             currency={stock.currency}
             items={chartPrices?.items ?? []}
             period={period}
+            interval={interval}
             loading={pricesLoading}
-            error={null}
-            source={priceSource}
-            events={technical.events}
+            error={interval === '1m' && hasIntradayCandles ? null : pricesError}
+            source={interval === '1m' && hasIntradayCandles ? 'LIVE' : priceSource}
+            events={interval === '1D' ? technical.events : undefined}
             onPeriodChange={setPeriod}
+            onIntervalChange={setInterval}
           />
         </article>
 

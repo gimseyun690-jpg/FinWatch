@@ -2,7 +2,7 @@
 
 상태: v0.2
 기준일: 2026-07-14
-범위: NEWS_SUMMARY와 계획된 TECHNICAL_EXPLANATION의 입력, 프롬프트, AI 공급자, 결과 검증, 캐시, 사용량·비용, 오류·안전
+범위: NEWS_SUMMARY와 계획된 TECHNICAL_EXPLANATION·DAILY_CHANGE_BRIEFING의 입력, 프롬프트, AI 공급자, 결과 검증, 캐시, 사용량·비용, 오류·안전
 
 ## 1. 목적과 현재 상태
 
@@ -23,6 +23,7 @@
 | 토큰·예상 비용·절감 비용 | 구현 | 환경변수 단가, USD, 소수 8자리 |
 | 사용자 호출 제한·일일 비용 한도 | 미구현 | 인증 외 별도 제한 없음 |
 | AI 기술지표 해설 | 계획 | 서버 계산 스냅샷·근거 ID 기반 설명, 구현 전 계약은 13절 |
+| AI 일일 변화 브리핑 | 계획 | 직전 거래일 대비 변화와 기술·뉴스·공시 관점 매트릭스, 구현 전 계약은 14절 |
 
 “현재 동작”은 코드 기준 사실이며, “필수 보강”은 운영 배포 전에 구현해야 할 계약이다.
 
@@ -543,142 +544,8 @@ estimatedCost = inputCost + outputCost
 
 ## 13. TECHNICAL_EXPLANATION 확장 계약
 
-### 13.1 목적과 책임 경계
+`TECHNICAL_EXPLANATION`은 계획 상태다. 서버가 계산한 기술지표만 Gemini가 설명하며 지표 재계산, 목표주가·수익률 예측과 직접 매매 명령을 금지한다. 공통 Gemini 연결·비용·로그 정책은 이 문서를 재사용하고, 입력 evidence·API·DB·캐시·UI·인수 조건의 단일 상세 기준은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`다.
 
-`TECHNICAL_EXPLANATION`은 서버가 결정론적으로 계산한 기술지표를 사용자가 이해하기 쉬운 문장으로 설명하는 기능이다. Gemini는 원시 OHLCV를 새로 계산하거나 서버의 `summarySignal`을 변경하지 않는다.
+## 14. DAILY_CHANGE_BRIEFING 확장 계약
 
-```text
-symbol·interval 요청
-→ 서버가 최신 완성 봉과 지표 재조회
-→ 정규화된 스냅샷·근거 I1..In 생성
-→ inputHash·cacheKey 계산
-→ Redis와 DB 조회
-→ MISS일 때만 Gemini 구조화 호출
-→ 근거·금지 출력 검증
-→ DB·Redis·사용량 로그 저장
-```
-
-뉴스·공시와 기술지표를 한 문장에 섞는 종합 투자 의견은 이 기능의 범위가 아니다. 향후 통합 브리핑을 추가하더라도 뉴스 사실, 기술지표 해설과 한계를 구획해 표시하며 별도 featureType·promptVersion·캐시 키를 사용한다.
-
-### 13.2 서버 입력 스냅샷
-
-클라이언트 입력은 `symbol`, `interval=1D`, 선택적인 등록 프롬프트 버전뿐이다. 클라이언트가 전송한 가격·지표·신호는 사용하지 않는다. 서버가 같은 트랜잭션 또는 읽기 스냅샷에서 다음을 구성한다.
-
-- market, symbol, currency, interval
-- latestRecordedAt, source, freshness, adjusted 여부
-- calculationVersion, sampleCount, summarySignal
-- 현재가와 MA5·MA20·MA60
-- Wilder RSI14와 기준 30·70
-- MACD·Signal·Histogram
-- 볼린저 밴드 20·2와 bandwidthPercent
-- ATR14와 atrPercent
-- 현재 거래량·Volume MA20·평균 대비 배수
-- 최근 교차 이벤트 type·occurredAt·관련 값
-
-서버는 의미 단위별로 `I1..In`을 부여한다. 각 evidence는 `id`, 허용된 indicator enum, 기계 판독 가능한 원본 값과 사용자 표시용 `displayValue`를 가진다. JSON 객체 키 순서, 숫자 scale, UTC 시각과 null 표현을 고정해 canonical JSON을 만들고 SHA-256을 `inputHash`로 사용한다.
-
-필수 지표가 없거나 계산 입력이 유효하지 않으면 모델을 호출하지 않는다. `DEMO`는 시연용으로 허용하되 응답과 화면에 표시하고, `STALE` 허용 여부는 데이터 공급자 신선도 정책에 따라 결정하여 허용 시 `dataLimitations`에 강제로 추가한다.
-
-### 13.3 프롬프트와 구조화 출력
-
-활성 초기 버전은 `technical-explanation-v1`이다. 프롬프트는 입력 JSON을 명령이 아닌 데이터로 구획하고 다음을 명시한다.
-
-1. 입력 수치를 재계산·수정하거나 입력에 없는 수치를 만들지 않는다.
-2. 미래 가격·수익률·목표주가·손절가·매수/매도 명령을 생성하지 않는다.
-3. 상승 근거와 반대·충돌 근거를 모두 확인한다.
-4. 기술지표는 과거 데이터 기반 참고값이며 인과관계나 확률이 아님을 유지한다.
-5. 모든 핵심 주장에 하나 이상의 유효한 evidence ID를 연결한다.
-
-Gemini 응답 스키마:
-
-```json
-{
-  "summary": "string",
-  "trendExplanation": "string",
-  "momentumExplanation": "string",
-  "volatilityExplanation": "string",
-  "volumeExplanation": "string",
-  "supportingSignals": [
-    { "text": "string", "evidenceIds": ["I1"] }
-  ],
-  "conflictingSignals": [
-    { "text": "string", "evidenceIds": ["I2", "I3"] }
-  ],
-  "riskNotes": ["string"],
-  "dataLimitations": ["string"]
-}
-```
-
-항목 제한:
-
-| 필드 | 제한 |
-|---|---|
-| summary | 1~1,000자 |
-| 네 explanation | 각각 1~500자 |
-| supportingSignals | 1~5개, 항목 300자 이하 |
-| conflictingSignals | 0~5개, 항목 300자 이하 |
-| riskNotes | 1~5개, 항목 300자 이하 |
-| dataLimitations | 0~5개, 항목 300자 이하 |
-| evidenceIds | 항목당 1~4개, 입력 ID만 허용 |
-
-### 13.4 서버 검증과 안전
-
-공급자 공통 검증기는 JSON Schema 검증 후 다음 의미 검증을 수행한다.
-
-- 모든 evidence ID가 실제 입력 집합에 존재하며 핵심 설명에 빈 근거가 없다.
-- 출력에 나타난 숫자는 입력 evidence의 값 또는 표시값에서 추적 가능하다.
-- `summarySignal`, indicator 이름·값·이벤트 종류가 입력과 모순되지 않는다.
-- 목표주가·예상 수익률·미래 가격 확정·수익 보장·직접 매매 명령 패턴이 없다.
-- 모델이 새 신뢰도·확률을 만들어 내지 않는다.
-- `STALE`·`DEMO` 입력이면 서버가 해당 한계를 응답에 강제 병합한다.
-
-검증 실패 결과는 DB·Redis에 저장하지 않고 `502 AI_RESPONSE_INVALID`와 FAILED 사용량 로그를 남긴다. 금지 표현 탐지는 완벽한 투자자문 판별기로 간주하지 않으며 화면 면책, 낮은 temperature, 구조화 입력과 출력 길이 제한을 함께 적용한다.
-
-### 13.5 캐시와 무효화
-
-```text
-ai:technical-explanation:{market}:{symbol}:{interval}:{latestRecordedAt}:{calculationVersion}:{inputHash}:{promptVersion}
-```
-
-- 빠른 캐시는 demo 메모리, 일반 프로필 Redis를 사용한다.
-- 영속 결과는 `ai_technical_explanations`에서 같은 unique 조합으로 복구한다.
-- 새 완성 봉, 과거 가격·거래량 정정, 기업행동 반영, calculationVersion·promptVersion 변경 또는 입력 정규화 규칙 변경은 새 키를 만든다.
-- TTL 만료만으로 같은 DB 결과를 재호출하지 않는다.
-- 같은 키의 동시 MISS는 single-flight 또는 Redis 분산 락으로 실제 모델 호출 한 번만 허용한다.
-- HIT는 inputTokens·outputTokens·estimatedCost=0, savedEstimatedCost는 원 생성 비용이며 modelName·generatedAt은 원 값을 유지한다.
-
-### 13.6 저장·로그·관리자 집계
-
-- 분석 결과는 `04_DB_SCHEMA.md`의 `ai_technical_explanations`에 저장한다.
-- 모든 요청은 `featureType=TECHNICAL_EXPLANATION`, `targetType=STOCK`, `targetId=stockId` 사용량 로그를 남긴다.
-- 로그에는 symbol 문자열 대신 stockId 사용을 우선하고 전체 스냅샷·프롬프트·응답 전문은 남기지 않는다.
-- 관리자 featureUsage, 비용 요청 목록과 캐시 절감액은 `NEWS_SUMMARY`와 분리 집계한다.
-- 사용자별 요청·실제 모델 호출·일일 비용 한도는 뉴스 분석과 합산한 전체 한도와 기능별 보조 한도를 함께 적용한다.
-
-### 13.7 UI 계약
-
-종목 상세의 `AI 기술 분석 해설` 카드는 다음 상태를 구분한다.
-
-- 실행 전 안내와 분석 버튼
-- 생성 중과 중복 클릭 방지
-- MISS/HIT, 모델·기준 시각·계산·프롬프트 버전
-- 요약, 추세·모멘텀·변동성·거래량 설명
-- 상승 근거와 충돌 신호를 같은 비중으로 볼 수 있는 영역
-- 각 설명에서 실제 지표 evidence로 이동하거나 펼치는 동작
-- 데이터 출처·FRESH/STALE/DEMO·한계
-- 공급자 실패·검증 실패·한도 초과와 재시도 가능 여부
-- AI 생성 해설과 기술적 신호가 투자 권유가 아니라는 고지
-
-색상만으로 긍정·위험·충돌을 구분하지 않고 아이콘·레이블을 병기한다. 캐시 HIT라도 최신 봉과 응답의 `latestRecordedAt`, `inputHash`가 일치하지 않으면 화면에 표시하지 않는다.
-
-### 13.8 인수 조건
-
-- [ ] 클라이언트가 조작한 지표 값을 보내도 서버 재조회 스냅샷만 Gemini 입력에 사용한다.
-- [ ] 같은 완성 일봉·계산 버전·입력 hash·프롬프트의 첫 요청은 MISS, 두 번째는 HIT이며 실제 모델 호출은 한 번이다.
-- [ ] 새 일봉, 과거 가격 정정, 계산 또는 프롬프트 버전 변경은 새 MISS를 만든다.
-- [ ] 존재하지 않는 evidence ID와 입력에 없는 숫자가 포함된 결과는 저장되지 않는다.
-- [ ] 목표주가·수익률 예측·직접 매매 명령 fixture는 성공 결과로 노출되지 않는다.
-- [ ] supportingSignals와 conflictingSignals가 각각 실제 근거값을 화면에서 확인할 수 있게 연결된다.
-- [ ] STALE·DEMO 상태와 데이터 한계가 응답과 화면에서 숨겨지지 않는다.
-- [ ] 뉴스와 기술지표 해설의 요청·토큰·비용·캐시 적중·절감액이 관리자 화면에서 분리 집계된다.
-- [ ] Gemini 장애 중에도 결정론적 기술지표와 차트는 정상 조회된다.
+`DAILY_CHANGE_BRIEFING`은 계획 상태다. 서버가 계산한 직전·최신 완성 일봉 delta와 이미 검증된 뉴스·공시 분석만 Gemini가 설명한다. 기술·뉴스·공시를 하나의 매수·매도 점수로 합치거나 근거 없는 인과관계, 목표주가와 직접 매매 명령을 생성해서는 안 된다. 공통 Gemini 연결·비용·로그 정책은 이 문서를 재사용하고, 비교 창·근거 ID·관점 매트릭스·API·DB·캐시·UI·인수 조건의 단일 상세 기준은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`다.

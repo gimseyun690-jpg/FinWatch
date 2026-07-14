@@ -30,9 +30,10 @@
 | 관리자 AI 통합 | cache 절감 지표와 사용량 정렬 1개 |
 | 관심종목 통합 | 사용자별 CRUD 격리, 중복·없는 삭제 1개 |
 | 실시간 시세 단위 | KIS 46필드 체결 파싱·부호, Finnhub trade 파싱, 오래된 틱 폐기 |
-| 실시간 화면 E2E | snapshot 수신, 공급자 2/2 상태, KIS 실시간 배지·TICK·현재가 반영 |
+| 실시간 1분 봉 | KIS 누적 거래량 delta, Finnhub 체결량 합산, REST snapshot 제외, OHLC와 limit 검증 |
+| 실시간 화면 E2E | snapshot·candles 수신, 공급자 2/2 상태, KIS 실시간 배지·TICK·현재가, 일봉/1분봉 전환 반영 |
 
-통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS·NAVER API HUB·Finnhub·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·WebSocket snapshot·실시간 가격 표시·상세 차트·지표 설정 유지·390px 모바일 overflow와 터치 크기를 검증한다. 실제 LIVE smoke에서는 KIS WebSocket의 연속 틱 시각·가격 변경과 Finnhub 연결 및 폐장 시 REST snapshot 유지 여부를 확인한다. 실제 PostgreSQL·Redis serialization/TTL, 부하 테스트와 CI workflow는 아직 별도 게이트로 남아 있다.
+통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS·NAVER API HUB·Finnhub·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·WebSocket snapshot·candles·실시간 가격 표시·일봉/1분봉 전환·상세 차트·지표 설정 유지·390px 모바일 overflow와 터치 크기를 검증한다. 실제 LIVE smoke에서는 KIS WebSocket의 연속 틱 시각·가격 변경과 Finnhub 연결 및 폐장 시 REST snapshot 유지 여부를 확인한다. 실제 PostgreSQL·Redis serialization/TTL, 부하 테스트와 CI workflow는 아직 별도 게이트로 남아 있다.
 
 따라서 현재 자동 테스트의 통과는 핵심 Vertical Slice의 회귀 신호이지만 AWS 운영 준비 완료를 의미하지 않는다.
 
@@ -137,6 +138,9 @@ H2 테스트는 빠른 피드백용으로 유지할 수 있지만 PostgreSQL 전
 | 기술지표 정상 구조화 JSON | explanation 필드, supporting/conflicting signals, evidenceIds, usage token 매핑 |
 | 기술지표 근거 오류 | 없는 evidence ID, 입력에 없는 숫자·이벤트, 서버 summarySignal 변경 시 저장 거부 |
 | 기술지표 금지 출력 | 목표주가·수익률 예측·직접 매매 명령 fixture를 `AI_RESPONSE_INVALID`로 거부 |
+| 일일 변화 브리핑 정상 구조화 JSON | 기준일·비교일, changedFacts, viewpointMatrix, evidenceIds, limitations와 usage token 매핑 |
+| 일일 변화 브리핑 근거·인과 오류 | 없는 `T/N/D/Q` ID, 서버 delta 변경, 뒷받침되지 않은 뉴스·공시 인과 단정을 저장 전에 거부 |
+| 일일 변화 브리핑 금지 출력 | 통합 매수·매도 점수, 목표주가·수익률 예측과 직접 매매 명령을 `AI_RESPONSE_INVALID`로 거부 |
 | usage metadata 없음 | 명시된 token 추정 fallback과 비용 계산 |
 | 빈 candidate/part | 외부 공급자 오류로 변환, 성공 분석 저장 금지 |
 | malformed JSON·잘못된 enum | parser 오류 처리와 안전한 오류 응답 |
@@ -186,6 +190,7 @@ Stub은 `x-goog-api-key` header가 존재하는지만 검사하고 값을 테스
 - 알림 상태와 trigger 시각 표시
 - AI MISS/HIT, 생성 중 중복 클릭 방지, 출처·면책문구, 공급자 실패
 - AI 기술지표 해설의 근거값·충돌 신호·STALE/DEMO 한계, MISS/HIT와 금지 출력 오류
+- AI 일일 변화 브리핑의 changedFacts·관점 매트릭스·근거 drawer·감사 카드, MISS/HIT와 장애 저하
 - ADMIN 메뉴의 role 기반 노출과 서버 403 처리
 - keyboard 탐색, focus, label, dialog와 status message의 기본 접근성
 - 상세 차트의 OHLC 변환, 기간 변경 요청 취소, 로딩·빈 결과·DEMO 상태와 늦은 응답 무시
@@ -199,8 +204,9 @@ Stub은 `x-goog-api-key` header가 존재하는지만 검사하고 값을 테스
 4. 가격알림을 만들고 fixture 가격을 경계값 전후로 바꿔 상태 전이를 확인한다.
 5. 뉴스 AI 요약을 처음 요청해 MISS, 다시 요청해 HIT와 비용 0을 확인한다.
 6. 같은 종목·완성 일봉의 AI 기술지표 해설을 두 번 요청해 MISS/HIT, 근거값과 충돌 신호를 확인한다.
-7. USER는 관리자 URL·API에 접근할 수 없고, ADMIN은 뉴스·기술지표 해설을 구분한 사용량 로그를 본다.
-8. 만료·변조 token에서 session이 안전하게 종료되고 보호 데이터가 남지 않는다.
+7. 직전 거래일 대비 AI 변화 브리핑을 요청해 changedFacts, 기술·뉴스·공시 관점의 일치·충돌과 근거 추적을 확인한다.
+8. USER는 관리자 URL·API에 접근할 수 없고, ADMIN은 뉴스·기술지표 해설·일일 변화 브리핑을 구분한 사용량 로그를 본다.
+9. 만료·변조 token에서 session이 안전하게 종료되고 보호 데이터가 남지 않는다.
 
 종목 상세 E2E에서는 `11_TECHNICAL_ANALYSIS_SPEC.md`의 1M·3M·6M·1Y·ALL 기간, 캔들, 확대·이동, 십자선 OHLC, 전체화면과 추세선·수평선 생성·수정·삭제를 데스크톱에서 검증한다. 모바일에서는 기간 선택, 핀치·이동, 십자선 탐색과 그리기 도구의 최소 터치 영역을 검증한다.
 
@@ -410,17 +416,41 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 ### AC-11 AI 기술지표 해설 MISS/HIT와 근거 검증
 
-1. 분석이 없는 종목의 완성 일봉을 요청해 서버 계산 스냅샷, `cacheHit=false`, 구조화 해설과 SUCCESS 로그를 확인한다.
-2. 같은 `latestRecordedAt + calculationVersion + inputHash + promptVersion`을 재요청해 `cacheHit=true`, 모델 호출·토큰·실제 비용 0을 확인한다.
-3. Redis key만 삭제하면 `ai_technical_explanations`에서 복구하며 모델을 다시 호출하지 않는다.
-4. 새 완성 일봉, 과거 OHLCV 정정, 계산 버전과 프롬프트 버전 변경은 각각 새 MISS를 만든다.
-5. 클라이언트가 임의 지표 값을 보내거나 파라미터를 추가해도 서버 재조회 값만 입력에 사용한다.
-6. 존재하지 않는 evidence ID, 입력에 없는 숫자·이벤트와 서버 `summarySignal`을 바꾼 Gemini 결과는 저장·노출하지 않는다.
-7. 목표주가·수익률 예측·직접 매수/매도 명령을 포함한 결과는 `502 AI_RESPONSE_INVALID`와 FAILED 로그로 처리한다.
-8. STALE·DEMO 입력은 출처·기준 시각·한계가 표시되고 Gemini 장애 중에도 기존 결정론적 지표와 차트는 정상 동작한다.
-9. 관리자 화면에서 `TECHNICAL_EXPLANATION`의 요청·실제 호출·토큰·비용·적중률·절감액을 `NEWS_SUMMARY`와 분리해 확인한다.
+1. 서버 재조회 스냅샷만 사용하며 같은 입력의 첫 요청은 MISS, 재요청과 DB 복구는 HIT다.
+2. 새 일봉·과거 정정·계산·프롬프트·입력 정규화 버전 변경은 새 MISS다.
+3. 조작 입력, 잘못된 evidence, 입력에 없는 수치와 금지된 예측·매매 명령을 저장·노출하지 않는다.
+4. STALE·DEMO·Gemini 장애 처리와 뉴스/기술지표 비용 분리가 화면·로그·관리자 지표에서 일치한다.
 
-판정: `08_AI_OPERATION_SPEC.md` 13절의 입력 책임 경계, 근거 검증, 캐시·비용·UI 계약을 모두 만족해야 한다. 현재 기능은 계획 상태이므로 구현 전에는 이 시나리오를 통과한 것으로 표시하지 않는다.
+판정: `12_AI_TECHNICAL_EXPLANATION_SPEC.md`의 인수 조건을 모두 만족해야 한다. 현재 기능은 계획 상태이므로 구현 전에는 통과로 표시하지 않는다.
+
+### AC-12 AI 일일 변화 브리핑과 근거 추적
+
+1. 거래소 달력의 직전·최신 완성 일봉만 비교하고 가격·지표·거래량·이벤트 delta와 뉴스·공시 비교 창을 서버가 결정한다.
+2. 같은 입력의 첫 요청은 MISS, 재요청과 Redis 삭제 후 DB 복구는 HIT이며 새 일봉·과거 정정·분석 버전 변경은 안전하게 무효화된다.
+3. 모든 changed fact와 관점 매트릭스 셀은 존재하는 `T/N/D/Q` 근거로 추적되고, 서버 판정 변경·근거 없는 인과·통합 매매 점수·목표주가·직접 매매 명령은 거부된다.
+4. UI에서 변화 요약·일치/충돌/부분 일치/근거 부족·근거 drawer·AI 감사 카드를 확인하고, Gemini 장애 시 기존 데이터 조회는 유지되며 관리자 비용은 기능별로 분리된다.
+
+판정: `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`의 인수 조건을 모두 만족해야 한다. 현재 기능은 계획 상태이므로 구현 전에는 통과로 표시하지 않는다.
+
+### AC-13 국내·미국 종목 검색과 온디맨드 상세 조회
+
+1. `삼성`, `005930`, `Apple`, `AAPL`을 검색해 이름·심볼·시장·통화가 맞는 결과를 받고 완전 일치가 부분 일치보다 먼저 표시된다.
+2. 검색은 로컬 종목 마스터만 사용해 외부 공급자 장애 중에도 동작하고 pagination에서 중복·누락이 없다.
+3. `METADATA_ONLY` 결과를 선택하면 상세 URL과 모든 카드가 같은 `(market, symbol)`로 바뀌며 quote·일봉·뉴스·공시가 온디맨드로 READY 또는 명확한 부분 실패 상태가 된다.
+4. 빠른 검색·종목 전환의 이전 응답이 현재 선택을 덮어쓰지 않고 동일 data-load는 한 번으로 합쳐지며 WebSocket 구독은 선택·관심·보유 종목으로 제한된다.
+5. 데스크톱·390px 모바일·키보드·screen reader에서 검색·선택·뒤로가기·공유 URL 복원이 동작한다.
+
+판정: `14_STOCK_DISCOVERY_SPEC.md`의 인수 조건을 모두 만족해야 한다. 현재 기능은 계획 상태이므로 구현 전에는 통과로 표시하지 않는다.
+
+### AC-14 USD/KRW 환율과 기준통화 포트폴리오
+
+1. 고정 fixture에서 USD/KRW의 방향·rate·등락·source·asOf·freshness와 이력 OHLC가 API와 UI에 동일하게 표시된다.
+2. USD 평가액은 원값을 유지하면서 KRW로 정확히 환산되고 혼합 포트폴리오 통합 현재 평가액은 응답에 포함된 동일 환율 스냅샷으로 계산된다.
+3. 환율이 없거나 stale이면 원통화 조회는 성공하지만 환산값은 null, `conversionComplete=false`이며 부분 합계를 전체처럼 표시하지 않는다.
+4. 매수 환율이 없으면 원화 매입원가·손익·환차손익이 null이고, 값이 있으면 명세 수식과 반올림에 맞는 평균 기반 근사치와 한계가 표시된다.
+5. 주말·휴일·429·공급자 장애·비정상 rate·동시 MISS에서 마지막 검증값, 상태, single-flight와 오류 계약이 지켜진다.
+
+판정: `15_FX_RATE_SPEC.md`의 인수 조건을 모두 만족해야 한다. 현재 기능은 계획 상태이므로 구현 전에는 통과로 표시하지 않는다.
 
 ## 14. 결함 심각도와 인수 판정
 
@@ -433,7 +463,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 MVP 합격 조건:
 
-1. AC-00~AC-11 중 MVP scope에 포함된 모든 시나리오가 통과한다.
+1. AC-00~AC-14 중 MVP scope에 포함된 모든 시나리오가 통과한다.
 2. Blocker·Critical·미승인 Major가 0건이다.
 3. PR/release 품질 게이트와 운영 체크리스트가 통과한다.
 4. 모든 배포 전 게이트 TBD가 값·책임자·검증 증적을 갖는다.

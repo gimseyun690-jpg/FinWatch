@@ -197,7 +197,7 @@ returnRate        = purchaseAmount > 0
 
 ### 4.5 복수 통화
 
-환율 공급자가 없는 MVP에서는 KRW와 USD를 직접 합산하지 않는다. GET 응답은 holdings와 currencySummaries를 반환하며, 03_API_SPEC.md에 언급된 합계 필드는 각 통화 요약 안에 위치한다.
+현재 구현에는 환율 공급자가 없으므로 KRW와 USD를 직접 합산하지 않는다. 계획된 환율 기능이 구현되면 기존 `currencySummaries`와 원통화 값을 유지하면서 현재 환율 기준 KRW 통합 평가액을 별도로 제공한다. 매수 당시 환율이 없으면 원화 매입원가·손익·환차손익을 계산하지 않는다. 상세 계약은 `15_FX_RATE_SPEC.md`를 따른다.
 
 ~~~json
 {

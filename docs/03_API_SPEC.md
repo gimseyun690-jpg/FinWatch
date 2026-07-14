@@ -67,7 +67,19 @@
 
 ## 3. 종목과 시장 데이터
 
-### `GET /stocks?query=하이닉스&market=KRX&page=0&size=20`
+### 종목 검색 — 계획, 미구현
+
+현재 `GET /stocks`는 DB에 등록된 활성 종목 전체만 반환하며 query·market·pagination을 처리하지 않는다. 신규 검색 계약은 다음 endpoint를 사용한다.
+
+```text
+GET /stocks/search?q=하이닉스&market=KRX&type=STOCK&page=0&size=10
+GET /stocks/{market}/{symbol}
+GET /stocks/{market}/{symbol}/prices?period=3M&interval=1D
+GET /stocks/{market}/{symbol}/technical
+POST /stocks/{market}/{symbol}/data-loads
+```
+
+검색 응답, 종목 식별, 온디맨드 수집, 기존 symbol 단독 endpoint의 호환·오류 계약은 `14_STOCK_DISCOVERY_SPEC.md`를 단일 상세 기준으로 한다.
 
 ### `GET /stocks/{symbol}`
 
@@ -137,6 +149,16 @@
 }
 ```
 
+### 환율 — 계획, 미구현
+
+```text
+GET /market/fx-rates/USD/KRW
+GET /market/fx-rates/USD/KRW/history?period=1M&interval=1D
+GET /market/fx-rates/pairs
+```
+
+환율 방향·출처·freshness, 포트폴리오 KRW 환산과 오류 계약은 `15_FX_RATE_SPEC.md`를 단일 상세 기준으로 한다.
+
 ### `GET /stocks/realtime`
 
 인증 사용자가 현재 인메모리 실시간 시세와 공급자 연결 상태를 진단하는 스냅샷 API다. 브라우저의 연속 갱신은 REST polling이 아니라 `/ws/quotes`를 사용한다.
@@ -168,10 +190,26 @@
 
 ### `WS /ws/quotes`
 
-연결 직후 `snapshot`, 이후 변경마다 `quote` 또는 `status` 이벤트를 전송한다. 프런트엔드는 지수 백오프로 자동 재연결하고 새 연결의 snapshot으로 상태를 복구한다. `sessionStatus=LIVE`만 `TICK`으로 표시하며 REST 초기값은 `SNAPSHOT`으로 구분한다.
+연결 직후 `snapshot`과 현재 장중 봉의 `candles`, 이후 변경마다 `quote`, `candle` 또는 `status` 이벤트를 전송한다. 프런트엔드는 지수 백오프로 자동 재연결하고 새 연결의 snapshot으로 상태를 복구한다. `sessionStatus=LIVE`만 `TICK`으로 표시하며 REST 초기값은 `SNAPSHOT`으로 구분한다.
 
 ```json
 { "type": "quote", "data": { "symbol": "005930", "price": 255000, "source": "KIS_WS", "sessionStatus": "LIVE", "asOf": "2026-07-14T02:32:08Z" } }
+{ "type": "candle", "data": { "symbol": "005930", "time": "2026-07-14T02:32:00Z", "open": 254500, "high": 255000, "low": 254000, "close": 255000, "volume": 1820, "currency": "KRW", "source": "KIS_WS" } }
+```
+
+### `GET /stocks/{symbol}/intraday?limit=390`
+
+현재 백엔드 프로세스가 WebSocket 체결로 집계한 1분 OHLCV를 시간순으로 반환한다. `limit`은 1~600이며 기본값은 390이다. KIS 누적 거래량은 직전 틱과의 차이를 사용하고 Finnhub 체결 거래량은 같은 분 안에서 합산한다. REST 초기 현재가와 폐장 snapshot은 봉을 생성하지 않으며, 서버 재시작 전 데이터만 제공하므로 빈 배열도 정상 응답이다.
+
+```json
+{
+  "symbol": "005930",
+  "interval": "1m",
+  "period": "SESSION",
+  "items": [
+    { "time": "2026-07-14T02:32:00Z", "open": 254500, "high": 255000, "low": 254000, "close": 255000, "volume": 1820, "indicators": null }
+  ]
+}
 ```
 
 ### `POST /admin/data/sync`
@@ -381,7 +419,7 @@ ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급
 
 ### `POST /ai/technical-explanations`
 
-클라이언트는 지표 값을 요청 본문으로 보내지 않는다. 서버가 `symbol`과 `interval`로 최신 완성 봉과 기술지표를 조회하고, `11_TECHNICAL_ANALYSIS_SPEC.md`의 계산 결과를 정규화해 Gemini 입력을 만든다.
+클라이언트는 지표 값을 보내지 않고 `symbol`, `interval=1D`, 선택적인 `promptVersion`만 전송한다. 서버가 최신 완성 봉과 기술지표를 다시 조회하여 Gemini 입력을 만든다.
 
 ```json
 {
@@ -391,82 +429,20 @@ ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급
 }
 ```
 
-`interval`은 MVP에서 `1D`만 허용한다. 응답 예시는 다음과 같다.
+응답은 대상·입력 버전, summary와 영역별 explanation, supporting/conflicting signals, riskNotes, dataLimitations, `I1..In` evidence, 모델·캐시·토큰·비용 정보를 포함한다. HIT는 토큰·실제 비용 0이며 원 생성 메타데이터를 유지한다.
 
-```json
-{
-  "success": true,
-  "data": {
-    "analysisId": 801,
-    "symbol": "000660",
-    "interval": "1D",
-    "latestRecordedAt": "2026-07-14T06:00:00Z",
-    "source": "KIS",
-    "freshness": "FRESH",
-    "calculationVersion": "technical-v2-wilder",
-    "promptVersion": "technical-explanation-v1",
-    "inputHash": "64-character-sha256",
-    "summarySignal": "BUY",
-    "summary": "단기 이동평균과 MACD는 상승 흐름을 나타내지만 RSI가 과매수 구간에 가까워 단기 변동성을 함께 확인해야 합니다.",
-    "trendExplanation": "MA5가 MA20과 MA60 위에 있어 단기 추세가 상대적으로 강합니다.",
-    "momentumExplanation": "MACD 히스토그램은 양수지만 RSI는 70에 근접했습니다.",
-    "volatilityExplanation": "ATR은 현재가의 1.57%이며 볼린저 밴드 폭과 함께 변동성 참고값으로 사용됩니다.",
-    "volumeExplanation": "현재 거래량은 20일 평균의 1.50배입니다.",
-    "supportingSignals": [
-      { "text": "단기 이동평균이 중기 이동평균보다 높습니다.", "evidenceIds": ["I1"] },
-      { "text": "MACD 모멘텀이 양수입니다.", "evidenceIds": ["I3"] }
-    ],
-    "conflictingSignals": [
-      { "text": "상승 모멘텀과 달리 RSI는 과매수 기준에 가깝습니다.", "evidenceIds": ["I2", "I3"] }
-    ],
-    "riskNotes": ["기술지표는 과거 가격을 변환한 값이며 미래 가격을 예측하지 않습니다."],
-    "dataLimitations": [],
-    "evidence": [
-      { "id": "I1", "indicator": "MOVING_AVERAGE", "displayValue": "MA5 270100 > MA20 268900 > MA60 261200" },
-      { "id": "I2", "indicator": "RSI", "displayValue": "Wilder RSI14 68.40" },
-      { "id": "I3", "indicator": "MACD", "displayValue": "Histogram 4110.40" }
-    ],
-    "modelName": "configured-model",
-    "cacheHit": false,
-    "inputTokens": 620,
-    "outputTokens": 220,
-    "estimatedCost": 0.000485,
-    "costCurrency": "USD",
-    "responseTimeMs": 780,
-    "generatedAt": "2026-07-14T06:01:00Z",
-    "disclaimer": "AI 해설과 기술적 신호는 투자 권유가 아닌 참고 정보입니다."
-  },
-  "message": "AI 기술지표 해설 완료",
-  "timestamp": "2026-07-14T06:01:00Z"
-}
-```
+전체 요청·응답 필드, evidence, 오류와 검증 계약의 단일 기준은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`다.
 
-서버는 다음 근거 묶음에 `I1..In`을 순서대로 부여한다.
+## 8.2 근거 기반 일일 변화 브리핑 — 계획, 미구현
 
-- 현재가와 MA5·MA20·MA60의 값·관계
-- Wilder RSI14와 30·70 기준
-- MACD·Signal·Histogram
-- 볼린저 밴드 20·2와 밴드 폭
-- ATR14와 현재가 대비 비율
-- 현재 거래량·Volume MA20·평균 대비 배수
-- 최근 MA·MACD·RSI 교차 이벤트
-- 출처·기준 시각·신선도·DEMO 여부
+- `POST /ai/daily-change-briefings`: 최신·직전 완성 일봉과 비교 구간 뉴스·공시를 서버가 재조회하여 브리핑을 생성하거나 캐시에서 반환한다.
+- `GET /stocks/{symbol}/daily-change-briefings/latest`: 저장된 최신 브리핑을 모델 호출 없이 조회한다.
 
-Gemini가 반환한 모든 `evidenceIds`는 실제 입력 ID의 부분집합이어야 한다. 존재하지 않는 ID, 입력에 없는 수치, 목표주가·수익률 예측·직접 매수/매도 명령이 포함된 결과는 저장하지 않고 `502 AI_RESPONSE_INVALID`로 처리한다.
+생성 요청은 `symbol`과 선택적인 `promptVersion`만 받는다. 응답은 거래일·baseline 상태, 정량 변화, 관점 매트릭스, 일치·충돌, `T/N/D/Q` evidence와 모델·버전·토큰·비용·캐시 감사 정보를 포함한다.
 
-동일 `market + symbol + interval + latestRecordedAt + calculationVersion + inputHash + promptVersion`은 같은 분석으로 간주한다. HIT 응답은 뉴스 분석과 동일하게 토큰·실제 비용 0, 원 모델·생성 시각 유지 규칙을 적용한다.
+전체 API·근거·캐시·오류 계약의 단일 기준은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`다.
 
-추가 오류:
-
-| HTTP | 코드 | 조건 |
-|---|---|---|
-| 400 | TECHNICAL_INTERVAL_UNSUPPORTED | `1D` 이외 간격 요청 |
-| 404 | STOCK_NOT_FOUND | 종목 없음 또는 비활성 종목 |
-| 422 | TECHNICAL_DATA_INSUFFICIENT | 유효한 완성 봉 또는 필수 지표 부족 |
-| 422 | TECHNICAL_SNAPSHOT_INVALID | 지표 스냅샷 품질·버전·신선도 판정 불가 |
-| 502 | AI_RESPONSE_INVALID | 근거 ID·스키마·금지 출력 검증 실패 |
-
-## 8.2 뉴스 원문 관리
+## 8.3 뉴스 원문 관리
 
 ### `POST /admin/news/{newsId}/content/refresh`
 

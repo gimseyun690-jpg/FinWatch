@@ -245,7 +245,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .quote-row > div:last-child strong { font-size: 18px; }
 .interactive-chart-shell { margin-top: 22px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: #0a121a; }
 .chart-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--panel-soft) 72%, #0a121a); }
-.chart-periods, .chart-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.chart-range-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.chart-intervals, .chart-periods, .chart-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.chart-intervals { padding-right: 10px; border-right: 1px solid var(--border); }
+.intraday-session-label { display: inline-flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 9px; font-weight: 700; }
+.intraday-session-label i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 12%, transparent); }
 .chart-toolbar button { border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; color: var(--text-muted); background: #0d1720; font-size: 9px; font-weight: 750; }
 .chart-toolbar button:hover { filter: none; border-color: var(--cyan); color: var(--text-strong); }
 .chart-toolbar button[aria-pressed="true"] { border-color: color-mix(in srgb, var(--cyan) 70%, var(--border)); color: var(--cyan); background: color-mix(in srgb, var(--cyan) 9%, #0d1720); }
@@ -513,6 +517,8 @@ footer { padding: 23px 0 35px; border-top: 1px solid var(--border); color: var(-
   .price-chart-card { padding: 18px; }
   .quote-row > div:first-child strong { font-size: 27px; }
   .chart-toolbar { align-items: stretch; flex-direction: column; }
+  .chart-range-controls { align-items: stretch; flex-direction: column; }
+  .chart-intervals { display: grid; grid-template-columns: repeat(2, 1fr); padding-right: 0; padding-bottom: 8px; border-right: 0; border-bottom: 1px solid var(--border); }
   .chart-indicators { align-items: stretch; flex-direction: column; }
   .chart-periods, .chart-tools { display: grid; grid-template-columns: repeat(4, 1fr); }
   .chart-periods { grid-template-columns: repeat(5, 1fr); }

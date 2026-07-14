@@ -50,6 +50,8 @@ export type PriceHistory = {
 
 export type PricePeriod = '1M' | '3M' | '6M' | '1Y' | 'ALL'
 
+export type PriceInterval = '1D' | '1m'
+
 export type TechnicalAnalysis = {
   symbol: string
   calculatedAt: string

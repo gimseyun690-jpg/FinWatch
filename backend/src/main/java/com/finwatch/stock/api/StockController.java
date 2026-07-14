@@ -44,9 +44,17 @@ public class StockController {
                 "가격 이력 조회 성공");
     }
 
+    @GetMapping("/{symbol}/intraday")
+    public ApiResponse<PriceHistory> intraday(
+            @PathVariable String symbol,
+            @RequestParam(defaultValue = "390") int limit) {
+        return ApiResponse.success(
+                stockQueryService.getIntradayPriceHistory(symbol, limit),
+                "실시간 1분 봉 조회 성공");
+    }
+
     @GetMapping("/{symbol}/technical")
     public ApiResponse<TechnicalAnalysis> technical(@PathVariable String symbol) {
         return ApiResponse.success(stockQueryService.getTechnicalAnalysis(symbol), "기술적 분석 조회 성공");
     }
 }
-

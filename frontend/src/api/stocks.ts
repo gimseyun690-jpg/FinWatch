@@ -25,6 +25,13 @@ export function getStockPrices(symbol: string, period: PricePeriod = '3M', signa
   )
 }
 
+export function getStockIntraday(symbol: string, signal?: AbortSignal) {
+  return get<PriceHistory>(
+    `/api/v1/stocks/${encodeURIComponent(symbol)}/intraday?limit=390`,
+    signal,
+  )
+}
+
 export function getTechnicalAnalysis(symbol: string, signal?: AbortSignal) {
   return get<TechnicalAnalysis>(
     `/api/v1/stocks/${encodeURIComponent(symbol)}/technical`,

@@ -26,6 +26,8 @@ FinWatch는 거래 체결용 시세 시스템이 아니다. 화면에 표시하�
 - 브라우저는 `/ws/quotes`에서 연결 직후 snapshot과 이후 quote/status 이벤트를 받고 자동 재연결한다.
 - 가격 이력은 DB의 `1D`를 사용하고 선택 종목의 최신 캔들 close/high/low를 수신 틱으로 보정한다.
 - 뉴스 한 건은 `news_articles.stock_id`로 종목 하나에 연결되며, AI 요약은 저장·분석 권한이 있는 content에만 실행한다.
+- 전체 KRX·미국 종목 마스터의 로컬 검색과 선택 종목 온디맨드 수집 확장은 계획 상태이며 `14_STOCK_DISCOVERY_SPEC.md`를 따른다.
+- USD/KRW 환율은 기존 Finnhub 키 재사용을 우선 검증하며 rate 방향·reference fallback·포트폴리오 환산은 `15_FX_RATE_SPEC.md`를 따른다.
 
 ### 목표 흐름
 

@@ -23,3 +23,19 @@ export type RealtimeSnapshot = {
   quotes: LiveQuote[]
   providers: RealtimeProviderStatus[]
 }
+
+export type IntradayCandle = {
+  symbol: string
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  currency: string
+  source: string
+}
+
+export type IntradayCandleSnapshot = {
+  candles: IntradayCandle[]
+}

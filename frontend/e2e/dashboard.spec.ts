@@ -26,6 +26,21 @@ const prices = Array.from({ length: 90 }, (_, index) => {
   }
 })
 
+const intradayCandles = Array.from({ length: 30 }, (_, index) => {
+  const close = 2720000 + index * 1000 + Math.round(Math.sin(index / 3) * 8000)
+  return {
+    symbol: stock.symbol,
+    time: new Date(Date.UTC(2026, 6, 14, 0, index)).toISOString(),
+    open: close - 2000,
+    high: close + 5000,
+    low: close - 4000,
+    close,
+    volume: 1200 + index * 30,
+    currency: stock.currency,
+    source: 'KIS_WS',
+  }
+})
+
 function response(data: unknown) {
   return { success: true, data, message: 'fixture', timestamp: now }
 }
@@ -52,6 +67,10 @@ async function mockApi(page: Page) {
         ],
       },
     }))
+    webSocket.send(JSON.stringify({
+      type: 'candles',
+      data: { candles: intradayCandles },
+    }))
   })
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
@@ -76,6 +95,8 @@ async function mockApi(page: Page) {
       body = response(stock)
     } else if (path === '/api/v1/stocks/000660/prices') {
       body = response({ symbol: stock.symbol, interval: '1D', period: url.searchParams.get('period') ?? '3M', items: prices })
+    } else if (path === '/api/v1/stocks/000660/intraday') {
+      body = response({ symbol: stock.symbol, interval: '1m', period: 'SESSION', items: intradayCandles })
     } else if (path === '/api/v1/stocks/000660/technical') {
       body = response({
         symbol: stock.symbol,
@@ -168,6 +189,12 @@ test('desktop chart tools, indicator settings and drawings remain usable', async
   await drawingLayer.click({ position: { x: 180, y: 130 }, force: true })
   await drawingLayer.click({ position: { x: 430, y: 220 }, force: true })
   await expect(drawingLayer.locator('line.drawing-shape.trend')).toHaveCount(1)
+
+  await page.getByRole('button', { name: '1분봉', exact: true }).click()
+  await expect(page.getByRole('img', { name: /000660 실시간 1분봉 캔들 및 거래량 차트/ })).toBeVisible()
+  await expect(page.locator('.intraday-session-label')).toContainText('현재 서버 세션')
+  await expect(page.locator('.chart-legend strong')).toHaveText('LIVE')
+  await expect(drawingLayer.locator('line.drawing-shape.trend')).toHaveCount(0)
 
   await page.getByRole('button', { name: '외부 데이터 동기화' }).click()
   await expect(page.locator('.data-sync-status')).toContainText('DEMO · 시세 0건 · 뉴스 0건 반영')

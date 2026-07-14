@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.finwatch.realtime.RealtimeCandleAggregator;
 import com.finwatch.realtime.RealtimeQuoteHub;
 import com.finwatch.stock.domain.MarketPrice;
 import com.finwatch.stock.domain.Stock;
@@ -46,16 +47,19 @@ public class StockQueryService {
     private final MarketPriceRepository marketPriceRepository;
     private final TechnicalAnalysisCalculator calculator;
     private final RealtimeQuoteHub realtimeQuoteHub;
+    private final RealtimeCandleAggregator candleAggregator;
 
     public StockQueryService(
             StockRepository stockRepository,
             MarketPriceRepository marketPriceRepository,
             TechnicalAnalysisCalculator calculator,
-            RealtimeQuoteHub realtimeQuoteHub) {
+            RealtimeQuoteHub realtimeQuoteHub,
+            RealtimeCandleAggregator candleAggregator) {
         this.stockRepository = stockRepository;
         this.marketPriceRepository = marketPriceRepository;
         this.calculator = calculator;
         this.realtimeQuoteHub = realtimeQuoteHub;
+        this.candleAggregator = candleAggregator;
     }
 
     public List<StockSummary> getStocks() {
@@ -94,6 +98,24 @@ public class StockQueryService {
                         indicatorsByTime.get(price.getRecordedAt())))
                 .toList();
         return new PriceHistory(stock.getSymbol(), normalizedInterval, normalizedPeriod, items);
+    }
+
+    public PriceHistory getIntradayPriceHistory(String symbol, int limit) {
+        Stock stock = findStock(symbol);
+        if (limit < 1 || limit > 600) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit은 1~600 범위여야 합니다.");
+        }
+        List<PricePoint> items = candleAggregator.find(stock.getSymbol(), limit).stream()
+                .map(candle -> new PricePoint(
+                        candle.time(),
+                        candle.open(),
+                        candle.high(),
+                        candle.low(),
+                        candle.close(),
+                        candle.volume(),
+                        null))
+                .toList();
+        return new PriceHistory(stock.getSymbol(), "1m", "SESSION", items);
     }
 
     public TechnicalAnalysis getTechnicalAnalysis(String symbol) {

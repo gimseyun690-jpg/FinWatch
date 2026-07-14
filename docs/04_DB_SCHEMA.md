@@ -50,6 +50,12 @@ ai_analyses 1--N ai_usage_logs
 
 UNIQUE `(market, symbol)`.
 
+현재 migration은 4개 데모 종목 조회에 필요한 최소 컬럼만 가진다. 전체 종목 검색 구현 시 `exchange`, 영문명·정규화 이름, 상품 유형, 공급자 식별자, ISIN, 거래 가능·상장 상태와 catalog 기준 시각을 추가하고 `stock_aliases`, `instrument_catalog_sync_runs` 및 검색 인덱스를 도입한다. 상세 컬럼·제약은 `14_STOCK_DISCOVERY_SPEC.md` 7절을 따른다.
+
+### exchange_rates (계획, 미구현)
+
+USD/KRW 최신값·일봉은 base/quote, rate 또는 OHLC, rate type, source, provider symbol, asOf와 fetchedAt을 저장한다. UNIQUE `(base_currency, quote_currency, source, as_of)`와 pair별 최신 조회 인덱스를 적용한다. 포트폴리오의 선택적 매수 환율 컬럼을 포함한 전체 계약은 `15_FX_RATE_SPEC.md` 7절을 따른다.
+
 ### watchlists
 
 | 컬럼 | 타입 | 제약/설명 |
@@ -187,38 +193,15 @@ UNIQUE `(news_id, feature_type, prompt_version, content_hash)`, UNIQUE `(cache_k
 
 ### ai_technical_explanations (계획, 미구현)
 
-뉴스 분석과 수명주기·입력 구조가 다르므로 기술지표 해설은 별도 테이블로 저장한다. 원시 OHLCV 배열이나 전체 프롬프트는 저장하지 않는다.
+뉴스 분석과 수명주기·입력 구조가 다르므로 기술지표 해설은 별도 테이블로 저장한다. 대상·입력 버전, 구조화 해설, evidence, 모델·토큰·원 생성 비용과 cacheKey를 보관하고 원시 OHLCV·전체 프롬프트는 저장하지 않는다.
 
-| 컬럼 | 타입 | 제약/설명 |
-|---|---|---|
-| id | BIGINT | PK |
-| stock_id | BIGINT | FK stocks, NOT NULL |
-| interval | VARCHAR(10) | MVP는 1D |
-| latest_recorded_at | TIMESTAMPTZ | 입력의 마지막 완성 봉 |
-| calculation_version | VARCHAR(50) | 기술지표 계산 버전 |
-| prompt_version | VARCHAR(50) | AI 해설 프롬프트 버전 |
-| input_hash | VARCHAR(64) | 정규화된 기술지표 스냅샷 SHA-256 |
-| source | VARCHAR(50) | KIS / DEMO 등 |
-| freshness | VARCHAR(20) | FRESH / STALE / DEMO |
-| summary_signal | VARCHAR(20) | 서버 결정 BUY / NEUTRAL / SELL |
-| summary | TEXT | AI 전체 요약, NOT NULL |
-| trend_explanation | TEXT | 추세 설명 |
-| momentum_explanation | TEXT | 모멘텀 설명 |
-| volatility_explanation | TEXT | 변동성 설명 |
-| volume_explanation | TEXT | 거래량 설명 |
-| supporting_signals | JSONB | text와 evidenceIds 배열 |
-| conflicting_signals | JSONB | text와 evidenceIds 배열 |
-| risk_notes | JSONB | 위험·주의 문장 배열 |
-| data_limitations | JSONB | DEMO·STALE·입력 한계 배열 |
-| evidence | JSONB | 서버 생성 ID·지표·표시값 |
-| model_name | VARCHAR(100) | 실제 공급자 모델 |
-| input_tokens | INTEGER | 0 이상 |
-| output_tokens | INTEGER | 0 이상 |
-| estimated_cost | NUMERIC(16, 8) | 원 생성 예상 비용, USD |
-| cache_key | VARCHAR(255) | NOT NULL |
-| generated_at | TIMESTAMPTZ | NOT NULL |
+UNIQUE `(stock_id, interval, latest_recorded_at, calculation_version, input_hash, prompt_version)`, UNIQUE `(cache_key)`를 적용한다. 전체 컬럼과 저장·무효화 계약은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md` 9절을 따른다.
 
-UNIQUE `(stock_id, interval, latest_recorded_at, calculation_version, input_hash, prompt_version)`, UNIQUE `(cache_key)`. 새 완성 봉, 과거 가격 정정, 계산 버전 또는 프롬프트 변경은 기존 행을 덮어쓰지 않고 새 해설을 만든다.
+### ai_daily_change_briefings (계획, 미구현)
+
+최신·직전 기술 스냅샷의 변화, 관점 매트릭스, `T/N/D/Q` evidence, AI 브리핑과 감사 메타데이터를 저장한다. 원시 OHLCV와 기사·공시 원문은 중복 저장하지 않는다.
+
+UNIQUE `(stock_id, current_trading_date, input_hash, prompt_version)`, UNIQUE `(cache_key)`를 적용한다. 전체 컬럼과 사용량 로그 연결은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md` 12절을 따른다.
 
 ### ai_usage_logs
 
@@ -229,6 +212,7 @@ UNIQUE `(stock_id, interval, latest_recorded_at, calculation_version, input_hash
 | user_id | BIGINT | FK users, NULL 가능 |
 | analysis_id | BIGINT | FK ai_analyses, 뉴스 분석이면 연결, NULL 가능 |
 | technical_explanation_id | BIGINT | FK ai_technical_explanations, 기술지표 해설이면 연결, NULL 가능 |
+| daily_briefing_id | BIGINT | FK ai_daily_change_briefings, 일일 브리핑이면 연결, NULL 가능 |
 | feature_type | VARCHAR(40) | NOT NULL |
 | target_type | VARCHAR(40) | NEWS / STOCK |
 | target_id | BIGINT | 뉴스 ID 또는 종목 ID |
@@ -246,7 +230,7 @@ UNIQUE `(stock_id, interval, latest_recorded_at, calculation_version, input_hash
 
 인덱스 `(created_at DESC)`, `(feature_type, created_at DESC)`, `(estimated_cost DESC)`.
 
-현재 마이그레이션에는 `technical_explanation_id`가 없다. 기술지표 해설 구현 마이그레이션에서 컬럼과 FK를 추가하고, 성공 로그는 `NEWS_SUMMARY`이면 `analysis_id`, `TECHNICAL_EXPLANATION`이면 `technical_explanation_id` 중 해당 대상 하나만 연결하도록 서비스와 통합 테스트에서 검증한다. 실패 로그는 분석 결과가 없으므로 두 FK가 모두 `NULL`일 수 있다.
+현재 마이그레이션에는 `technical_explanation_id`와 `daily_briefing_id`가 없다. 각 기능 구현 migration에서 컬럼과 FK를 추가한다. 성공 로그는 기능에 맞는 결과 FK 하나만 연결하고 실패 로그는 결과 FK가 모두 `NULL`일 수 있다. 세부 규칙은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`와 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
 
 ### prompt_templates (후속 운영 기능, 미구현)
 

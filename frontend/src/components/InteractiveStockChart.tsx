@@ -15,8 +15,9 @@ import {
   type LineData,
   type SeriesMarker,
   type Time,
+  type UTCTimestamp,
 } from 'lightweight-charts'
-import type { PricePeriod, PricePoint, TechnicalAnalysis } from '../types/stock'
+import type { PriceInterval, PricePeriod, PricePoint, TechnicalAnalysis } from '../types/stock'
 
 type Props = {
   symbol: string
@@ -24,11 +25,13 @@ type Props = {
   currency: string
   items: PricePoint[]
   period: PricePeriod
+  interval: PriceInterval
   loading: boolean
   error: string | null
-  source: 'API' | 'DEMO'
+  source: 'API' | 'DEMO' | 'LIVE'
   events?: TechnicalAnalysis['events']
   onPeriodChange: (period: PricePeriod) => void
+  onIntervalChange: (interval: PriceInterval) => void
 }
 
 type ChartTool = 'pan' | 'trend' | 'horizontal'
@@ -65,8 +68,10 @@ function loadChartSettings(): ChartSettings {
   }
 }
 
+type NormalizedChartTime = string | number
+
 type DrawingAnchor = {
-  time: string
+  time: NormalizedChartTime
   price: number
 }
 
@@ -154,7 +159,10 @@ function eventMarkerText(type: NonNullable<TechnicalAnalysis['events']>[number][
   return labels[type]
 }
 
-function toChartTime(value: string, market: string) {
+function toChartTime(value: string, market: string, interval: PriceInterval): Time {
+  if (interval === '1m') {
+    return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp
+  }
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: marketTimeZone(market),
     year: 'numeric',
@@ -165,21 +173,35 @@ function toChartTime(value: string, market: string) {
   return `${values.year}-${values.month}-${values.day}`
 }
 
-function normalizeTime(value: Time) {
+function normalizeTime(value: Time): NormalizedChartTime {
   if (typeof value === 'string') return value
-  if (typeof value === 'number') return new Date(value * 1000).toISOString().slice(0, 10)
+  if (typeof value === 'number') return value
   return `${value.year}-${String(value.month).padStart(2, '0')}-${String(value.day).padStart(2, '0')}`
+}
+
+function displayChartTime(value: Time, market: string, interval: PriceInterval) {
+  if (typeof value === 'number' && interval === '1m') {
+    return new Intl.DateTimeFormat('ko-KR', {
+      timeZone: marketTimeZone(market),
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(value * 1000))
+  }
+  return String(normalizeTime(value))
 }
 
 function valueAtTime(
   series: Array<LineData<Time> | HistogramData<Time>>,
-  time: string,
+  time: NormalizedChartTime,
 ) {
   const point = series.find((item) => normalizeTime(item.time) === time)
   return point && 'value' in point && typeof point.value === 'number' ? point.value : undefined
 }
 
-function movingAverage(items: PricePoint[], times: string[], windowSize: number): LineData<Time>[] {
+function movingAverage(items: PricePoint[], times: Time[], windowSize: number): LineData<Time>[] {
   let rollingTotal = 0
   const result: LineData<Time>[] = []
 
@@ -194,7 +216,7 @@ function movingAverage(items: PricePoint[], times: string[], windowSize: number)
   return result
 }
 
-function bollingerBands(items: PricePoint[], times: string[], windowSize = 20) {
+function bollingerBands(items: PricePoint[], times: Time[], windowSize = 20) {
   const upper: LineData<Time>[] = []
   const middle: LineData<Time>[] = []
   const lower: LineData<Time>[] = []
@@ -211,7 +233,7 @@ function bollingerBands(items: PricePoint[], times: string[], windowSize = 20) {
   return { upper, middle, lower }
 }
 
-function wilderRsi(items: PricePoint[], times: string[], period = 14): LineData<Time>[] {
+function wilderRsi(items: PricePoint[], times: Time[], period = 14): LineData<Time>[] {
   if (items.length <= period) return []
   let averageGain = 0
   let averageLoss = 0
@@ -244,7 +266,7 @@ function exponentialMovingAverage(values: number[], period: number) {
   return result
 }
 
-function macd(items: PricePoint[], times: string[]) {
+function macd(items: PricePoint[], times: Time[]) {
   const closes = items.map((item) => item.close)
   const fast = exponentialMovingAverage(closes, 12)
   const slow = exponentialMovingAverage(closes, 26)
@@ -260,7 +282,7 @@ function macd(items: PricePoint[], times: string[]) {
   }
 }
 
-function averageTrueRange(items: PricePoint[], times: string[], period = 14): LineData<Time>[] {
+function averageTrueRange(items: PricePoint[], times: Time[], period = 14): LineData<Time>[] {
   if (items.length <= period) return []
   const ranges = items.slice(1).map((item, index) => Math.max(
     item.high - item.low,
@@ -286,11 +308,13 @@ export function InteractiveStockChart({
   currency,
   items,
   period,
+  interval,
   loading,
   error,
   source,
   events,
   onPeriodChange,
+  onIntervalChange,
 }: Props) {
   const shellRef = useRef<HTMLDivElement>(null)
   const chartContainerRef = useRef<HTMLDivElement>(null)
@@ -331,10 +355,11 @@ export function InteractiveStockChart({
     } satisfies ChartSettings))
   }, [oscillator, showBollinger, showEvents, showMa5, showMa20, showMa60, showVolume, showVolumeMa20])
 
-  const drawings = drawingsBySymbol[symbol] ?? emptyDrawings
+  const drawingKey = `${symbol}:${interval}`
+  const drawings = drawingsBySymbol[drawingKey] ?? emptyDrawings
 
   const chartData = useMemo(() => {
-    const times = items.map((item) => toChartTime(item.time, market))
+    const times = items.map((item) => toChartTime(item.time, market, interval))
     const candles: CandlestickData<Time>[] = items.map((item, index) => ({
       time: times[index],
       open: item.open,
@@ -386,14 +411,14 @@ export function InteractiveStockChart({
       rsiUpper: times.map((time) => ({ time, value: 70 })),
       rsiLower: times.map((time) => ({ time, value: 30 })),
     }
-  }, [items, market])
+  }, [interval, items, market])
 
   const updateCurrentDrawings = useCallback((updater: (current: Drawing[]) => Drawing[]) => {
     setDrawingsBySymbol((current) => ({
       ...current,
-      [symbol]: updater(current[symbol] ?? emptyDrawings),
+      [drawingKey]: updater(current[drawingKey] ?? emptyDrawings),
     }))
-  }, [symbol])
+  }, [drawingKey])
 
   const refreshProjection = useCallback(() => {
     const chart = chartRef.current
@@ -412,9 +437,9 @@ export function InteractiveStockChart({
         return [{ id: drawing.id, type: drawing.type, x1: 0, y1: y, x2: width, y2: y }]
       }
 
-      const x1 = chart.timeScale().timeToCoordinate(drawing.anchors[0].time)
+      const x1 = chart.timeScale().timeToCoordinate(drawing.anchors[0].time as Time)
       const y1 = candleSeries.priceToCoordinate(drawing.anchors[0].price)
-      const x2 = chart.timeScale().timeToCoordinate(drawing.anchors[1].time)
+      const x2 = chart.timeScale().timeToCoordinate(drawing.anchors[1].time as Time)
       const y2 = candleSeries.priceToCoordinate(drawing.anchors[1].price)
       if (x1 == null || y1 == null || x2 == null || y2 == null) return []
       return [{ id: drawing.id, type: drawing.type, x1, y1, x2, y2 }]
@@ -464,7 +489,8 @@ export function InteractiveStockChart({
       rightPriceScale: { borderColor: '#23303d' },
       timeScale: {
         borderColor: '#23303d',
-        timeVisible: false,
+        timeVisible: interval === '1m',
+        secondsVisible: false,
         rightOffset: 4,
         barSpacing: 8,
         minBarSpacing: 3,
@@ -487,11 +513,11 @@ export function InteractiveStockChart({
       },
     })
     candleSeries.setData(chartData.candles)
-    if (showEvents && events && events.length > 0) {
+    if (interval === '1D' && showEvents && events && events.length > 0) {
       const availableTimes = new Set(chartData.candles.map((item) => String(item.time)))
       const markers: SeriesMarker<Time>[] = events
-        .map((event) => ({ event, time: toChartTime(event.time, market) }))
-        .filter(({ time }) => availableTimes.has(time))
+        .map((event) => ({ event, time: toChartTime(event.time, market, interval) }))
+        .filter(({ time }) => availableTimes.has(String(time)))
         .map(({ event, time }) => ({
           time,
           position: event.signal === 'BUY' ? 'belowBar' : 'aboveBar',
@@ -600,25 +626,26 @@ export function InteractiveStockChart({
         setHoverData(null)
         return
       }
+      const normalizedTime = normalizeTime(param.time)
       setHoverData({
-        time: normalizeTime(param.time),
+        time: displayChartTime(param.time, market, interval),
         open: candle.open,
         high: candle.high,
         low: candle.low,
         close: candle.close,
         volume: volume && 'value' in volume && typeof volume.value === 'number' ? volume.value : 0,
-        ma5: valueAtTime(chartData.ma5, normalizeTime(param.time)),
-        ma20: valueAtTime(chartData.ma20, normalizeTime(param.time)),
-        ma60: valueAtTime(chartData.ma60, normalizeTime(param.time)),
-        volumeMa20: valueAtTime(chartData.volumeMa20, normalizeTime(param.time)),
-        bollingerUpper: valueAtTime(chartData.bollinger.upper, normalizeTime(param.time)),
-        bollingerLower: valueAtTime(chartData.bollinger.lower, normalizeTime(param.time)),
+        ma5: valueAtTime(chartData.ma5, normalizedTime),
+        ma20: valueAtTime(chartData.ma20, normalizedTime),
+        ma60: valueAtTime(chartData.ma60, normalizedTime),
+        volumeMa20: valueAtTime(chartData.volumeMa20, normalizedTime),
+        bollingerUpper: valueAtTime(chartData.bollinger.upper, normalizedTime),
+        bollingerLower: valueAtTime(chartData.bollinger.lower, normalizedTime),
         oscillatorValue: oscillator === 'rsi'
-          ? valueAtTime(chartData.rsi, normalizeTime(param.time))
+          ? valueAtTime(chartData.rsi, normalizedTime)
           : oscillator === 'atr'
-            ? valueAtTime(chartData.atr, normalizeTime(param.time))
+            ? valueAtTime(chartData.atr, normalizedTime)
             : oscillator === 'macd'
-              ? valueAtTime(chartData.macd.histogram, normalizeTime(param.time))
+              ? valueAtTime(chartData.macd.histogram, normalizedTime)
               : undefined,
       })
       queueProjection()
@@ -654,6 +681,7 @@ export function InteractiveStockChart({
     chartData,
     currency,
     events,
+    interval,
     market,
     oscillator,
     queueProjection,
@@ -779,6 +807,12 @@ export function InteractiveStockChart({
     if (nextTool !== 'pan') setSelectedDrawingId(null)
   }
 
+  useEffect(() => {
+    setPendingAnchor(null)
+    setSelectedDrawingId(null)
+    setTool('pan')
+  }, [drawingKey])
+
   function resetVisibleRange() {
     chartRef.current?.timeScale().fitContent()
     queueProjection()
@@ -862,18 +896,26 @@ export function InteractiveStockChart({
       className={`interactive-chart-shell${fullscreenFallback ? ' fullscreen-fallback' : ''}`}
     >
       <div className="chart-toolbar" aria-label="상세 차트 도구 모음">
-        <div className="chart-periods" aria-label="조회 기간">
-          {periods.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={period === option.value}
-              onClick={() => onPeriodChange(option.value)}
-              disabled={loading}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="chart-range-controls">
+          <div className="chart-intervals" aria-label="봉 간격">
+            <button type="button" aria-pressed={interval === '1D'} onClick={() => onIntervalChange('1D')}>일봉</button>
+            <button type="button" aria-pressed={interval === '1m'} onClick={() => onIntervalChange('1m')}>1분봉</button>
+          </div>
+          {interval === '1D' ? (
+            <div className="chart-periods" aria-label="조회 기간">
+              {periods.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={period === option.value}
+                  onClick={() => onPeriodChange(option.value)}
+                  disabled={loading}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : <span className="intraday-session-label"><i />현재 서버 세션 · 최대 390봉</span>}
         </div>
         <div className="chart-tools">
           <button type="button" onClick={resetVisibleRange}>범위 초기화</button>
@@ -939,7 +981,7 @@ export function InteractiveStockChart({
           ref={chartContainerRef}
           className="interactive-chart-canvas"
           role="img"
-          aria-label={`${symbol} ${period} 일봉 캔들 및 거래량 차트`}
+          aria-label={`${symbol} ${interval === '1m' ? '실시간 1분봉' : `${period} 일봉`} 캔들 및 거래량 차트`}
         />
 
         <svg
@@ -1024,7 +1066,7 @@ export function InteractiveStockChart({
 
       {latest && (
         <p className="chart-a11y-summary">
-          최신 일봉 {new Date(latest.time).toLocaleDateString('ko-KR')}: 시가 {formatPrice(latest.open, currency)},
+          최신 {interval === '1m' ? '1분봉' : '일봉'} {new Date(latest.time).toLocaleString('ko-KR')}: 시가 {formatPrice(latest.open, currency)},
           고가 {formatPrice(latest.high, currency)}, 저가 {formatPrice(latest.low, currency)},
           종가 {formatPrice(latest.close, currency)}, 거래량 {formatVolume(latest.volume)}.
         </p>

@@ -69,7 +69,7 @@ ADMIN admin@finwatch.local / FinWatchAdmin123!
 
 포트폴리오는 사용자별 보유 수량과 평균 매수가를 저장하고 WebSocket 실시간 시세를 우선해 평가합니다. 환율 공급자가 없는 MVP에서는 KRW와 USD를 합산하지 않고 통화별 평가액·손익·수익률을 보여줍니다. 가격 알림은 ABOVE/BELOW 조건과 ACTIVE/TRIGGERED/DISABLED 상태를 관리하며 수신 틱을 250ms 단위로 합쳐 활성 조건을 자동 평가합니다. 실시간 값이 없거나 저장 가격보다 오래된 경우에는 최신 DB 가격을 유지합니다.
 
-상세 차트는 `1M·3M·6M·1Y·ALL` 일봉 조회, 캔들·거래량 MA20·MA5/20/60·볼린저 밴드·Wilder RSI·MACD·ATR, 교차 이벤트 마커, 확대·이동·십자선 툴팁, 전체화면, 추세선·수평선 그리기를 지원합니다. 지표 표시 설정은 브라우저 세션 동안 유지되며 사용자 그리기는 종목별 브라우저 메모리에 유지됩니다.
+상세 차트는 `1M·3M·6M·1Y·ALL` 일봉과 현재 서버 세션의 실시간 1분 봉 전환, 캔들·거래량 MA20·MA5/20/60·볼린저 밴드·Wilder RSI·MACD·ATR, 교차 이벤트 마커, 확대·이동·십자선 툴팁, 전체화면, 추세선·수평선 그리기를 지원합니다. 지표 표시 설정은 브라우저 세션 동안 유지되며 사용자 그리기는 종목·봉 간격별 브라우저 메모리에 분리됩니다.
 
 뉴스 본문은 출처 정책을 통과한 경우에만 수집·AI 분석할 수 있습니다. 등록되지 않은 도메인은 기본 `METADATA_ONLY`이며 원문 링크만 제공합니다. 허용 출처 수집기는 HTTPS·공개 IP·경로 allowlist, redirect 재검증, 응답 크기 제한과 호스트별 호출 간격을 적용합니다. SEC EDGAR 수집 PoC를 실행할 때는 공식 접근 정책에 맞는 프로젝트명과 연락처를 `ARTICLE_USER_AGENT` 환경변수로 설정해야 합니다.
 
@@ -130,8 +130,12 @@ cd backend
 9. [보안·배포 명세](docs/09_SECURITY_DEPLOYMENT_SPEC.md)
 10. [테스트·인수 명세](docs/10_TEST_ACCEPTANCE_SPEC.md)
 11. [기술적 분석·상세 차트 명세](docs/11_TECHNICAL_ANALYSIS_SPEC.md)
+12. [AI 기술지표 해설 명세](docs/12_AI_TECHNICAL_EXPLANATION_SPEC.md)
+13. [근거 기반 일일 변화 브리핑 명세](docs/13_AI_DAILY_CHANGE_BRIEFING_SPEC.md)
+14. [종목 검색·탐색·온디맨드 데이터 명세](docs/14_STOCK_DISCOVERY_SPEC.md)
+15. [환율·기준통화 포트폴리오 명세](docs/15_FX_RATE_SPEC.md)
 
-기능과 문서가 충돌하면 대회 작품소개서와 `01_REQUIREMENTS.md`를 우선합니다. 영역별 세부 규칙은 `06`~`11` 문서를 따릅니다. API 필드 변경은 `03_API_SPEC.md`, DB 변경은 `04_DB_SCHEMA.md`를 같은 커밋에서 함께 수정합니다. 미확정 항목은 구현자가 임의로 확정하지 않고 해당 명세의 결정 게이트를 먼저 갱신합니다.
+기능과 문서가 충돌하면 대회 작품소개서와 `01_REQUIREMENTS.md`를 우선합니다. 영역별 세부 규칙은 `06`~`15` 문서를 따릅니다. API 필드 변경은 `03_API_SPEC.md`, DB 변경은 `04_DB_SCHEMA.md`를 같은 커밋에서 함께 수정합니다. 미확정 항목은 구현자가 임의로 확정하지 않고 해당 명세의 결정 게이트를 먼저 갱신합니다.
 
 ## 첫 번째 완성 목표
 
@@ -163,7 +167,7 @@ SK하이닉스 상세 조회
 | 공식 기업 콘텐츠 | 승인된 IR·뉴스룸·RSS |
 | AI 분석 | Gemini |
 
-KIS 국내 일봉, NAVER API HUB 국내 뉴스와 Finnhub 미국 뉴스 클라이언트는 DB 동기화 계층에 연결되어 있습니다. `DATA_MODE=LIVE`와 `REALTIME_ENABLED=true`에서는 백엔드가 KIS `H0STCNT0`와 Finnhub trade WebSocket을 구독해 브라우저의 단일 `/ws/quotes` 스트림으로 중계합니다. 틱은 PostgreSQL에 매번 저장하지 않고 메모리의 최신 시세만 교체하며, 일봉·기술지표는 기존 DB 데이터를 사용합니다. 장이 닫혔거나 스트림이 아직 틱을 보내지 않은 종목은 공급자 REST 스냅샷과 기준 시각을 표시합니다.
+KIS 국내 일봉, NAVER API HUB 국내 뉴스와 Finnhub 미국 뉴스 클라이언트는 DB 동기화 계층에 연결되어 있습니다. `DATA_MODE=LIVE`와 `REALTIME_ENABLED=true`에서는 백엔드가 KIS `H0STCNT0`와 Finnhub trade WebSocket을 구독해 브라우저의 단일 `/ws/quotes` 스트림으로 중계합니다. 틱은 PostgreSQL에 매번 저장하지 않고 최신 시세와 종목별 최대 600개의 1분 OHLCV를 메모리에 유지합니다. 차트 조회 API는 최근 390봉을 제공하며 서버를 재시작하면 장중 버퍼는 초기화됩니다. 장이 닫혔거나 스트림이 아직 틱을 보내지 않은 종목은 공급자 REST 스냅샷과 기준 시각을 표시하되 REST 스냅샷을 체결 봉으로 만들지는 않습니다.
 
 ```text
 POST /api/v1/admin/data/sync

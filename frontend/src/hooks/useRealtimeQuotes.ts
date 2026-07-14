@@ -1,14 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import type {
   LiveQuote,
+  IntradayCandle,
+  IntradayCandleSnapshot,
   RealtimeConnectionState,
   RealtimeProviderStatus,
   RealtimeSnapshot,
 } from '../types/realtime'
 
 type RealtimeEvent = {
-  type: 'snapshot' | 'quote' | 'status'
-  data: RealtimeSnapshot | LiveQuote | RealtimeProviderStatus
+  type: 'snapshot' | 'quote' | 'status' | 'candle' | 'candles'
+  data: RealtimeSnapshot | LiveQuote | RealtimeProviderStatus | IntradayCandle | IntradayCandleSnapshot
+}
+
+function mergeCandle(current: IntradayCandle[], candle: IntradayCandle) {
+  const index = current.findIndex((item) => item.time === candle.time)
+  const next = index < 0
+    ? [...current, candle]
+    : current.map((item, itemIndex) => itemIndex === index ? candle : item)
+  return next.sort((left, right) => left.time.localeCompare(right.time)).slice(-600)
 }
 
 function websocketUrl() {
@@ -19,6 +29,7 @@ function websocketUrl() {
 export function useRealtimeQuotes(enabled: boolean) {
   const [quotes, setQuotes] = useState<Record<string, LiveQuote>>({})
   const [providers, setProviders] = useState<Record<string, RealtimeProviderStatus>>({})
+  const [intradayCandles, setIntradayCandles] = useState<Record<string, IntradayCandle[]>>({})
   const [connection, setConnection] = useState<RealtimeConnectionState>('disconnected')
 
   useEffect(() => {
@@ -59,6 +70,23 @@ export function useRealtimeQuotes(enabled: boolean) {
           if (event.type === 'status') {
             const status = event.data as RealtimeProviderStatus
             setProviders((current) => ({ ...current, [status.provider]: status }))
+            return
+          }
+          if (event.type === 'candles') {
+            const snapshot = event.data as IntradayCandleSnapshot
+            const grouped = snapshot.candles.reduce<Record<string, IntradayCandle[]>>((current, candle) => {
+              current[candle.symbol] = [...(current[candle.symbol] ?? []), candle]
+              return current
+            }, {})
+            setIntradayCandles(grouped)
+            return
+          }
+          if (event.type === 'candle') {
+            const candle = event.data as IntradayCandle
+            setIntradayCandles((current) => ({
+              ...current,
+              [candle.symbol]: mergeCandle(current[candle.symbol] ?? [], candle),
+            }))
           }
         } catch {
           // Ignore malformed provider relay frames and keep the stream open.
@@ -89,5 +117,5 @@ export function useRealtimeQuotes(enabled: boolean) {
     [providers],
   )
 
-  return { quotes, providers, connection, connectedProviders }
+  return { quotes, providers, intradayCandles, connection, connectedProviders }
 }
