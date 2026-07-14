@@ -1,6 +1,6 @@
 # FinWatch 외부 데이터 공급자 명세
 
-상태: v0.2. 공급자 조합은 확정했으며, 키 발급·이용약관·시세 표시 권한·호출 한도와 PoC 검증은 LIVE 전환 게이트로 남아 있다.
+상태: v0.3. 공급자 조합과 로컬 LIVE PoC는 구현했으며, 운영 배포 전 이용약관·시세 공개 표시 권한·호출 한도 확인은 게이트로 남아 있다.
 
 ## 1. 목적과 범위
 
@@ -20,13 +20,12 @@ FinWatch는 거래 체결용 시세 시스템이 아니다. 화면에 표시하�
 
 ### 현재 구현
 
-- `stocks`, `market_prices`, `news_articles`의 Flyway 데모 데이터를 조회한다.
-- 가격과 뉴스의 `source`는 `DEMO`이며 외부 API 호출, 증분 수집, 재시도와 수집 체크포인트는 아직 없다.
-- 현재가는 별도 실시간 테이블이 아니라 가장 최근 `market_prices` 행의 종가를 사용한다.
-- 가격 이력은 `1D`만 구현되어 있고 기술적 분석에는 최소 60개의 종가가 필요하다.
-- 뉴스 한 건은 `news_articles.stock_id`로 종목 하나에만 연결된다.
-- AI 요약은 `news_articles.content`가 저장되어 있어야 실행할 수 있다.
-- 기존 일반 Flyway 마이그레이션에 `DEMO` 시드가 포함되어 있으므로 라이브 DB 격리 정책이 아직 구현되지 않았다.
+- `DATA_MODE=DEMO`에서는 Flyway 데모 데이터만 사용하고 `LIVE`에서는 KIS 국내 일봉과 NAVER API HUB·Finnhub 뉴스를 수동 동기화한다.
+- KIS REST 현재가와 `H0STCNT0` 국내 체결, Finnhub Quote와 trade WebSocket을 서버에서 구독한다.
+- 실시간 틱은 별도 DB 행을 계속 만들지 않고 인메모리 허브의 종목별 최신 값만 교체한다. 종목·관심종목 REST 응답도 유효한 허브 값을 우선한다.
+- 브라우저는 `/ws/quotes`에서 연결 직후 snapshot과 이후 quote/status 이벤트를 받고 자동 재연결한다.
+- 가격 이력은 DB의 `1D`를 사용하고 선택 종목의 최신 캔들 close/high/low를 수신 틱으로 보정한다.
+- 뉴스 한 건은 `news_articles.stock_id`로 종목 하나에 연결되며, AI 요약은 저장·분석 권한이 있는 content에만 실행한다.
 
 ### 목표 흐름
 
@@ -93,9 +92,9 @@ DG-0부터 DG-4까지 통과하기 전에는 운영 환경에서 `LIVE` 모드�
 
 | 내부 ID | 공급자 | 확정 용도 | 사용하지 않는 용도 |
 |---|---|---|---|
-| `kis` | 한국투자증권 KIS Open API | KRX·미국 주식 종목, 현재가, 일봉 OHLCV, 실시간 WebSocket | 뉴스, 주문·자동매매 |
+| `kis` | 한국투자증권 KIS Open API | KRX 현재가, 일봉 OHLCV, `H0STCNT0` 실시간 체결 | 미국 시세, 뉴스, 주문·자동매매 |
 | `naver-api-hub` | NAVER API HUB 뉴스 검색 | 국내 종목 뉴스 발견, 제목·description·원문 URL·발행 시각 | 언론사 본문 전문 제공 |
-| `finnhub` | Finnhub Company/Market News | 미국 종목 뉴스 발견, 제공 summary·관련 종목·원문 URL | KRX 시세, 언론사 본문 전문 제공 |
+| `finnhub` | Finnhub Quote / WebSocket / Company News | 미국 현재가·실시간 체결과 미국 종목 뉴스 발견 | KRX 시세, 언론사 본문 전문 제공 |
 | `opendart` | 금융감독원 Open DART | 국내 기업 공시 목록·원문과 구조화 재무·주요공시 | 일반 언론 뉴스 |
 | `sec-edgar` | 미국 SEC EDGAR | 미국 기업 제출 문서·공시 원문 | 일반 언론 뉴스 |
 | `official-web` | 승인된 기업 IR·뉴스룸·RSS | 기업 공식 보도자료·IR 본문 | 승인되지 않은 언론사·전체 웹 탐색 |
@@ -104,21 +103,24 @@ AI 공급자는 `GeminiAiProvider`, 개발·테스트 대역은 `MockAiProvider`
 
 선정 이유:
 
-1. KIS 하나로 국내·해외 시세 인증과 실시간 연결을 통합하여 시세 어댑터 수를 줄인다.
-2. NAVER API HUB는 국내 뉴스 검색, Finnhub는 미국 회사 뉴스 발견에 각각 사용하여 검색 품질과 종목 연관성을 확보한다.
+1. KIS는 국내 체결과 일봉, Finnhub는 무료 등급에서 확인 가능한 미국 Quote·trade 스트림을 담당하도록 시장별로 분리한다.
+2. NAVER API HUB는 국내 뉴스 검색, Finnhub는 미국 회사 뉴스 발견에도 사용하여 검색 품질과 종목 연관성을 확보한다.
 3. 검색 API가 제공하지 않는 전문은 Open DART·SEC EDGAR·기업 공식 출처부터 확보하여 Gemini의 실제 본문 분석 의미를 유지한다.
 4. 언론사 전체 웹 크롤링과 주문 API는 포트폴리오 MVP 범위에서 제외해 법적·보안·운영 위험을 줄인다.
 
 실시간 전달은 다음 구조로 고정한다.
 
 ```text
-KIS WebSocket
-  -> Spring Boot KIS adapter
-  -> Redis latest quote / fan-out
-  -> FinWatch SSE 또는 WebSocket
+KIS H0STCNT0 WebSocket + Finnhub trade WebSocket
+  -> Spring Boot provider adapters
+  -> in-memory latest quote hub
+  -> FinWatch /ws/quotes
   -> React 상세 차트·관심종목
 
-KIS REST
+KIS REST + Finnhub Quote
+  -> 시작 시 현재가 snapshot
+
+KIS REST daily bars
   -> 일봉 OHLCV 정규화
   -> PostgreSQL
   -> 기술적 분석·기간 차트
@@ -530,7 +532,8 @@ app:
 | KIS | `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_HTS_ID` | 서버 Secret, REST·WebSocket 인증 |
 | KIS | `KIS_ENV` | `paper` 또는 `prod`; 시세 PoC는 가능한 범위에서 모의·테스트 환경 우선 |
 | NAVER API HUB | `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET` | 각각 `X-NCP-APIGW-API-KEY-ID`, `X-NCP-APIGW-API-KEY` 헤더로 서버에서 전송 |
-| Finnhub | `FINNHUB_API_KEY` | 서버 Secret; 뉴스 API에만 사용 |
+| Finnhub | `FINNHUB_API_KEY` | 서버 Secret; Quote·trade WebSocket·뉴스 API에 사용 |
+| 실시간 | `REALTIME_ENABLED`, `REALTIME_RECONNECT_MAX_DELAY` | LIVE 스트림 활성화와 지수 백오프 최대 지연 |
 | Open DART | `OPENDART_API_KEY` | 서버 Secret |
 | SEC EDGAR | `SEC_EDGAR_USER_AGENT` | 프로젝트명과 연락처를 포함; 비밀키는 아님 |
 
@@ -545,14 +548,14 @@ US_DISCLOSURE_PROVIDER=sec-edgar
 AI_PROVIDER=gemini
 ```
 
-실제 URL, WebSocket TR 식별자, 호출 제한은 공식 문서와 발급 계정의 권한을 PoC에서 확인한 뒤 adapter 설정에 고정한다. 포털에 표시된 Secret 예시나 계좌정보를 문서·Fixture에 저장하지 않는다.
+KIS 국내 체결 TR은 공식 샘플의 `H0STCNT0`, Finnhub는 `wss://ws.finnhub.io?token=...` trade 구독을 사용한다. 호출 제한과 공개 표시 권한은 발급 계정 약관을 운영 배포 전에 다시 확인하며 포털의 Secret이나 계좌정보를 문서·Fixture에 저장하지 않는다.
 
 공급자별 `BASE_URL`, `API_KEY`, 호출 한도와 계정 ID는 어댑터 전용 namespace로 둔다. 호출 한도에는 임의 기본값을 두지 않고 DG-3에서 확인한 계약값을 `LIVE` 필수 설정으로 등록한다. 실제 키는 로컬 사용자 환경변수 또는 배포 플랫폼 Secret에 저장하고 Git, 프런트엔드, 이미지와 일반 로그에 넣지 않는다. 운영 키는 최소 권한으로 발급하고 개발·스테이징·운영을 분리하며 회전 일자를 기록한다.
 
 애플리케이션 시작 시 다음 조건을 검증한다.
 
 - `DEMO`: 외부 키가 없어도 시작하며 외부 어댑터 Bean을 만들지 않는다.
-- `LIVE`: 두 공급자의 선택값과 필수 키가 없으면 빠르게 실패한다.
+- `LIVE`: 필수 키가 없는 공급자는 `ERROR` 상태를 내보내고 해당 스트림만 비활성화한다.
 - `MIXED`: 허용 플래그가 없으면 시작을 거부한다.
 - 공급자별 base URL은 운영 허용 목록의 HTTPS 주소만 사용한다.
 

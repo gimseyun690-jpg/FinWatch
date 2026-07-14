@@ -8,6 +8,7 @@ import type {
   StockSummary,
   TechnicalAnalysis,
 } from '../types/stock'
+import type { LiveQuote } from '../types/realtime'
 import { InteractiveStockChart } from './InteractiveStockChart'
 
 type DetailState = {
@@ -18,6 +19,7 @@ type DetailState = {
 
 type Props = {
   symbol: string
+  liveQuote?: LiveQuote
 }
 
 const signalLabels: Record<Signal, string> = {
@@ -68,7 +70,21 @@ function demoPricesFor(period: PricePeriod): PriceHistory {
   }
 }
 
-export function StockDetail({ symbol }: Props) {
+function mergeLiveCandle(prices: PriceHistory | null, liveQuote?: LiveQuote): PriceHistory | null {
+  if (prices == null || liveQuote == null || prices.items.length === 0) return prices
+  const items = [...prices.items]
+  const latest = items.at(-1)!
+  items[items.length - 1] = {
+    ...latest,
+    high: Math.max(latest.high, liveQuote.price),
+    low: Math.min(latest.low, liveQuote.price),
+    close: liveQuote.price,
+    volume: Math.max(latest.volume, liveQuote.volume),
+  }
+  return { ...prices, items }
+}
+
+export function StockDetail({ symbol, liveQuote }: Props) {
   const [detail, setDetail] = useState<DetailState | null>(null)
   const [prices, setPrices] = useState<PriceHistory | null>(null)
   const [period, setPeriod] = useState<PricePeriod>('3M')
@@ -131,14 +147,25 @@ export function StockDetail({ symbol }: Props) {
     return <section className="card detail-loading" aria-live="polite">종목 상세 정보를 불러오는 중입니다.</section>
   }
 
-  const { stock, technical } = detail
+  const { technical } = detail
+  const stock = liveQuote == null ? detail.stock : {
+    ...detail.stock,
+    price: liveQuote.price,
+    change: liveQuote.change,
+    changeRate: liveQuote.changeRate,
+    volume: liveQuote.volume,
+    asOf: liveQuote.asOf,
+    source: liveQuote.source,
+  }
+  const chartPrices = mergeLiveCandle(prices, liveQuote)
   const changeClass = stock.changeRate >= 0 ? 'up' : 'down'
+  const streaming = liveQuote?.sessionStatus === 'LIVE'
 
   return (
     <section className="stock-detail" id="stock-detail" aria-labelledby="stock-detail-title">
       <div className="detail-title-row">
         <div>
-          <p className="eyebrow">STOCK DETAIL · {detail.source}</p>
+          <p className="eyebrow">STOCK DETAIL · {liveQuote?.source ?? detail.source}</p>
           <h2 id="stock-detail-title">{stock.name} 기술적 분석</h2>
           <p>{stock.symbol} · {stock.market} · {new Date(stock.asOf).toLocaleString('ko-KR')}</p>
         </div>
@@ -151,7 +178,7 @@ export function StockDetail({ symbol }: Props) {
         <article className="card price-chart-card">
           <div className="quote-row">
             <div>
-              <span>현재가</span>
+              <span>현재가 {streaming && <em className="live-tick-badge"><i />TICK</em>}</span>
               <strong>{formatMoney(stock.price, stock.currency)}</strong>
             </div>
             <div className={changeClass}>
@@ -164,7 +191,7 @@ export function StockDetail({ symbol }: Props) {
             symbol={stock.symbol}
             market={stock.market}
             currency={stock.currency}
-            items={prices?.items ?? []}
+            items={chartPrices?.items ?? []}
             period={period}
             loading={pricesLoading}
             error={null}

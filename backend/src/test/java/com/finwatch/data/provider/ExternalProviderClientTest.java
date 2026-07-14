@@ -81,6 +81,13 @@ class ExternalProviderClientTest {
                     }]
                     """);
         });
+        server.createContext("/quote", exchange -> {
+            assertThat(exchange.getRequestHeaders().getFirst("X-Finnhub-Token")).isEqualTo("finnhub-key");
+            assertThat(exchange.getRequestURI().getRawQuery()).contains("symbol=AAPL");
+            respond(exchange, 200, """
+                    {"c":317.31,"d":2.4,"dp":0.7621,"h":318.0,"l":313.2,"o":314.5,"pc":314.91,"t":1784000000}
+                    """);
+        });
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -136,6 +143,21 @@ class ExternalProviderClientTest {
         assertThat(result.items().getFirst().description()).isEqualTo("Apple announced a new AI investment.");
         assertThat(result.items().getFirst().providerId()).isEqualTo("finnhub");
         assertThat(result.items().getFirst().publishedAt()).isNotNull();
+    }
+
+    @Test
+    void finnhubNormalizesCurrentQuote() {
+        FinnhubMarketDataClient client = new FinnhubMarketDataClient(
+                "finnhub-key", baseUrl, java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
+
+        Quote quote = client.quote("aapl");
+
+        assertThat(quote.symbol()).isEqualTo("AAPL");
+        assertThat(quote.price()).isEqualByComparingTo("317.31");
+        assertThat(quote.change()).isEqualByComparingTo("2.4");
+        assertThat(quote.changeRate()).isEqualByComparingTo("0.7621");
+        assertThat(quote.currency()).isEqualTo("USD");
+        assertThat(quote.providerId()).isEqualTo("finnhub");
     }
 
     @Test

@@ -3,6 +3,7 @@ import { getStocks } from '../api/stocks'
 import { addWatchlist, getWatchlist, removeWatchlist } from '../api/watchlists'
 import type { StockSummary } from '../types/stock'
 import type { WatchlistItem } from '../types/watchlist'
+import type { LiveQuote } from '../types/realtime'
 
 type Props = {
   selectedSymbol: string
@@ -10,6 +11,7 @@ type Props = {
   onSelect: (symbol: string) => void
   onEditorOpenChange: (open: boolean) => void
   onItemsChange: (items: WatchlistItem[]) => void
+  liveQuotes: Record<string, LiveQuote>
 }
 
 function formatMoney(value: number, currency: string) {
@@ -26,6 +28,7 @@ export function WatchlistPanel({
   onSelect,
   onEditorOpenChange,
   onItemsChange,
+  liveQuotes,
 }: Props) {
   const [items, setItems] = useState<WatchlistItem[]>([])
   const [stocks, setStocks] = useState<StockSummary[]>([])
@@ -132,14 +135,24 @@ export function WatchlistPanel({
         </div>
       ) : (
         <div className="stock-grid" aria-label="관심종목 목록">
-          {items.map((stock) => (
-            <article className={`card stock-card ${selectedSymbol === stock.symbol ? 'selected' : ''}`} key={stock.id}>
+          {items.map((stock) => {
+            const liveQuote = liveQuotes[stock.symbol]
+            const streaming = liveQuote?.sessionStatus === 'LIVE'
+            const price = liveQuote?.price ?? stock.price
+            const changeRate = liveQuote?.changeRate ?? stock.changeRate
+            return (
+            <article className={`card stock-card ${selectedSymbol === stock.symbol ? 'selected' : ''} ${streaming ? 'live' : ''}`} key={stock.id}>
               <button className="stock-card-main" type="button" onClick={() => onSelect(stock.symbol)}>
                 <span className="card-heading"><span>{stock.name}</span><small>{stock.market}</small></span>
-                <strong>{formatMoney(stock.price, stock.currency)}</strong>
-                <span className={stock.changeRate >= 0 ? 'up' : 'down'}>
-                  {stock.changeRate >= 0 ? '+' : ''}{stock.changeRate.toFixed(2)}%
+                <strong>{formatMoney(price, stock.currency)}</strong>
+                <span className={changeRate >= 0 ? 'up' : 'down'}>
+                  {changeRate >= 0 ? '+' : ''}{changeRate.toFixed(2)}%
                 </span>
+                {liveQuote && (
+                  <span className={`live-quote-label ${streaming ? '' : 'snapshot'}`}>
+                    <i />{liveQuote.source} · {streaming ? '실시간' : '최근 시세'}
+                  </span>
+                )}
               </button>
               <button
                 className="remove-watchlist"
@@ -151,7 +164,8 @@ export function WatchlistPanel({
                 {mutatingSymbol === stock.symbol ? '…' : '삭제'}
               </button>
             </article>
-          ))}
+            )
+          })}
         </div>
       )}
     </section>

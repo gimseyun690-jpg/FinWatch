@@ -154,7 +154,8 @@ SK하이닉스 상세 조회
 
 | 영역 | 공급자 |
 |---|---|
-| 국장·미장 현재가·일봉·실시간 시세 | 한국투자증권 KIS Open API |
+| 국내 현재가·일봉·실시간 체결 | 한국투자증권 KIS Open API |
+| 미국 현재가·실시간 체결 | Finnhub Quote / WebSocket |
 | 국내 뉴스 검색 | NAVER API HUB |
 | 미국 뉴스 검색 | Finnhub |
 | 국내 공시·전문 | Open DART |
@@ -162,11 +163,13 @@ SK하이닉스 상세 조회
 | 공식 기업 콘텐츠 | 승인된 IR·뉴스룸·RSS |
 | AI 분석 | Gemini |
 
-KIS 국내 일봉, NAVER API HUB 국내 뉴스와 Finnhub 미국 뉴스 클라이언트는 DB 동기화 계층에 연결되어 있습니다. `DATA_MODE=DEMO`에서는 외부 호출 없이 고정 DB 데이터를 사용하고, `DATA_MODE=LIVE`에서는 관리자 동기화 API가 공급자별로 새 행만 저장합니다. 외부 호출이 실패하면 마지막 DB 데이터가 유지되고 동기화 응답에 `FALLBACK` 상태가 표시됩니다. 미국 시세는 별도 공급자가 아직 없어 기존 DB 시세를 유지합니다.
+KIS 국내 일봉, NAVER API HUB 국내 뉴스와 Finnhub 미국 뉴스 클라이언트는 DB 동기화 계층에 연결되어 있습니다. `DATA_MODE=LIVE`와 `REALTIME_ENABLED=true`에서는 백엔드가 KIS `H0STCNT0`와 Finnhub trade WebSocket을 구독해 브라우저의 단일 `/ws/quotes` 스트림으로 중계합니다. 틱은 PostgreSQL에 매번 저장하지 않고 메모리의 최신 시세만 교체하며, 일봉·기술지표는 기존 DB 데이터를 사용합니다. 장이 닫혔거나 스트림이 아직 틱을 보내지 않은 종목은 공급자 REST 스냅샷과 기준 시각을 표시합니다.
 
 ```text
 POST /api/v1/admin/data/sync
 POST /api/v1/admin/data/stocks/{symbol}/sync
+GET  /api/v1/stocks/realtime
+WS   /ws/quotes
 ```
 
 두 API는 ADMIN JWT가 필요합니다. LIVE 전환 전에는 이용약관, 공개 표시 권한과 실제 계정 호출 한도를 확인하고 외부 키는 백엔드 환경변수에만 저장합니다.

@@ -146,4 +146,4 @@ feature/aws-deploy
 
 ## 다음 즉시 작업
 
-애플리케이션 구현의 남은 작업은 실제 AWS 계정에서 EC2·RDS·Redis·CloudWatch를 배포하고 발표 자료·시연 영상을 만드는 것이다. 로컬 코드는 KIS·NAVER API HUB·Finnhub 동기화, Gemini/Mock AI, 고급 기술지표와 Playwright E2E까지 완료된 상태를 유지한다.
+애플리케이션 구현의 남은 작업은 실제 AWS 계정에서 EC2·RDS·Redis·CloudWatch를 배포하고 발표 자료·시연 영상을 만드는 것이다. 로컬 코드는 KIS·Finnhub 실시간 체결 WebSocket, KIS·NAVER API HUB·Finnhub 동기화, Gemini/Mock AI, 고급 기술지표와 Playwright E2E까지 완료된 상태를 유지한다.

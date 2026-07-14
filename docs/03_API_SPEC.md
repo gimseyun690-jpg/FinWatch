@@ -137,6 +137,43 @@
 }
 ```
 
+### `GET /stocks/realtime`
+
+인증 사용자가 현재 인메모리 실시간 시세와 공급자 연결 상태를 진단하는 스냅샷 API다. 브라우저의 연속 갱신은 REST polling이 아니라 `/ws/quotes`를 사용한다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "quotes": [
+      {
+        "symbol": "000660",
+        "price": 1763000,
+        "change": -82000,
+        "changeRate": -4.44,
+        "volume": 4607000,
+        "currency": "KRW",
+        "asOf": "2026-07-14T02:32:08Z",
+        "source": "KIS_WS",
+        "sessionStatus": "LIVE"
+      }
+    ],
+    "providers": [
+      { "provider": "KIS", "state": "CONNECTED", "message": "2개 KRX 종목 체결 구독 중", "updatedAt": "2026-07-14T02:28:09Z" }
+    ]
+  },
+  "message": "실시간 시세 연결 상태 조회 성공"
+}
+```
+
+### `WS /ws/quotes`
+
+연결 직후 `snapshot`, 이후 변경마다 `quote` 또는 `status` 이벤트를 전송한다. 프런트엔드는 지수 백오프로 자동 재연결하고 새 연결의 snapshot으로 상태를 복구한다. `sessionStatus=LIVE`만 `TICK`으로 표시하며 REST 초기값은 `SNAPSHOT`으로 구분한다.
+
+```json
+{ "type": "quote", "data": { "symbol": "005930", "price": 255000, "source": "KIS_WS", "sessionStatus": "LIVE", "asOf": "2026-07-14T02:32:08Z" } }
+```
+
 ### `POST /admin/data/sync`
 
 ### `POST /admin/data/stocks/{symbol}/sync`

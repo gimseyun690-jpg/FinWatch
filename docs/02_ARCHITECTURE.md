@@ -113,7 +113,7 @@ DB의 `ai_analyses`는 감사와 캐시 복구를 위한 영속 결과이며 Red
 - `NewsProvider`: 종목 관련 뉴스와 원문
 - `AiProvider`: 뉴스 요약과 토큰 사용량
 
-확정 조합은 KIS(국장·미장 시세), NAVER API HUB(국내 뉴스 발견), Finnhub(미국 뉴스 발견), Open DART·SEC EDGAR·기업 공식 출처(분석 가능한 전문), Gemini(AI 분석)다. 실제 키 없이도 고정 데모 데이터로 전체 시연 흐름을 유지한다. 수집·정규화·신선도·저작권·장애 처리 규칙은 `06_DATA_PROVIDER_SPEC.md`, AI 호출과 캐시 운영 규칙은 `08_AI_OPERATION_SPEC.md`를 따른다.
+확정 조합은 KIS(국내 일봉·현재가·체결), Finnhub(미국 현재가·체결·뉴스 발견), NAVER API HUB(국내 뉴스 발견), Open DART·SEC EDGAR·기업 공식 출처(분석 가능한 전문), Gemini(AI 분석)다. 실시간 틱은 KIS/Finnhub 어댑터에서 인메모리 최신 시세 허브로 들어오고 `/ws/quotes`로 브라우저에 fan-out한다. 실제 키 없이도 고정 데모 데이터로 전체 시연 흐름을 유지한다. 수집·정규화·신선도·저작권·장애 처리 규칙은 `06_DATA_PROVIDER_SPEC.md`, AI 호출과 캐시 운영 규칙은 `08_AI_OPERATION_SPEC.md`를 따른다.
 
 ## 8. 환경 구성
 

@@ -80,6 +80,15 @@ nav a.active {
 
 .api-status.connected .status-dot { background: var(--green); }
 .api-status.offline .status-dot { background: var(--red); }
+.realtime-status { display: inline-flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+.realtime-status.connected .status-dot { background: var(--green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 13%, transparent); animation: realtime-pulse 1.8s ease-out infinite; }
+.realtime-status.connecting .status-dot,
+.realtime-status.reconnecting .status-dot { background: var(--amber); }
+.realtime-status.disconnected .status-dot { background: var(--red); }
+@keyframes realtime-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 30%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 7px transparent; }
+}
 .topbar-actions { justify-self: end; display: flex; align-items: center; gap: 14px; }
 .pwa-install-button { border: 1px solid color-mix(in srgb, var(--cyan) 45%, var(--border)); border-radius: 999px; padding: 7px 10px; color: var(--cyan); background: color-mix(in srgb, var(--cyan) 7%, transparent); font-size: 10px; }
 .pwa-install-button:hover { filter: none; border-color: var(--cyan); }
@@ -200,12 +209,17 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 }
 .stock-card:hover { filter: none; border-color: color-mix(in srgb, var(--cyan) 55%, var(--border)); transform: translateY(-2px); }
 .stock-card.selected { border-color: var(--cyan); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 25%, transparent), 0 20px 45px rgba(0, 0, 0, .16); }
+.stock-card.live::before { position: absolute; top: 0; right: 0; left: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--green), transparent); content: ""; }
 .stock-card-main { display: block; width: 100%; padding: 18px; color: var(--text-strong); text-align: left; background: transparent; }
 .stock-card-main:hover { filter: none; }
 .card-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .card-heading span { font-weight: 750; }
 .card-heading small, .muted { color: var(--text-muted); }
 .stock-card-main > strong { display: block; overflow: hidden; margin-bottom: 6px; font-size: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.live-quote-label { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; color: var(--green); font-size: 9px; font-weight: 750; letter-spacing: .04em; }
+.live-quote-label i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px color-mix(in srgb, var(--green) 75%, transparent); }
+.live-quote-label.snapshot { color: var(--amber); }
+.live-quote-label.snapshot i { background: var(--amber); box-shadow: none; }
 .remove-watchlist { position: absolute; right: 10px; bottom: 10px; border: 1px solid transparent; padding: 5px 7px; color: var(--text-muted); background: color-mix(in srgb, var(--panel-soft) 92%, transparent); font-size: 9px; opacity: 0; transition: opacity .2s, border-color .2s; }
 .stock-card:hover .remove-watchlist, .remove-watchlist:focus-visible { opacity: 1; }
 .remove-watchlist:hover { filter: none; border-color: var(--red); color: var(--red); }
@@ -225,6 +239,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-
 .quote-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .quote-row > div { display: grid; gap: 5px; }
 .quote-row span { color: var(--text-muted); font-size: 12px; }
+.quote-row .live-tick-badge { display: inline-flex; align-items: center; width: max-content; border: 1px solid color-mix(in srgb, var(--green) 38%, var(--border)); border-radius: 999px; padding: 4px 7px; color: var(--green); background: color-mix(in srgb, var(--green) 7%, transparent); font-size: 9px; font-weight: 800; letter-spacing: .05em; }
 .quote-row > div:first-child strong { font-size: clamp(30px, 5vw, 46px); letter-spacing: -.045em; }
 .quote-row > div:last-child { text-align: right; }
 .quote-row > div:last-child strong { font-size: 18px; }

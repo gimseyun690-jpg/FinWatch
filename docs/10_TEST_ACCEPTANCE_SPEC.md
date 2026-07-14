@@ -17,7 +17,7 @@
 
 ## 2. 현재 테스트 기준선
 
-2026-07-13 저장소 기준으로 백엔드에는 8개 테스트 클래스와 `@Test` 메서드 12개가 있다.
+2026-07-14 저장소 기준으로 백엔드 단위·통합·공급자 계약 테스트와 프런트 Playwright E2E를 함께 실행한다.
 
 | 범위 | 현재 자동 검증 |
 |---|---|
@@ -29,10 +29,12 @@
 | AI 통합 | 첫 MISS와 두 번째 HIT, 분석·사용량 row 수 1개 |
 | 관리자 AI 통합 | cache 절감 지표와 사용량 정렬 1개 |
 | 관심종목 통합 | 사용자별 CRUD 격리, 중복·없는 삭제 1개 |
+| 실시간 시세 단위 | KIS 46필드 체결 파싱·부호, Finnhub trade 파싱, 오래된 틱 폐기 |
+| 실시간 화면 E2E | snapshot 수신, 공급자 2/2 상태, KIS 실시간 배지·TICK·현재가 반영 |
 
-통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS·NAVER API HUB·Finnhub·Gemini 계약과 429·오류 정규화를 검증하며, Playwright E2E는 로그인·상세 차트·지표 설정 유지·390px 모바일 overflow와 터치 크기를 검증한다. 실제 PostgreSQL·Redis serialization/TTL, 부하 테스트와 CI workflow는 아직 별도 게이트로 남아 있다.
+통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS·NAVER API HUB·Finnhub·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·WebSocket snapshot·실시간 가격 표시·상세 차트·지표 설정 유지·390px 모바일 overflow와 터치 크기를 검증한다. 실제 LIVE smoke에서는 KIS WebSocket의 연속 틱 시각·가격 변경과 Finnhub 연결 및 폐장 시 REST snapshot 유지 여부를 확인한다. 실제 PostgreSQL·Redis serialization/TTL, 부하 테스트와 CI workflow는 아직 별도 게이트로 남아 있다.
 
-따라서 현재 12개 테스트의 통과는 핵심 Vertical Slice의 회귀 신호이지만 MVP 전체 인수나 운영 준비 완료를 의미하지 않는다.
+따라서 현재 자동 테스트의 통과는 핵심 Vertical Slice의 회귀 신호이지만 AWS 운영 준비 완료를 의미하지 않는다.
 
 ## 3. 테스트 환경과 데이터 원칙
 

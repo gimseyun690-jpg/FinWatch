@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.finwatch.realtime.RealtimeQuoteHub;
 import com.finwatch.stock.domain.MarketPrice;
 import com.finwatch.stock.domain.Stock;
 import com.finwatch.stock.dto.StockResponses.Macd;
@@ -44,14 +45,17 @@ public class StockQueryService {
     private final StockRepository stockRepository;
     private final MarketPriceRepository marketPriceRepository;
     private final TechnicalAnalysisCalculator calculator;
+    private final RealtimeQuoteHub realtimeQuoteHub;
 
     public StockQueryService(
             StockRepository stockRepository,
             MarketPriceRepository marketPriceRepository,
-            TechnicalAnalysisCalculator calculator) {
+            TechnicalAnalysisCalculator calculator,
+            RealtimeQuoteHub realtimeQuoteHub) {
         this.stockRepository = stockRepository;
         this.marketPriceRepository = marketPriceRepository;
         this.calculator = calculator;
+        this.realtimeQuoteHub = realtimeQuoteHub;
     }
 
     public List<StockSummary> getStocks() {
@@ -142,6 +146,21 @@ public class StockQueryService {
     private StockSummary toSummary(Stock stock) {
         MarketPrice latest = marketPriceRepository.findTopByStockIdOrderByRecordedAtDesc(stock.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "현재가가 없습니다."));
+        var liveQuote = realtimeQuoteHub.find(stock.getSymbol());
+        if (liveQuote.isPresent()) {
+            var quote = liveQuote.get();
+            return new StockSummary(
+                    stock.getSymbol(),
+                    stock.getName(),
+                    stock.getMarket(),
+                    stock.getCurrency(),
+                    quote.price(),
+                    quote.change(),
+                    quote.changeRate(),
+                    quote.volume() == null || quote.volume().signum() == 0 ? latest.getVolume() : quote.volume(),
+                    quote.asOf(),
+                    quote.source());
+        }
         List<MarketPrice> history = marketPriceRepository
                 .findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), DAILY_INTERVAL);
         BigDecimal previousClose = history.size() > 1

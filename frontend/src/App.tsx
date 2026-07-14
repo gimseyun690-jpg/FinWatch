@@ -7,6 +7,7 @@ import { WatchlistPanel } from './components/WatchlistPanel'
 import { PortfolioPanel } from './components/PortfolioPanel'
 import { AlertsPanel } from './components/AlertsPanel'
 import { PwaInstallButton } from './components/PwaInstallButton'
+import { useRealtimeQuotes } from './hooks/useRealtimeQuotes'
 import { clearSession, readSession, saveSession, UNAUTHORIZED_EVENT } from './auth/session'
 import type { AuthSession, LoginResponse } from './types/auth'
 import type { WatchlistItem } from './types/watchlist'
@@ -26,6 +27,7 @@ function App() {
   const [session, setSession] = useState<AuthSession | null>(() => readSession())
   const [watchlistEditorOpen, setWatchlistEditorOpen] = useState(false)
   const [watchlistCount, setWatchlistCount] = useState<number | null>(null)
+  const { quotes: liveQuotes, connection: realtimeConnection, connectedProviders } = useRealtimeQuotes(session != null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -54,6 +56,14 @@ function App() {
     connected: 'API 연결됨',
     offline: '데모 모드',
   }[apiState]
+
+  const realtimeText = realtimeConnection === 'connected'
+    ? `실시간 ${connectedProviders}/2`
+    : realtimeConnection === 'reconnecting'
+      ? '실시간 재연결'
+      : realtimeConnection === 'connecting'
+        ? '실시간 연결 중'
+        : '실시간 끊김'
 
   const selectStock = useCallback((symbol: string) => {
     setSelectedSymbol(symbol)
@@ -93,6 +103,9 @@ function App() {
         <div className="topbar-actions">
           <PwaInstallButton />
           <span className={`api-status ${apiState}`}><span className="status-dot" aria-hidden="true" />{statusText}</span>
+          <span className={`realtime-status ${realtimeConnection}`}>
+            <span className="status-dot" aria-hidden="true" />{realtimeText}
+          </span>
           <div className="user-session">
             <span><strong>{session.user.role}</strong><small>{session.user.email}</small></span>
             <button type="button" onClick={logout}>로그아웃</button>
@@ -116,9 +129,10 @@ function App() {
           onSelect={selectStock}
           onEditorOpenChange={setWatchlistEditorOpen}
           onItemsChange={handleWatchlistItems}
+          liveQuotes={liveQuotes}
         />
 
-        {watchlistCount !== 0 && <StockDetail symbol={selectedSymbol} />}
+        {watchlistCount !== 0 && <StockDetail symbol={selectedSymbol} liveQuote={liveQuotes[selectedSymbol]} />}
 
         <AiNewsSummary symbol="000660" onUsageRecorded={() => setAdminRefreshKey((key) => key + 1)} />
 

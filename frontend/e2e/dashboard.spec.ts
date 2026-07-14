@@ -31,6 +31,28 @@ function response(data: unknown) {
 }
 
 async function mockApi(page: Page) {
+  await page.routeWebSocket('**/ws/quotes', (webSocket) => {
+    webSocket.send(JSON.stringify({
+      type: 'snapshot',
+      data: {
+        quotes: [{
+          symbol: '000660',
+          price: 2750000,
+          change: 65900,
+          changeRate: 2.46,
+          volume: 4100000,
+          currency: 'KRW',
+          asOf: '2026-07-14T01:15:30Z',
+          source: 'KIS_WS',
+          sessionStatus: 'LIVE',
+        }],
+        providers: [
+          { provider: 'KIS', state: 'CONNECTED', message: '1개 종목 체결 구독 중', updatedAt: now },
+          { provider: 'FINNHUB', state: 'CONNECTED', message: '2개 종목 trade 구독 중', updatedAt: now },
+        ],
+      },
+    }))
+  })
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -106,6 +128,11 @@ test.beforeEach(async ({ page }) => {
 
 test('desktop chart tools, indicator settings and drawings remain usable', async ({ page }) => {
   await login(page)
+
+  await expect(page.locator('.realtime-status')).toContainText('실시간 2/2')
+  await expect(page.locator('.live-quote-label')).toContainText('KIS_WS · 실시간')
+  await expect(page.locator('.live-tick-badge')).toHaveText('TICK')
+  await expect(page.locator('.price-chart-card .quote-row')).toContainText('₩2,750,000')
 
   const bollinger = page.getByRole('button', { name: '볼린저(20,2)' })
   await bollinger.click()

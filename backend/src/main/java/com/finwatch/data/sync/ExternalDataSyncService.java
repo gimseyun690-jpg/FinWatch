@@ -119,7 +119,9 @@ public class ExternalDataSyncService {
             return new StockSyncResult(
                     stock.getSymbol(),
                     stock.getMarket(),
-                    ProviderSyncResult.skipped("UNSUPPORTED", "미국 시세 공급자는 아직 구성되지 않아 기존 DB 시세를 사용합니다."),
+                    ProviderSyncResult.skipped(
+                            "FINNHUB_REALTIME",
+                            "미국 현재가는 Finnhub 실시간 허브에서 제공하며 일봉 DB 동기화는 아직 지원하지 않습니다."),
                     syncFinnhubNews(stock));
         }
         return new StockSyncResult(
