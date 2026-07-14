@@ -1,8 +1,8 @@
 # FinWatch AI 기술지표 해설 명세
 
-상태: v0.1 계획·미구현  
-기준일: 2026-07-14  
-기능 유형: `TECHNICAL_EXPLANATION`  
+상태: v0.1 계획·미구현
+기준일: 2026-07-14
+기능 유형: `TECHNICAL_EXPLANATION`
 활성 예정 프롬프트: `technical-explanation-v1`
 
 ## 1. 목적과 문서 사용법
