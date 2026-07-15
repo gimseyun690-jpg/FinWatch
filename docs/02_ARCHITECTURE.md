@@ -123,7 +123,7 @@ Gemini는 추세·모멘텀·변동성·거래량과 충돌 신호를 설명할 
 
 구현된 종목 탐색 기능은 KRX·미국 전체 종목의 가벼운 마스터를 PostgreSQL에 동기화해 로컬 검색하고, 선택·관심·보유 종목만 시세·일봉·뉴스와 WebSocket 구독 대상으로 승격한다. 검색과 온디맨드 수집의 상세 계약은 `14_STOCK_DISCOVERY_SPEC.md`를 따른다.
 
-구현된 환율 기능은 Finnhub Forex를 우선 사용하고 검증된 USD/KRW 스냅샷을 DB·Redis에 저장한다. 주식 원통화 값과 환산값을 분리하며 환율 장애가 원통화 조회를 막지 않는 계약은 `15_FX_RATE_SPEC.md`를 따른다.
+구현된 환율 기능은 Finnhub Forex를 우선 사용하고 계정 권한으로 거절되면 Frankfurter 일일 기준환율을 명시적인 `REFERENCE` fallback으로 사용한다. 검증된 USD/KRW 스냅샷은 DB·Redis에 저장하고, 주식 원통화 값과 환산값을 분리하며 환율 장애가 원통화 조회를 막지 않는 계약은 `15_FX_RATE_SPEC.md`를 따른다.
 
 ## 7. 데이터 공급자 경계
 

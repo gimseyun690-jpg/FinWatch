@@ -37,20 +37,14 @@ API·DB·UI에서 역수 표기를 섞지 않는다. `KRW/USD`가 필요하면 �
 
 ## 3. 공급자 결정
 
-MVP 기본 공급자는 이미 발급한 `FINNHUB_API_KEY`를 재사용하는 Finnhub Forex API다.
+MVP 공급자 체인은 Finnhub Forex 우선, Frankfurter 일일 기준환율 fallback으로 확정한다.
 
 - 지원 통화쌍 목록 또는 symbol metadata를 먼저 확인해 provider symbol을 매핑한다.
 - provider symbol을 추측해 하드코딩하지 않는다.
 - quote와 candle 사용 가능 여부는 발급 계정의 권한·요금제 PoC로 검증한다.
 - 문서 참고: [Finnhub Forex Rates](https://finnhub.io/docs/api/forex-rates), [Finnhub Forex Candles](https://finnhub.io/docs/api/forex-candles)
 
-Finnhub 계정에서 USD/KRW를 제공하지 않으면 다음 중 승인된 reference-rate 공급자를 fallback으로 추가한다.
-
-1. 한국수출입은행 등 국내 공공 환율 API
-2. 한국은행 또는 중앙은행 기준 환율 데이터
-3. 라이선스·표시 조건을 확인한 환율 공급자
-
-fallback은 `REFERENCE`로 표시하며 실시간 환율처럼 표현하지 않는다. 새 공급자를 도입하기 전까지 기존 마지막 검증값을 보여주거나 환산 합계를 숨긴다. 임의 상수 환율을 LIVE 화면에 사용하지 않는다.
+Finnhub 계정에서 USD/KRW rate/candle 권한이 거절되면 `api.frankfurter.dev`의 일일 reference rate와 기간별 reference rate를 사용한다. 이 fallback은 `source=FRANKFURTER`, `rateType=REFERENCE`로 표시하며 일중 체결·호가 또는 실시간 환율처럼 표현하지 않는다. 두 공급자가 모두 실패하면 기존 마지막 검증값을 상태와 함께 보여주거나 환산 합계를 숨기며, 임의 상수 환율을 LIVE 화면에 사용하지 않는다.
 
 ## 4. 데이터 모델과 품질
 
@@ -272,13 +266,14 @@ MVP에서 Gemini는 환율을 예측하지 않는다. 환율은 서버가 제공
 
 1. `FxRateProvider` 중립 인터페이스와 fixture
 2. Finnhub pair discovery·quote·candle 어댑터 계약 테스트
-3. `exchange_rates` migration과 저장·품질 검증
-4. 최신·이력 API와 Redis/DB fallback·single-flight
-5. 대시보드 환율 ticker와 미니 차트
-6. 포트폴리오 현재 평가액 KRW 환산
-7. 매수 환율 선택 입력과 환차손익 근사치
-8. 관리자 freshness·호출량·오류 지표
-9. AC-14 자동 테스트와 LIVE smoke
+3. Frankfurter reference 최신·이력 fallback과 계약 테스트
+4. `exchange_rates` migration과 저장·품질 검증
+5. 최신·이력 API와 Redis/DB fallback·single-flight
+6. 대시보드 환율 ticker와 미니 차트
+7. 포트폴리오 현재 평가액 KRW 환산
+8. 매수 환율 선택 입력과 환차손익 근사치
+9. 관리자 freshness·호출량·오류 지표
+10. AC-14 자동 테스트와 LIVE smoke
 
 ## 13. 인수 조건
 

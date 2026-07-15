@@ -60,7 +60,7 @@ public class FxRateService {
         this.delayedWithin = delayedWithin;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public LatestFxRate latest(String base, String quote) {
         Pair pair = pair(base, quote);
         String key = cacheKey(pair);
@@ -89,6 +89,7 @@ public class FxRateService {
         }
     }
 
+    @Transactional
     public Optional<LatestFxRate> latestForPortfolio() {
         try {
             LatestFxRate value = latest(USD, KRW);
@@ -108,15 +109,19 @@ public class FxRateService {
         List<ExchangeRate> values = historyStored(pair, from, to);
 
         if (dataMode == DataMode.LIVE && values.size() < 2) {
-            FxRateProvider provider = provider(pair);
-            try {
-                for (var bar : provider.history(pair.base(), pair.quote(), from, to)) {
-                    if (!validBar(bar) || repository.existsByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOf(pair.base(), pair.quote(), provider.providerId(), bar.asOf())) continue;
-                    repository.save(ExchangeRate.create(pair.base(), pair.quote(), bar.close(), bar.open(), bar.high(), bar.low(), bar.close(), "DELAYED", provider.providerId(), bar.providerSymbol(), bar.asOf(), Instant.now()));
+            for (FxRateProvider provider : providers(pair)) {
+                try {
+                    for (var bar : provider.history(pair.base(), pair.quote(), from, to)) {
+                        if (!validBar(bar) || repository.existsByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOf(pair.base(), pair.quote(), provider.providerId(), bar.asOf())) continue;
+                        repository.save(ExchangeRate.create(pair.base(), pair.quote(), bar.close(), bar.open(), bar.high(), bar.low(), bar.close(), "DELAYED", provider.providerId(), bar.providerSymbol(), bar.asOf(), Instant.now()));
+                    }
+                    values = historyStored(pair, from, to);
+                    if (!values.isEmpty()) {
+                        break;
+                    }
+                } catch (ProviderException ignored) {
+                    // Try the next provider, then keep the last verified DB values as fallback.
                 }
-                values = historyStored(pair, from, to);
-            } catch (ProviderException ignored) {
-                // Last verified DB values remain the fallback.
             }
         }
         String rateType = values.isEmpty() ? "UNAVAILABLE" : values.get(values.size() - 1).getRateType();
@@ -137,15 +142,22 @@ public class FxRateService {
         CompletableFuture<ExchangeRate> existing = inFlight.putIfAbsent(key, created);
         if (existing != null) return existing.join();
         try {
-            FxRateProvider provider = provider(pair);
-            var quote = provider.latest(pair.base(), pair.quote());
-            validate(quote.rate(), quote.asOf());
-            ExchangeRate saved = repository.existsByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOf(pair.base(), pair.quote(), provider.providerId(), quote.asOf())
-                    ? latestStored(pair).orElseThrow()
-                    : repository.save(ExchangeRate.create(pair.base(), pair.quote(), quote.rate(), null, null, null, quote.rate(), quote.rateType(), provider.providerId(), quote.providerSymbol(), quote.asOf(), quote.fetchedAt()));
-            cache(saved, cacheKey(pair));
-            created.complete(saved);
-            return saved;
+            RuntimeException lastFailure = null;
+            for (FxRateProvider provider : providers(pair)) {
+                try {
+                    var quote = provider.latest(pair.base(), pair.quote());
+                    validate(quote.rate(), quote.asOf());
+                    ExchangeRate saved = repository.existsByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOf(pair.base(), pair.quote(), provider.providerId(), quote.asOf())
+                            ? latestStored(pair).orElseThrow()
+                            : repository.save(ExchangeRate.create(pair.base(), pair.quote(), quote.rate(), null, null, null, quote.rate(), quote.rateType(), provider.providerId(), quote.providerSymbol(), quote.asOf(), quote.fetchedAt()));
+                    cache(saved, cacheKey(pair));
+                    created.complete(saved);
+                    return saved;
+                } catch (ProviderException | FxRateException exception) {
+                    lastFailure = exception;
+                }
+            }
+            throw lastFailure == null ? unavailable() : lastFailure;
         } catch (RuntimeException exception) {
             created.completeExceptionally(exception);
             throw exception;
@@ -154,9 +166,14 @@ public class FxRateService {
         }
     }
 
-    private FxRateProvider provider(Pair pair) {
-        return providers.stream().filter(candidate -> candidate.supports(pair.base(), pair.quote())).findFirst()
-                .orElseThrow(() -> new FxRateException(HttpStatus.NOT_FOUND, "FX_PAIR_NOT_SUPPORTED", "지원하지 않는 환율 통화쌍입니다."));
+    private List<FxRateProvider> providers(Pair pair) {
+        List<FxRateProvider> supported = providers.stream()
+                .filter(candidate -> candidate.supports(pair.base(), pair.quote()))
+                .toList();
+        if (supported.isEmpty()) {
+            throw new FxRateException(HttpStatus.NOT_FOUND, "FX_PAIR_NOT_SUPPORTED", "지원하지 않는 환율 통화쌍입니다.");
+        }
+        return supported;
     }
 
     private Pair pair(String base, String quote) {

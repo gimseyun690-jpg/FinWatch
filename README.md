@@ -56,6 +56,18 @@ cd backend
 
 일반 프로필의 AI 요약 캐시는 Redis를 사용하고, `demo` 프로필은 동일한 캐시 계약을 메모리에서 실행합니다.
 
+발급한 공급자 키를 사용자 또는 현재 프로세스 환경변수에 저장한 뒤 로컬 LIVE 프로필은 다음 스크립트로 실행합니다. 스크립트는 키 값을 출력하지 않으며 필수 키가 빠지면 시작 전에 실패합니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local-live.ps1 -Build
+```
+
+실행 후 PostgreSQL·Redis readiness, 로그인, KIS 현재가·일봉, NAVER·Finnhub 뉴스, Open DART 공시, USD/KRW와 Gemini 뉴스 요약을 한 번에 점검할 수 있습니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-live.ps1
+```
+
 로그인 데모 계정:
 
 ```text
@@ -93,7 +105,7 @@ $env:GEMINI_MODEL="gemini-3.1-flash-lite"
 
 키는 `.env.example`, `application.yml`, 프론트엔드 코드 또는 Git 커밋에 입력하지 않습니다. API 호출은 항상 Spring Boot 백엔드에서 수행합니다.
 
-Finnhub의 공식 문서상 Forex rate/candle은 유료 권한이 필요할 수 있습니다. 무료 키에서 USD/KRW가 거절되면 DEMO 고정 환율을 사용하거나 제출 전 별도 환율 공급자를 정해야 하며, LIVE 모드는 DEMO 값을 실제 환율로 자동 대체하지 않습니다.
+USD/KRW는 Finnhub Forex를 먼저 시도하고, 무료 키의 Forex 권한이 없으면 Frankfurter의 일일 기준환율로 fallback합니다. fallback 응답은 `source=FRANKFURTER`, `rateType=REFERENCE`로 표시하며 실시간 틱 환율로 표현하지 않습니다. LIVE 모드는 DEMO 고정값을 실제 환율로 자동 대체하지 않습니다.
 
 프론트엔드:
 
@@ -122,6 +134,8 @@ cd backend
 ```
 
 이 설정은 Gradle 실행 경로만 우회하며 프로젝트 소스와 Git에는 영향을 주지 않습니다.
+
+Docker가 실행 중이면 전체 백엔드 테스트에 Testcontainers PostgreSQL 17·Redis 8 검증이 포함됩니다. 2026-07-15 기준 전체 45개 스위트·112개 테스트가 실패와 skip 없이 통과했습니다.
 
 ## 기준 문서
 

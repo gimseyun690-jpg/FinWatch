@@ -33,7 +33,7 @@
 | 실시간 1분 봉 | KIS 누적 거래량 delta, Finnhub 체결량 합산, REST snapshot 제외, OHLC와 limit 검증 |
 | 실시간 화면 E2E | snapshot·candles 수신, 공급자 2/2 상태, KIS 실시간 배지·TICK·현재가, 일봉/1분봉 전환 반영 |
 
-통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS·NAVER API HUB·Finnhub·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·WebSocket snapshot·candles·실시간 가격 표시·일봉/1분봉 전환·상세 차트·지표 설정 유지·390px 모바일 overflow와 터치 크기를 검증한다. 실제 LIVE smoke에서는 KIS WebSocket의 연속 틱 시각·가격 변경과 Finnhub 연결 및 폐장 시 REST snapshot 유지 여부를 확인한다. 실제 PostgreSQL·Redis serialization/TTL, 부하 테스트와 CI workflow는 아직 별도 게이트로 남아 있다.
+통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS·NAVER API HUB·Finnhub·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·WebSocket snapshot·candles·실시간 가격 표시·일봉/1분봉 전환·상세 차트·지표 설정 유지·390px 모바일 overflow와 터치 크기를 검증한다. Testcontainers 테스트는 PostgreSQL 17의 Flyway V1~V17/JPA context와 Redis 8의 실제 직렬화·TTL을 검증한다. 2026-07-15 로컬 LIVE smoke는 readiness, 로그인, KIS 현재가·일봉, NAVER·Finnhub 뉴스, Open DART 공시, Frankfurter 환율 fallback과 Gemini 뉴스 요약을 통과했다. 실제 KIS WebSocket 연속 틱, 부하 테스트와 CI workflow는 별도 게이트로 남아 있다.
 
 따라서 현재 자동 테스트의 통과는 핵심 Vertical Slice의 회귀 신호이지만 AWS 운영 준비 완료를 의미하지 않는다.
 
@@ -394,7 +394,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 2. 수집·정규화·종목 연결·중복 제거·재시도가 `06_DATA_PROVIDER_SPEC.md`와 일치한다.
 3. 사용자 화면에 source와 최신 시각, stale/degraded 상태가 표시된다.
 
-판정: 공급자 계약과 저장 권한이 확정되고, 장애가 기존 정상 데이터를 오염시키지 않아야 한다. KIS·Naver API Hub·Finnhub·Open DART·SEC 어댑터와 장애 fallback은 구현됐으며 제출 시 사용 키의 실제 권한과 호출 한도 smoke를 별도 확인한다.
+판정: 공급자 계약과 저장 권한이 확정되고, 장애가 기존 정상 데이터를 오염시키지 않아야 한다. KIS·Naver API Hub·Finnhub·Open DART·SEC 어댑터와 장애 fallback은 구현됐다. 2026-07-15 제한 키 LIVE smoke는 KIS·Naver·Finnhub·Open DART를 통과했으며 제출 직전 호출 한도와 장 상태를 다시 확인한다.
 
 ### AC-09 PWA와 모바일
 
@@ -450,7 +450,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 4. 매수 환율이 없으면 원화 매입원가·손익·환차손익이 null이고, 값이 있으면 명세 수식과 반올림에 맞는 평균 기반 근사치와 한계가 표시된다.
 5. 주말·휴일·429·공급자 장애·비정상 rate·동시 MISS에서 마지막 검증값, 상태, single-flight와 오류 계약이 지켜진다.
 
-판정: `15_FX_RATE_SPEC.md`의 인수 조건을 모두 만족해야 한다. USD/KRW 방향·DB·캐시·포트폴리오 환산·DEMO 통합 경로는 구현됐으며 Finnhub 무료 등급의 Forex 제한 때문에 LIVE 환율 공급자는 제출 전 대체 공급자 또는 유료 권한을 확정해야 한다.
+판정: `15_FX_RATE_SPEC.md`의 인수 조건을 모두 만족해야 한다. USD/KRW 방향·DB·캐시·포트폴리오 환산·DEMO 통합 경로와 Finnhub 우선·Frankfurter `REFERENCE` fallback을 구현했으며 2026-07-15 LIVE smoke에서 fallback 응답을 확인했다.
 
 ## 14. 결함 심각도와 인수 판정
 

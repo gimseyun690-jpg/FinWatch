@@ -17,6 +17,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      repositories:
+        enabled: false
   flyway:
     enabled: true
     locations: classpath:db/migration,classpath:db/postgresql-migration
@@ -32,6 +34,13 @@ management:
   endpoint:
     health:
       show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState,ping
+        readiness:
+          include: readinessState,db,redis
 
 app:
   data:
@@ -50,6 +59,7 @@ app:
       identifier-cache-ttl: ${DISCLOSURE_IDENTIFIER_CACHE_TTL:24h}
     fx:
       finnhub-exchange: ${FX_FINNHUB_EXCHANGE:OANDA}
+      frankfurter-base-url: ${FRANKFURTER_BASE_URL:https://api.frankfurter.dev}
       cache-ttl: ${FX_CACHE_TTL:60s}
       fresh-within: ${FX_FRESH_WITHIN:15m}
       delayed-within: ${FX_DELAYED_WITHIN:36h}
@@ -75,6 +85,7 @@ app:
       websocket-url: ${FINNHUB_WEBSOCKET_URL:wss://ws.finnhub.io}
     opendart:
       base-url: ${OPENDART_BASE_URL:https://opendart.fss.or.kr/api}
+      user-agent: ${OPENDART_USER_AGENT:Mozilla/5.0 FinWatch/1.0}
     sec-edgar:
       user-agent: ${SEC_EDGAR_USER_AGENT:${ARTICLE_USER_AGENT:}}
       data-base-url: ${SEC_EDGAR_DATA_BASE_URL:https://data.sec.gov}

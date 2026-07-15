@@ -10,6 +10,7 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,7 @@ import com.finwatch.data.provider.ProviderException;
 import com.finwatch.data.provider.ProviderRestClientFactory;
 
 @Component
+@Order(10)
 public class FinnhubFxRateProvider implements FxRateProvider {
 
     private final RestClient restClient;

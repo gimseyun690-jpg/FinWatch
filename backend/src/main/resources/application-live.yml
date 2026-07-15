@@ -1,0 +1,26 @@
+spring:
+  config:
+    activate:
+      on-profile: live
+
+app:
+  data:
+    mode: LIVE
+    kis:
+      app-key: ${KIS_APP_KEY}
+      app-secret: ${KIS_APP_SECRET}
+      hts-id: ${KIS_HTS_ID}
+    naver:
+      client-id: ${NAVER_API_HUB_CLIENT_ID}
+      client-secret: ${NAVER_API_HUB_CLIENT_SECRET}
+    finnhub:
+      api-key: ${FINNHUB_API_KEY}
+  ai:
+    provider: gemini
+    prompt-version: ${AI_PROMPT_VERSION:news-analysis-live-v1}
+    technical-prompt-version: ${AI_TECHNICAL_PROMPT_VERSION:technical-explanation-live-v1}
+    daily-briefing-prompt-version: ${AI_DAILY_BRIEFING_PROMPT_VERSION:daily-change-briefing-live-v1}
+    gemini:
+      api-key: ${GEMINI_API_KEY}
+  news-content:
+    opendart-api-key: ${OPENDART_API_KEY}

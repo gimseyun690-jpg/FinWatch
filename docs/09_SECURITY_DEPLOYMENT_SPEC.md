@@ -23,12 +23,12 @@
 |---|---|---|
 | 애플리케이션 실행 | Spring Boot와 Vite를 호스트에서 직접 실행 | 검증된 불변 이미지 또는 산출물로 배포 |
 | Docker | `compose.yaml`이 로컬 PostgreSQL 17·Redis 8만 실행 | 운영에서는 백엔드와 Nginx를 배포 단위로 만들고 DB·Redis는 AWS 관리형 서비스 사용 |
-| 환경 | 기본 설정과 `demo` 프로필만 존재 | `local`, `test`, `staging`, `prod`의 값·데이터·Secret 분리 |
+| 환경 | 기본 설정, `demo`, 필수 공급자 키 fail-fast가 적용된 로컬 `live` 프로필 | `local`, `test`, `staging`, `prod`의 값·데이터·Secret 분리 |
 | 인증 | HS256 JWT, 1시간 Access Token, USER/ADMIN, 데모 계정 | 강한 운영 Secret, 데모 계정 비활성화, 계정 공급 절차와 로그인 제한 확정 |
 | 브라우저 토큰 | `localStorage`에 세션 저장 | 공개 운영 전 영속 브라우저 저장 제거 또는 HttpOnly 쿠키 방식으로 재설계 |
 | CORS | localhost 두 Origin 기본 허용 | 실제 HTTPS Origin만 정확히 허용; 와일드카드 금지 |
-| DB 변경 | Flyway V1~V5를 애플리케이션 시작 시 실행, Hibernate `validate` | 운영 백업·호환성 검증 후 단일 마이그레이션 수행, 실패 시 트래픽 차단 |
-| 상태 확인 | `/api/v1/health`는 프로세스 상태만 `UP`; Actuator health/info 노출 | liveness와 DB·Redis를 포함한 readiness 분리, Actuator 접근 제한 |
+| DB 변경 | Flyway V1~V17을 실행하며 Testcontainers PostgreSQL 17에서 검증 | 운영 백업·호환성 검증 후 단일 마이그레이션 수행, 실패 시 트래픽 차단 |
+| 상태 확인 | liveness와 DB·Redis readiness 분리, 로컬 LIVE smoke 구현 | 운영 네트워크에서 Actuator 접근 제한 |
 | 로그·모니터링 | 기본 Spring 로그, AI 사용량 DB 기록 | 구조화 로그, 요청 ID, CloudWatch 대시보드·경보·보존 정책 |
 | CI/CD | 저장소에 워크플로 없음 | PR 품질 게이트, 버전 이미지 생성·스캔, 승인형 운영 배포·롤백 |
 | 백업·복구 | 로컬 Docker volume 외 명세 없음 | RDS 자동 백업, 배포 전 스냅샷, 복구 훈련과 RPO/RTO 확정 |
@@ -52,7 +52,7 @@
 4. `prod` 시작 시 로컬 기본값 사용 여부를 검사하고, 기본 DB 비밀번호·기본 JWT Secret·localhost CORS·데모 계정이 발견되면 시작에 실패해야 한다.
 5. `SPRING_PROFILES_ACTIVE`와 애플리케이션 버전을 배포 기록과 로그에 남긴다.
 
-현재 `application.yml`에는 운영 전용 프로필과 4번의 fail-fast 검증이 없다. 구현 완료 전 운영 배포를 금지한다.
+현재 `application-live.yml`은 로컬 LIVE 공급자 키를 fail-fast로 검증한다. 운영 전용 `prod` 프로필은 DB·JWT·CORS·데모 계정까지 더 엄격하게 검증해야 하므로 구현 완료 전 공개 운영 배포를 금지한다.
 
 ### 3.2 환경별 미확정 항목
 

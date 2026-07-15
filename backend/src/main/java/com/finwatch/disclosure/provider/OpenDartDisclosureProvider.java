@@ -1,9 +1,9 @@
 package com.finwatch.disclosure.provider;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -18,11 +18,15 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import org.jsoup.Jsoup;
-import org.jsoup.parser.Parser;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamConstants;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
@@ -44,10 +48,11 @@ public class OpenDartDisclosureProvider implements DisclosureProvider {
     private static final Pattern RECEIPT_NUMBER = Pattern.compile("\\d{14}");
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final int MAX_ARCHIVE_BYTES = 8 * 1024 * 1024;
-    private static final int MAX_XML_BYTES = 24 * 1024 * 1024;
+    private static final int MAX_XML_BYTES = 64 * 1024 * 1024;
 
     private final RestClient restClient;
     private final String apiKey;
+    private final String userAgent;
     private final Duration identifierCacheTtl;
     private final Object cacheLock = new Object();
     private volatile IdentifierCache identifierCache = new IdentifierCache(Map.of(), Instant.EPOCH);
@@ -58,14 +63,16 @@ public class OpenDartDisclosureProvider implements DisclosureProvider {
             @Value("${app.data.opendart.base-url:https://opendart.fss.or.kr/api}") String baseUrl,
             @Value("${app.data.connect-timeout:3s}") Duration connectTimeout,
             @Value("${app.data.read-timeout:10s}") Duration readTimeout,
-            @Value("${app.data.disclosures.identifier-cache-ttl:24h}") Duration identifierCacheTtl) {
-        this(apiKey, ProviderRestClientFactory.create(baseUrl, connectTimeout, readTimeout), identifierCacheTtl);
+            @Value("${app.data.disclosures.identifier-cache-ttl:24h}") Duration identifierCacheTtl,
+            @Value("${app.data.opendart.user-agent:Mozilla/5.0 FinWatch/1.0}") String userAgent) {
+        this(apiKey, ProviderRestClientFactory.create(baseUrl, connectTimeout, readTimeout), identifierCacheTtl, userAgent);
     }
 
-    OpenDartDisclosureProvider(String apiKey, RestClient restClient, Duration identifierCacheTtl) {
+    OpenDartDisclosureProvider(String apiKey, RestClient restClient, Duration identifierCacheTtl, String userAgent) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.restClient = restClient;
         this.identifierCacheTtl = identifierCacheTtl;
+        this.userAgent = userAgent == null || userAgent.isBlank() ? "Mozilla/5.0 FinWatch/1.0" : userAgent.trim();
     }
 
     @Override
@@ -108,6 +115,7 @@ public class OpenDartDisclosureProvider implements DisclosureProvider {
                             .queryParam("sort_mth", "desc")
                             .queryParam("page_count", 100)
                             .build())
+                    .header(HttpHeaders.USER_AGENT, userAgent)
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .body(Map.class);
@@ -137,6 +145,7 @@ public class OpenDartDisclosureProvider implements DisclosureProvider {
                     .uri(uriBuilder -> uriBuilder.path("/corpCode.xml")
                             .queryParam("crtfc_key", apiKey)
                             .build())
+                    .header(HttpHeaders.USER_AGENT, userAgent)
                     .accept(MediaType.APPLICATION_OCTET_STREAM)
                     .retrieve()
                     .body(byte[].class);
@@ -167,43 +176,91 @@ public class OpenDartDisclosureProvider implements DisclosureProvider {
     }
 
     static Map<String, String> parseCorpCodeArchive(byte[] archive) throws IOException {
-        byte[] xml = null;
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(archive))) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
                 if (entry.isDirectory() || !entry.getName().toLowerCase(Locale.ROOT).endsWith(".xml")) {
                     continue;
                 }
-                ByteArrayOutputStream output = new ByteArrayOutputStream();
-                byte[] buffer = new byte[8192];
-                int total = 0;
-                int read;
-                while ((read = zip.read(buffer)) >= 0) {
-                    total += read;
-                    if (total > MAX_XML_BYTES) {
-                        throw new IOException("Open DART corp code XML exceeds the size limit.");
-                    }
-                    output.write(buffer, 0, read);
+                if (entry.getSize() > MAX_XML_BYTES) {
+                    throw new IOException("Open DART corp code XML exceeds the size limit.");
                 }
-                xml = output.toByteArray();
-                break;
+                return parseCorpCodeXml(new SizeLimitedInputStream(zip, MAX_XML_BYTES));
             }
         }
-        if (xml == null) {
-            throw new IOException("Open DART corp code XML entry was not found.");
-        }
-        var document = Jsoup.parse(new String(xml, StandardCharsets.UTF_8), "", Parser.xmlParser());
+        throw new IOException("Open DART corp code XML entry was not found.");
+    }
+
+    private static Map<String, String> parseCorpCodeXml(InputStream input) throws IOException {
         Map<String, String> result = new HashMap<>();
-        document.select("list").forEach(element -> {
-            String stockCode = element.selectFirst("stock_code") == null
-                    ? "" : element.selectFirst("stock_code").text().trim();
-            String corpCode = element.selectFirst("corp_code") == null
-                    ? "" : element.selectFirst("corp_code").text().trim();
-            if (STOCK_CODE.matcher(stockCode).matches() && corpCode.matches("\\d{8}")) {
-                result.putIfAbsent(stockCode, corpCode);
+        XMLInputFactory factory = XMLInputFactory.newFactory();
+        factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+        factory.setProperty("javax.xml.stream.isSupportingExternalEntities", false);
+        try {
+            XMLStreamReader reader = factory.createXMLStreamReader(input);
+            String corpCode = "";
+            String stockCode = "";
+            boolean inList = false;
+            while (reader.hasNext()) {
+                int event = reader.next();
+                if (event == XMLStreamConstants.START_ELEMENT) {
+                    String name = reader.getLocalName();
+                    if ("list".equals(name)) {
+                        inList = true;
+                        corpCode = "";
+                        stockCode = "";
+                    } else if (inList && "corp_code".equals(name)) {
+                        corpCode = reader.getElementText().trim();
+                    } else if (inList && "stock_code".equals(name)) {
+                        stockCode = reader.getElementText().trim();
+                    }
+                } else if (event == XMLStreamConstants.END_ELEMENT && "list".equals(reader.getLocalName())) {
+                    if (STOCK_CODE.matcher(stockCode).matches() && corpCode.matches("\\d{8}")) {
+                        result.putIfAbsent(stockCode, corpCode);
+                    }
+                    inList = false;
+                }
             }
-        });
+            reader.close();
+        } catch (XMLStreamException exception) {
+            throw new IOException("Open DART corp code XML is invalid.", exception);
+        }
         return Map.copyOf(result);
+    }
+
+    private static final class SizeLimitedInputStream extends FilterInputStream {
+        private final long limit;
+        private long count;
+
+        private SizeLimitedInputStream(InputStream input, long limit) {
+            super(input);
+            this.limit = limit;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0) {
+                increment(1);
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int read = super.read(buffer, offset, length);
+            if (read > 0) {
+                increment(read);
+            }
+            return read;
+        }
+
+        private void increment(int read) throws IOException {
+            count += read;
+            if (count > limit) {
+                throw new IOException("Open DART corp code XML exceeds the size limit.");
+            }
+        }
     }
 
     static DisclosureFetchResult normalizeList(Map<String, Object> response, LocalDate from, LocalDate to) {

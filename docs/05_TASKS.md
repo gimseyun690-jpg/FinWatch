@@ -80,6 +80,7 @@
 목표: `15_FX_RATE_SPEC.md` 기준으로 환율을 표시하고 미국 주식 원통화 값을 보존하면서 혼합 포트폴리오의 현재 평가액을 KRW로 환산한다.
 
 - [x] `FxRateProvider`와 Finnhub Forex pair discovery·quote·candle 어댑터
+- [x] Finnhub 권한 제한 시 Frankfurter `REFERENCE` 최신·이력 fallback
 - [x] `exchange_rates` migration, 품질 검증과 Redis/DB fallback
 - [x] 최신 USD/KRW·이력 API, cache와 single-flight
 - [x] 대시보드 환율 ticker·기간 차트·source·asOf·freshness
@@ -167,6 +168,8 @@
 - [ ] CloudWatch 로그 확인
 - [x] 모바일·데스크톱 시연 시나리오 점검
 - [x] 외부 API 장애 대비 데모 모드
+- [x] `live` fail-fast 프로필, liveness/readiness와 로컬 LIVE 스모크 스크립트
+- [x] Testcontainers PostgreSQL 17·Redis 8 Flyway·직렬화·TTL 통합 테스트
 - [ ] 발표 자료와 시연 영상
 
 ## 우선순위 규칙
