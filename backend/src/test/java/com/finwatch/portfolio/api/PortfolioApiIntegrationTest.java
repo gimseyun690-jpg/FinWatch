@@ -56,6 +56,10 @@ class PortfolioApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.currencySummaries.length()").value(2))
                 .andExpect(jsonPath("$.data.holdings.length()").value(2))
+                .andExpect(jsonPath("$.data.baseCurrency").value("KRW"))
+                .andExpect(jsonPath("$.data.conversionComplete").value(true))
+                .andExpect(jsonPath("$.data.profitLossComplete").value(true))
+                .andExpect(jsonPath("$.data.fxRates[0].pair").value("USD/KRW"))
                 .andExpect(jsonPath("$.data.holdings[0].valuationStatus").value("VALUED"))
                 .andExpect(jsonPath("$.data.holdings[?(@.symbol == '000660')].latestPrice").value(2100000))
                 .andExpect(jsonPath("$.data.holdings[?(@.symbol == '000660')].priceSource").value("KIS_WS"));

@@ -44,24 +44,27 @@ public class AdminAiService {
                 .findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan(range.fromInstant(), range.toExclusive());
 
         long requestCount = logs.size();
-        long cacheHitCount = logs.stream().filter(AiUsageLog::isCacheHit).count();
-        long modelCallCount = requestCount - cacheHitCount;
+        List<AiUsageLog> successful = logs.stream().filter(log -> "SUCCESS".equals(log.getStatus())).toList();
+        long successCount = successful.size();
+        long failedCount = requestCount - successCount;
+        long cacheHitCount = successful.stream().filter(AiUsageLog::isCacheHit).count();
+        long modelCallCount = successful.stream().filter(log -> !log.isCacheHit()).count();
         long inputTokens = logs.stream().mapToLong(AiUsageLog::getInputTokens).sum();
         long outputTokens = logs.stream().mapToLong(AiUsageLog::getOutputTokens).sum();
         BigDecimal estimatedCost = sum(logs, false);
         BigDecimal savedCost = sum(logs, true);
-        BigDecimal hitRate = requestCount == 0
+        BigDecimal hitRate = successCount == 0
                 ? BigDecimal.ZERO.setScale(2)
-                : BigDecimal.valueOf(cacheHitCount * 100.0 / requestCount).setScale(2, RoundingMode.HALF_UP);
+                : BigDecimal.valueOf(cacheHitCount * 100.0 / successCount).setScale(2, RoundingMode.HALF_UP);
         BigDecimal averageResponseTime = requestCount == 0
                 ? BigDecimal.ZERO.setScale(2)
                 : BigDecimal.valueOf(logs.stream().mapToLong(AiUsageLog::getResponseTimeMs).average().orElse(0))
                         .setScale(2, RoundingMode.HALF_UP);
 
-        Map<String, Long> featureCounts = logs.stream()
-                .collect(Collectors.groupingBy(AiUsageLog::getFeatureType, Collectors.counting()));
-        List<AiFeatureUsageResponse> featureUsage = featureCounts.entrySet().stream()
-                .map(entry -> new AiFeatureUsageResponse(entry.getKey(), entry.getValue()))
+        Map<String, List<AiUsageLog>> featureLogs = logs.stream()
+                .collect(Collectors.groupingBy(AiUsageLog::getFeatureType));
+        List<AiFeatureUsageResponse> featureUsage = featureLogs.entrySet().stream()
+                .map(entry -> featureUsage(entry.getKey(), entry.getValue()))
                 .sorted(Comparator.comparingLong(AiFeatureUsageResponse::requestCount).reversed())
                 .toList();
 
@@ -69,6 +72,8 @@ public class AdminAiService {
                 range.from(),
                 range.to(),
                 requestCount,
+                successCount,
+                failedCount,
                 modelCallCount,
                 cacheHitCount,
                 modelCallCount,
@@ -81,6 +86,24 @@ public class AdminAiService {
                 averageResponseTime,
                 "USD",
                 featureUsage);
+    }
+
+    private AiFeatureUsageResponse featureUsage(String feature, List<AiUsageLog> logs) {
+        long successes = logs.stream().filter(log -> "SUCCESS".equals(log.getStatus())).count();
+        long failures = logs.size() - successes;
+        long hits = logs.stream().filter(log -> "SUCCESS".equals(log.getStatus()) && log.isCacheHit()).count();
+        long modelCalls = logs.stream().filter(log -> "SUCCESS".equals(log.getStatus()) && !log.isCacheHit()).count();
+        long tokens = logs.stream().mapToLong(log -> log.getInputTokens() + log.getOutputTokens()).sum();
+        return new AiFeatureUsageResponse(
+                feature,
+                logs.size(),
+                successes,
+                failures,
+                modelCalls,
+                hits,
+                tokens,
+                sum(logs, false),
+                sum(logs, true));
     }
 
     public AiUsageLogPageResponse getUsageLogs(

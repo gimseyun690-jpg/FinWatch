@@ -47,5 +47,5 @@ tasks.named('test') {
 }
 
 tasks.named('bootJar') {
-	archiveFileName = 'finwatch-api.jar'
+	archiveFileName = providers.gradleProperty('archiveFileName').getOrElse('finwatch-api.jar')
 }

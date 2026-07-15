@@ -18,15 +18,18 @@ public class RealtimeQuoteWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final RealtimeQuoteHub hub;
     private final RealtimeCandleAggregator candleAggregator;
+    private final RealtimeSubscriptionManager subscriptionManager;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     public RealtimeQuoteWebSocketHandler(
             ObjectMapper objectMapper,
             RealtimeQuoteHub hub,
-            RealtimeCandleAggregator candleAggregator) {
+            RealtimeCandleAggregator candleAggregator,
+            RealtimeSubscriptionManager subscriptionManager) {
         this.objectMapper = objectMapper;
         this.hub = hub;
         this.candleAggregator = candleAggregator;
+        this.subscriptionManager = subscriptionManager;
         this.hub.addListener(this::broadcast);
         this.candleAggregator.addListener(candle -> broadcast(new RealtimeEvent("candle", candle)));
     }
@@ -41,15 +44,36 @@ public class RealtimeQuoteWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessions.remove(session.getId());
+        subscriptionManager.releaseSession(session.getId());
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         sessions.remove(session.getId());
+        subscriptionManager.releaseSession(session.getId());
         try {
             session.close(CloseStatus.SERVER_ERROR);
         } catch (IOException ignored) {
             // The transport is already unavailable.
+        }
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        try {
+            var root = objectMapper.readTree(message.getPayload());
+            if (!"select".equals(root.path("type").asText())) {
+                return;
+            }
+            var result = subscriptionManager.select(
+                    session.getId(),
+                    root.path("market").asText(),
+                    root.path("symbol").asText());
+            send(session, new RealtimeEvent("subscription", result));
+        } catch (RuntimeException exception) {
+            send(session, new RealtimeEvent(
+                    "subscription",
+                    new RealtimeSubscriptionManager.SelectionResult(false, "", "", "구독 요청 형식이 올바르지 않습니다.")));
         }
     }
 

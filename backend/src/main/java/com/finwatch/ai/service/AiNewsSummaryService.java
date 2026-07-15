@@ -48,6 +48,9 @@ public class AiNewsSummaryService {
     private final AiProviderResponseValidator providerResponseValidator;
     private final AiSummaryCacheStore cacheStore;
     private final AiCostCalculator costCalculator;
+    private final AiRequestGuard requestGuard;
+    private final AiSingleFlight singleFlight;
+    private final AiUsageLogWriter usageLogWriter;
     private final String activePromptVersion;
     private final Set<String> allowedPromptVersions;
     private final Duration cacheTtl;
@@ -62,6 +65,9 @@ public class AiNewsSummaryService {
             AiProviderResponseValidator providerResponseValidator,
             AiSummaryCacheStore cacheStore,
             AiCostCalculator costCalculator,
+            AiRequestGuard requestGuard,
+            AiSingleFlight singleFlight,
+            AiUsageLogWriter usageLogWriter,
             @Value("${app.ai.prompt-version}") String activePromptVersion,
             @Value("${app.ai.allowed-prompt-versions:}") String allowedPromptVersions,
             @Value("${app.ai.cache-ttl}") Duration cacheTtl) {
@@ -74,6 +80,9 @@ public class AiNewsSummaryService {
         this.providerResponseValidator = providerResponseValidator;
         this.cacheStore = cacheStore;
         this.costCalculator = costCalculator;
+        this.requestGuard = requestGuard;
+        this.singleFlight = singleFlight;
+        this.usageLogWriter = usageLogWriter;
         this.activePromptVersion = activePromptVersion;
         LinkedHashSet<String> configuredVersions = new LinkedHashSet<>();
         configuredVersions.add(activePromptVersion);
@@ -116,6 +125,28 @@ public class AiNewsSummaryService {
             return cachedResponse(value, persisted.get(), promptVersion, elapsedMillis(startedAt));
         }
 
+        return singleFlight.execute(cacheKey, () -> {
+            Optional<AiSummaryCacheValue> afterWaitCache = cacheStore.get(cacheKey);
+            if (afterWaitCache.isPresent()) {
+                AiAnalysis analysis = aiAnalysisRepository.findById(afterWaitCache.get().analysisId())
+                        .orElseThrow(() -> new IllegalStateException("캐시 원본 분석을 찾을 수 없습니다."));
+                return cachedResponse(afterWaitCache.get(), analysis, promptVersion, elapsedMillis(startedAt));
+            }
+            Optional<AiAnalysis> afterWaitDb = aiAnalysisRepository
+                    .findByNewsIdAndFeatureTypeAndPromptVersionAndContentHash(news.getId(), FEATURE_TYPE, promptVersion, contentHash);
+            if (afterWaitDb.isPresent()) {
+                AiSummaryCacheValue value = toCacheValue(afterWaitDb.get());
+                cacheStore.put(cacheKey, value, cacheTtl);
+                return cachedResponse(value, afterWaitDb.get(), promptVersion, elapsedMillis(startedAt));
+            }
+            return generate(news, contentHash, promptVersion, cacheKey, startedAt);
+        });
+    }
+
+    private AiSummaryResponse generate(NewsArticle news, String contentHash, String promptVersion,
+            String cacheKey, long startedAt) {
+        String requestId = UUID.randomUUID().toString();
+        try {
         String preprocessedContent = preprocessor.preprocess(news.getContent());
         if (preprocessedContent.isBlank()) {
             throw NewsContentException.unavailable();
@@ -125,6 +156,7 @@ public class AiNewsSummaryService {
             throw NewsContentException.unavailable();
         }
 
+        requestGuard.checkBudget();
         AggregatedResult aggregated = analyzeSegments(news.getTitle(), segmentation.segments(), promptVersion);
         BigDecimal estimatedCost = costCalculator.calculate(aggregated.inputTokens(), aggregated.outputTokens());
         String analysisScope = segmentation.truncated() ? "PARTIAL_PROCESSED_TEXT" : "FULL_PROCESSED_TEXT";
@@ -156,7 +188,7 @@ public class AiNewsSummaryService {
 
         int responseTimeMs = elapsedMillis(startedAt);
         aiUsageLogRepository.save(AiUsageLog.success(
-                UUID.randomUUID().toString(),
+                requestId,
                 analysis,
                 news.getId(),
                 aggregated.inputTokens(),
@@ -171,6 +203,13 @@ public class AiNewsSummaryService {
         cacheStore.put(cacheKey, cacheValue, cacheTtl);
         return response(analysis, false, aggregated.inputTokens(), aggregated.outputTokens(),
                 estimatedCost, responseTimeMs);
+        } catch (RuntimeException exception) {
+            usageLogWriter.saveFailure(AiUsageLog.failure(requestId, FEATURE_TYPE, "NEWS", news.getId(),
+                    aiProvider.getClass().getSimpleName(), elapsedMillis(startedAt), promptVersion,
+                    exception instanceof com.finwatch.ai.provider.AiProviderException providerException
+                            ? providerException.getCode() : "AI_NEWS_SUMMARY_FAILED"));
+            throw exception;
+        }
     }
 
     private AggregatedResult analyzeSegments(

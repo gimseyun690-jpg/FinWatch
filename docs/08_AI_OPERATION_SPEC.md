@@ -2,7 +2,7 @@
 
 상태: v0.2
 기준일: 2026-07-14
-범위: NEWS_SUMMARY와 계획된 TECHNICAL_EXPLANATION·DAILY_CHANGE_BRIEFING의 입력, 프롬프트, AI 공급자, 결과 검증, 캐시, 사용량·비용, 오류·안전
+범위: NEWS_SUMMARY·TECHNICAL_EXPLANATION·DAILY_CHANGE_BRIEFING의 입력, 프롬프트, AI 공급자, 결과 검증, 캐시, 사용량·비용, 오류·안전
 
 ## 1. 목적과 현재 상태
 
@@ -13,17 +13,17 @@
 | 뉴스 조회와 본문 전처리 | 구현 | HTML·URL·광고 문구·정확히 중복된 문장 제거, 6,000자 제한 |
 | Gemini·Mock 공급자 선택 | 구현 | AI_PROVIDER 설정으로 하나의 구현 활성화 |
 | 구조화 Gemini 요청 | 구현 | JSON MIME type과 responseSchema 사용 |
-| 공급자 결과의 서버 측 유효성 검증 | 미구현 | null·빈 값·항목 수·길이·토큰 음수 검증 없음 |
+| 공급자 결과의 서버 측 유효성 검증 | 구현 | 기능별 길이·항목 수·enum·근거 ID·금지 문구·토큰 검증 |
 | Redis·메모리 캐시 | 구현 | demo는 메모리, 그 외는 Redis |
 | DB 분석 복구 | 구현 | Redis MISS여도 같은 뉴스·버전의 DB 결과 재사용 |
-| 동시 MISS 단일 호출 보장 | 미구현 | 분산 락·single-flight 없음 |
-| 외부 호출 타임아웃·재시도·오류 매핑 | 미구현 | RestClient 예외가 그대로 전파될 수 있음 |
+| 동시 MISS 단일 호출 보장 | 구현 | 프로세스 내 cacheKey single-flight, 다중 인스턴스 분산 락은 AWS 운영 범위 |
+| 외부 호출 타임아웃·오류 매핑 | 구현 | 연결·읽기 timeout과 인증·429·공급자 오류 코드 매핑 |
 | 성공·캐시 HIT 로그 | 구현 | 요청 ID는 로그 생성 시 UUID 발급 |
-| 실패 로그·사용자 연결·요청 ID 전파 | 미구현 | ai_usage_logs.user_id와 error_code를 사용하지 않음 |
+| 실패 로그·요청 ID | 구현 | 실패 status·errorCode·UUID requestId 저장, 사용자 FK는 향후 운영 범위 |
 | 토큰·예상 비용·절감 비용 | 구현 | 환경변수 단가, USD, 소수 8자리 |
-| 사용자 호출 제한·일일 비용 한도 | 미구현 | 인증 외 별도 제한 없음 |
-| AI 기술지표 해설 | 계획 | 서버 계산 스냅샷·근거 ID 기반 설명, 구현 전 계약은 13절 |
-| AI 일일 변화 브리핑 | 계획 | 직전 거래일 대비 변화와 기술·뉴스·공시 관점 매트릭스, 구현 전 계약은 14절 |
+| 사용자 호출 제한·일일 비용 한도 | 구현 | 사용자 key별 분당 요청 수와 서비스 일일 USD 비용 차단, 환경변수 설정 |
+| AI 기술지표 해설 | 구현 | 서버 계산 스냅샷·근거 ID 기반 설명 |
+| AI 일일 변화 브리핑 | 구현 | 직전 거래일 대비 변화와 기술·뉴스·공시 관점 매트릭스 |
 
 “현재 동작”은 코드 기준 사실이며, “필수 보강”은 운영 배포 전에 구현해야 할 계약이다.
 
@@ -237,7 +237,7 @@ Gemini usageMetadata가 있으면 promptTokenCount와 candidatesTokenCount를 �
 
 ### 5.4 구조화 응답 검증
 
-다음 검증은 공급자 종류와 무관하게 DB 저장 전에 적용한다. 현재는 Gemini JSON Schema, 서버의 null/enum 정규화와 집계 한도를 적용했으며, 항목별 최대 길이 위반을 502로 변환하는 엄격 검증은 후속 작업이다.
+다음 검증은 공급자 종류와 무관하게 DB 저장 전에 적용한다. Gemini JSON Schema와 별개로 서버 검증기가 null·enum·항목 수·항목 길이·근거 ID·금지 문구·토큰 값을 확인하고 위반을 `502 AI_RESPONSE_INVALID`로 변환한다.
 
 | 필드 | 검증 |
 |---|---|
@@ -311,7 +311,7 @@ HIT 응답은 inputTokens=0, outputTokens=0, estimatedCost=0 USD다. modelName�
 3. 감사·운영 사유 기록
 4. 다음 요청에서 새 분석 생성
 
-현재 캐시 삭제 API, 분석 폐기 상태와 관리 감사 로그는 미구현이다. 운영자가 DB와 Redis를 수동으로 불일치하게 수정해서는 안 된다.
+캐시 삭제 API, 분석 폐기 상태와 운영자 감사 로그는 현재 대회 MVP 범위에서 제외한다. 운영자가 DB와 Redis를 수동으로 불일치하게 수정해서는 안 된다.
 
 ### 6.5 동시성
 
@@ -414,7 +414,7 @@ MISS 모델 호출:
 4. GEMINI_API_KEY와 Authorization 헤더는 어떤 로그에도 기록하지 않는다.
 5. 제목·본문·요약 전문 대신 ID, 길이와 해시 등 비민감 메타데이터만 기록한다.
 
-현재는 성공 로그 저장 시 별도 UUID를 만들며 HTTP 요청 ID와 연결하지 않고 userId도 기록하지 않는다.
+성공·실패 로그마다 별도 UUID requestId를 만들며 HTTP 추적 ID와 사용자 FK 연결은 다중 인스턴스 운영 관측 범위로 남긴다.
 
 ## 9. 토큰, 비용과 관리자 지표
 
@@ -442,7 +442,7 @@ estimatedCost = inputCost + outputCost
 
 1. 날짜 범위는 UTC 날짜의 시작 이상, 종료일 다음 날 시작 미만이다.
 2. 범위 생략 시 UTC 오늘을 포함한 최근 30일이다.
-3. requestCount는 조회된 성공 로그 수다. 현재 실패 로그가 없으므로 실패는 포함되지 않는다.
+3. requestCount는 성공·실패 로그 전체이며 successCount와 failedCount를 함께 제공한다. 모델 호출·캐시 적중률·비용은 성공 로그 기준으로 계산한다.
 4. cacheHitCount는 cacheHit=true 로그 수다.
 5. modelCallCount와 cacheMissCount는 requestCount - cacheHitCount다.
 6. cacheHitRate는 cacheHitCount / requestCount × 100, 요청이 없으면 0.00이다.
@@ -477,7 +477,7 @@ estimatedCost = inputCost + outputCost
 
 캐시 HIT는 요약 요청 한도에는 포함하지만 실제 모델 호출·비용 한도에는 포함하지 않는다. 비용 차단 시 이미 존재하는 캐시·DB 결과는 계속 반환하고 새 모델 호출만 AI_BUDGET_EXCEEDED로 거절한다. ADMIN도 무제한 우회하지 않으며 별도 운영 설정으로만 한도를 조정한다.
 
-현재 이 한도와 분산 카운터는 미구현이다. 다중 인스턴스에서도 일관되게 적용하려면 Redis 원자 카운터를 사용한다.
+현재 로컬·단일 서버 범위에서는 사용자별 분당 요청 수와 서비스 일일 비용 차단을 적용한다. 다중 인스턴스에서 완전히 일관된 사용자 카운터는 운영 배포 시 Redis 원자 카운터로 교체한다.
 
 ### 10.3 콘텐츠 안전
 
@@ -544,8 +544,8 @@ estimatedCost = inputCost + outputCost
 
 ## 13. TECHNICAL_EXPLANATION 확장 계약
 
-`TECHNICAL_EXPLANATION`은 계획 상태다. 서버가 계산한 기술지표만 Gemini가 설명하며 지표 재계산, 목표주가·수익률 예측과 직접 매매 명령을 금지한다. 공통 Gemini 연결·비용·로그 정책은 이 문서를 재사용하고, 입력 evidence·API·DB·캐시·UI·인수 조건의 단일 상세 기준은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`다.
+`TECHNICAL_EXPLANATION`은 구현 상태다. 서버가 계산한 기술지표만 Gemini가 설명하며 지표 재계산, 목표주가·수익률 예측과 직접 매매 명령을 금지한다. 입력 evidence·API·DB·캐시·UI·인수 조건의 단일 상세 기준은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`다.
 
 ## 14. DAILY_CHANGE_BRIEFING 확장 계약
 
-`DAILY_CHANGE_BRIEFING`은 계획 상태다. 서버가 계산한 직전·최신 완성 일봉 delta와 이미 검증된 뉴스·공시 분석만 Gemini가 설명한다. 기술·뉴스·공시를 하나의 매수·매도 점수로 합치거나 근거 없는 인과관계, 목표주가와 직접 매매 명령을 생성해서는 안 된다. 공통 Gemini 연결·비용·로그 정책은 이 문서를 재사용하고, 비교 창·근거 ID·관점 매트릭스·API·DB·캐시·UI·인수 조건의 단일 상세 기준은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`다.
+`DAILY_CHANGE_BRIEFING`은 구현 상태다. 서버가 계산한 직전·최신 완성 일봉 delta와 이미 검증된 뉴스·공시 분석만 Gemini가 설명한다. 기술·뉴스·공시를 하나의 매수·매도 점수로 합치거나 근거 없는 인과관계, 목표주가와 직접 매매 명령을 생성해서는 안 된다. 상세 기준은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`다.

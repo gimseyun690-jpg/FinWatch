@@ -11,7 +11,20 @@ public interface NewsArticleRepository extends JpaRepository<NewsArticle, Long> 
 
     List<NewsArticle> findAllByStockSymbolOrderByPublishedAtDesc(String symbol);
 
+    List<NewsArticle> findAllByStockSymbolAndContentKindOrderByPublishedAtDesc(String symbol, String contentKind);
+
+    List<NewsArticle> findAllByStockMarketAndStockSymbolOrderByPublishedAtDesc(String market, String symbol);
+
+    List<NewsArticle> findAllByStockMarketAndStockSymbolAndContentKindOrderByPublishedAtDesc(
+            String market,
+            String symbol,
+            String contentKind);
+
     Optional<NewsArticle> findByExternalId(String externalId);
 
     Optional<NewsArticle> findBySourceAndExternalId(String source, String externalId);
+
+    boolean existsByStockId(Long stockId);
+
+    boolean existsByStockIdAndContentKind(Long stockId, String contentKind);
 }

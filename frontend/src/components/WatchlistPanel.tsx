@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getStocks } from '../api/stocks'
 import { addWatchlist, getWatchlist, removeWatchlist } from '../api/watchlists'
-import type { StockSummary } from '../types/stock'
+import type { StockRef, StockSummary } from '../types/stock'
 import type { WatchlistItem } from '../types/watchlist'
 import type { LiveQuote } from '../types/realtime'
 
 type Props = {
-  selectedSymbol: string
+  selectedStock: StockRef
   editorOpen: boolean
-  onSelect: (symbol: string) => void
+  onSelect: (stock: StockRef) => void
   onEditorOpenChange: (open: boolean) => void
   onItemsChange: (items: WatchlistItem[]) => void
   liveQuotes: Record<string, LiveQuote>
@@ -23,7 +23,7 @@ function formatMoney(value: number, currency: string) {
 }
 
 export function WatchlistPanel({
-  selectedSymbol,
+  selectedStock,
   editorOpen,
   onSelect,
   onEditorOpenChange,
@@ -36,7 +36,6 @@ export function WatchlistPanel({
   const [loading, setLoading] = useState(true)
   const [mutatingSymbol, setMutatingSymbol] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
-  const initialSelectedSymbol = useRef(selectedSymbol)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -46,9 +45,6 @@ export function WatchlistPanel({
         setItems(watchlist)
         setStocks(stockItems)
         onItemsChange(watchlist)
-        if (watchlist.length > 0 && !watchlist.some((item) => item.symbol === initialSelectedSymbol.current)) {
-          onSelect(watchlist[0].symbol)
-        }
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
@@ -82,7 +78,7 @@ export function WatchlistPanel({
       const added = await addWatchlist(candidate)
       const next = [...items, added]
       updateItems(next)
-      onSelect(added.symbol)
+      onSelect({ market: added.market, symbol: added.symbol })
       if (next.length >= stocks.length) onEditorOpenChange(false)
     } catch (error: unknown) {
       setErrorMessage(error instanceof Error ? error.message : '관심종목 등록에 실패했습니다.')
@@ -98,7 +94,9 @@ export function WatchlistPanel({
       await removeWatchlist(symbol)
       const next = items.filter((item) => item.symbol !== symbol)
       updateItems(next)
-      if (selectedSymbol === symbol && next.length > 0) onSelect(next[0].symbol)
+      if (selectedStock.symbol === symbol && next.length > 0) {
+        onSelect({ market: next[0].market, symbol: next[0].symbol })
+      }
     } catch (error: unknown) {
       setErrorMessage(error instanceof Error ? error.message : '관심종목 삭제에 실패했습니다.')
     } finally {
@@ -144,8 +142,8 @@ export function WatchlistPanel({
             const price = liveQuote?.price ?? stock.price
             const changeRate = liveQuote?.changeRate ?? stock.changeRate
             return (
-            <article className={`card stock-card ${selectedSymbol === stock.symbol ? 'selected' : ''} ${streaming ? 'live' : ''}`} key={stock.id}>
-              <button className="stock-card-main" type="button" onClick={() => onSelect(stock.symbol)}>
+            <article className={`card stock-card ${selectedStock.market === stock.market && selectedStock.symbol === stock.symbol ? 'selected' : ''} ${streaming ? 'live' : ''}`} key={stock.id}>
+              <button className="stock-card-main" type="button" onClick={() => onSelect({ market: stock.market, symbol: stock.symbol })}>
                 <span className="card-heading"><span>{stock.name}</span><small>{stock.market}</small></span>
                 <strong>{formatMoney(price, stock.currency)}</strong>
                 <span className={changeRate >= 0 ? 'up' : 'down'}>

@@ -8,6 +8,8 @@ public record AiMetricsResponse(
         LocalDate from,
         LocalDate to,
         long requestCount,
+        long successCount,
+        long failedCount,
         long modelCallCount,
         long cacheHitCount,
         long cacheMissCount,

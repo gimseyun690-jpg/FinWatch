@@ -18,4 +18,7 @@ public interface PortfolioHoldingRepository extends JpaRepository<PortfolioHoldi
     Optional<PortfolioHolding> findWithStockByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
 
     boolean existsByUserIdAndStockId(Long userId, Long stockId);
+
+    @Query("select distinct h.stock from PortfolioHolding h where h.stock.active = true")
+    List<com.finwatch.stock.domain.Stock> findDistinctActiveStocksForRealtime();
 }

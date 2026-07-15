@@ -10,6 +10,8 @@ const demoMetrics: AiMetrics = {
   from: '2026-06-14',
   to: '2026-07-13',
   requestCount: 1284,
+  successCount: 1280,
+  failedCount: 4,
   modelCallCount: 339,
   cacheHitCount: 945,
   cacheMissCount: 339,
@@ -21,7 +23,7 @@ const demoMetrics: AiMetrics = {
   savedEstimatedCost: 4.86,
   averageResponseTimeMs: 214.8,
   costCurrency: 'USD',
-  featureUsage: [{ feature: 'NEWS_SUMMARY', requestCount: 1284 }],
+  featureUsage: [{ feature: 'NEWS_SUMMARY', requestCount: 1284, successCount: 1280, failedCount: 4, modelCallCount: 335, cacheHitCount: 945, totalTokens: 864200, estimatedCost: 1.92, savedEstimatedCost: 4.86 }],
 }
 
 const demoLogs: AiUsageLog[] = [
@@ -73,7 +75,10 @@ function formatCost(value: number) {
 }
 
 function featureLabel(feature: string) {
-  return feature === 'NEWS_SUMMARY' ? '뉴스 요약' : feature
+  if (feature === 'NEWS_SUMMARY') return '뉴스 요약'
+  if (feature === 'TECHNICAL_EXPLANATION') return '기술지표 해설'
+  if (feature === 'DAILY_CHANGE_BRIEFING') return '일일 변화 브리핑'
+  return feature
 }
 
 export function AdminAiDashboard({ refreshKey }: Props) {
@@ -149,7 +154,7 @@ export function AdminAiDashboard({ refreshKey }: Props) {
       )}
 
       <div className="admin-metric-grid">
-        <article className="card admin-metric-card"><span>전체 요청</span><strong>{formatNumber(metrics.requestCount)}</strong><small>AI 기능 요청 수</small></article>
+        <article className="card admin-metric-card"><span>전체 요청</span><strong>{formatNumber(metrics.requestCount)}</strong><small>성공 {formatNumber(metrics.successCount)} · 실패 {formatNumber(metrics.failedCount)}</small></article>
         <article className="card admin-metric-card"><span>실제 모델 호출</span><strong>{formatNumber(metrics.modelCallCount)}</strong><small>캐시 MISS 요청</small></article>
         <article className="card admin-metric-card"><span>총 토큰</span><strong>{formatNumber(metrics.totalTokens)}</strong><small>입력 {formatNumber(metrics.inputTokens)} · 출력 {formatNumber(metrics.outputTokens)}</small></article>
         <article className="card admin-metric-card"><span>예상 비용</span><strong>{formatCost(metrics.estimatedCost)}</strong><small>{metrics.costCurrency} 기준</small></article>
@@ -181,6 +186,7 @@ export function AdminAiDashboard({ refreshKey }: Props) {
             <div className="feature-usage-row" key={item.feature}>
               <div><span>{featureLabel(item.feature)}</span><strong>{formatNumber(item.requestCount)}</strong></div>
               <div className="feature-bar"><span style={{ width: `${item.requestCount / maxFeatureCount * 100}%` }} /></div>
+              <small>모델 {formatNumber(item.modelCallCount)}회 · 실패 {formatNumber(item.failedCount)} · 토큰 {formatNumber(item.totalTokens)} · {formatCost(item.estimatedCost)}</small>
             </div>
           ))}
         </article>
@@ -200,7 +206,7 @@ export function AdminAiDashboard({ refreshKey }: Props) {
                 <tr key={log.id}>
                   <td>{new Date(log.createdAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                   <td><strong>{featureLabel(log.featureType)}</strong><small>{log.modelName}</small></td>
-                  <td><span className={`table-cache ${log.cacheHit ? 'hit' : 'miss'}`}>{log.cacheHit ? 'HIT' : 'MISS'}</span></td>
+                  <td><span className={`table-cache ${log.status === 'FAILED' ? 'failed' : log.cacheHit ? 'hit' : 'miss'}`}>{log.status === 'FAILED' ? 'FAILED' : log.cacheHit ? 'HIT' : 'MISS'}</span></td>
                   <td>{formatNumber(log.totalTokens)}</td>
                   <td>{formatCost(log.estimatedCost)}</td>
                   <td className="saved-cost">{formatCost(log.savedEstimatedCost)}</td>

@@ -10,3 +10,6 @@ spring:
         enabled: false
   flyway:
     locations: classpath:db/migration
+app:
+  ai:
+    requests-per-minute: 100

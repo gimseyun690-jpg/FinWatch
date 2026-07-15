@@ -6,8 +6,10 @@ import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
@@ -44,6 +46,7 @@ public class KisRealtimeClient {
     private final RealtimeQuoteHub hub;
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
+    private final AtomicBoolean connectionPending = new AtomicBoolean();
     private final AtomicInteger reconnectAttempts = new AtomicInteger();
 
     private volatile List<String> symbols = List.of();
@@ -88,16 +91,64 @@ public class KisRealtimeClient {
     }
 
     public void start(List<String> symbols) {
-        this.symbols = symbols.stream().distinct().limit(40).toList();
+        this.symbols = normalize(symbols);
+        stopped = false;
         if (this.symbols.isEmpty()) {
-            hub.updateProvider(PROVIDER, "DISABLED", "구독할 KRX 종목이 없습니다.");
+            hub.updateProvider(PROVIDER, "IDLE", "구독할 KRX 종목을 기다리는 중입니다.");
             return;
         }
-        stopped = false;
+        if (appKey.isBlank() || appSecret.isBlank()) {
+            hub.updateProvider(PROVIDER, "ERROR", "KIS_APP_KEY와 KIS_APP_SECRET이 필요합니다.");
+            return;
+        }
         scheduler.execute(() -> {
             seedSnapshots();
             connect();
         });
+    }
+
+    public void updateSubscriptions(List<String> desiredSymbols) {
+        List<String> desired = normalize(desiredSymbols);
+        List<String> previous = symbols;
+        symbols = desired;
+        if (stopped) {
+            return;
+        }
+        if (!desired.isEmpty() && (appKey.isBlank() || appSecret.isBlank())) {
+            hub.updateProvider(PROVIDER, "ERROR", "KIS_APP_KEY와 KIS_APP_SECRET이 필요합니다.");
+            return;
+        }
+        Set<String> previousSet = Set.copyOf(previous);
+        Set<String> desiredSet = Set.copyOf(desired);
+        List<String> additions = desired.stream().filter(symbol -> !previousSet.contains(symbol)).toList();
+        List<String> removals = previous.stream().filter(symbol -> !desiredSet.contains(symbol)).toList();
+        WebSocket socket = activeSocket;
+        if (socket == null) {
+            if (desired.isEmpty()) {
+                hub.updateProvider(PROVIDER, "IDLE", "구독할 KRX 종목을 기다리는 중입니다.");
+            } else {
+                scheduler.execute(() -> {
+                    seedSnapshots(additions);
+                    connect();
+                });
+            }
+            return;
+        }
+        String approvalKey = cachedApprovalKey;
+        if (approvalKey == null || approvalKey.isBlank()) {
+            return;
+        }
+        removals.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "2"), true));
+        seedSnapshots(additions);
+        additions.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "1"), true));
+        hub.updateProvider(
+                PROVIDER,
+                desired.isEmpty() ? "IDLE" : "CONNECTED",
+                desired.size() + "개 KRX 종목 체결 구독 중");
+    }
+
+    public List<String> subscribedSymbols() {
+        return symbols;
     }
 
     public void stop() {
@@ -112,7 +163,11 @@ public class KisRealtimeClient {
     }
 
     private void seedSnapshots() {
-        for (String symbol : symbols) {
+        seedSnapshots(symbols);
+    }
+
+    private void seedSnapshots(List<String> targetSymbols) {
+        for (String symbol : targetSymbols) {
             if (stopped) {
                 return;
             }
@@ -135,7 +190,7 @@ public class KisRealtimeClient {
     }
 
     private void connect() {
-        if (stopped) {
+        if (stopped || symbols.isEmpty() || !connectionPending.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -146,11 +201,13 @@ public class KisRealtimeClient {
                     .buildAsync(websocketUri, new Listener(approvalKey))
                     .whenComplete((socket, error) -> {
                         if (error != null) {
+                            connectionPending.set(false);
                             hub.updateProvider(PROVIDER, "ERROR", "KIS WebSocket 연결 실패: " + safeMessage(error));
                             scheduleReconnect();
                         }
                     });
         } catch (RuntimeException exception) {
+            connectionPending.set(false);
             hub.updateProvider(PROVIDER, "ERROR", "KIS 실시간 인증 실패: " + safeMessage(exception));
             scheduleReconnect();
         }
@@ -183,7 +240,7 @@ public class KisRealtimeClient {
     }
 
     private void scheduleReconnect() {
-        if (stopped || !reconnectScheduled.compareAndSet(false, true)) {
+        if (stopped || symbols.isEmpty() || !reconnectScheduled.compareAndSet(false, true)) {
             return;
         }
         int attempt = reconnectAttempts.incrementAndGet();
@@ -197,15 +254,30 @@ public class KisRealtimeClient {
     }
 
     private String subscriptionMessage(String approvalKey, String symbol) {
+        return subscriptionMessage(approvalKey, symbol, "1");
+    }
+
+    private String subscriptionMessage(String approvalKey, String symbol, String type) {
         return objectMapper.writeValueAsString(Map.of(
                 "header", Map.of(
                         "approval_key", approvalKey,
                         "custtype", "P",
-                        "tr_type", "1",
+                        "tr_type", type,
                         "content-type", "utf-8"),
                 "body", Map.of("input", Map.of(
                         "tr_id", TRADE_TR_ID,
                         "tr_key", symbol))));
+    }
+
+    private List<String> normalize(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return List.copyOf(new LinkedHashSet<>(values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(value -> value.trim().toUpperCase(java.util.Locale.ROOT))
+                .limit(40)
+                .toList()));
     }
 
     private void handleMessage(WebSocket socket, String message) {
@@ -258,6 +330,7 @@ public class KisRealtimeClient {
 
         @Override
         public void onOpen(WebSocket webSocket) {
+            connectionPending.set(false);
             activeSocket = webSocket;
             reconnectAttempts.set(0);
             reconnectScheduled.set(false);
@@ -293,6 +366,7 @@ public class KisRealtimeClient {
 
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            connectionPending.set(false);
             if (activeSocket == webSocket) {
                 activeSocket = null;
             }
@@ -305,6 +379,7 @@ public class KisRealtimeClient {
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
+            connectionPending.set(false);
             if (activeSocket == webSocket) {
                 activeSocket = null;
             }

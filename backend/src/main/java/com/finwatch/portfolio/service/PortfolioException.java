@@ -31,4 +31,8 @@ public class PortfolioException extends RuntimeException {
     public static PortfolioException currencyMismatch() {
         return new PortfolioException(HttpStatus.UNPROCESSABLE_ENTITY, "HOLDING_CURRENCY_MISMATCH", "종목 통화와 요청 통화가 다릅니다.");
     }
+
+    public static PortfolioException invalidFxPair() {
+        return new PortfolioException(HttpStatus.UNPROCESSABLE_ENTITY, "HOLDING_FX_PAIR_INVALID", "USD 종목의 매수 환율은 USD/KRW만 입력할 수 있습니다.");
+    }
 }

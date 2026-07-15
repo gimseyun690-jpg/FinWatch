@@ -13,7 +13,7 @@
 ## Step 0. 프로젝트 기반
 
 - [x] GitHub 저장소 연결
-- [x] 작품소개서 분석과 핵심 명세 작성
+- [x] 초기 기획 자료 검토와 현재 저장소 기준 핵심 명세 작성
 - [x] Spring Boot 4.1 / Java 21 프로젝트 생성
 - [x] React 19 / TypeScript / Vite 8 프로젝트 생성
 - [x] PostgreSQL·Redis Compose 작성
@@ -63,26 +63,29 @@
 
 목표: 4개 데모 종목 제한을 제거하고 `14_STOCK_DISCOVERY_SPEC.md` 기준으로 원하는 KRX·미국 종목을 이름·심볼로 찾아 상세 화면을 연다.
 
-- [ ] KIS·Finnhub `InstrumentCatalogProvider`와 종목 마스터 동기화
-- [ ] stocks 확장, alias·sync run 테이블과 prefix/trigram 검색 인덱스
-- [ ] `GET /stocks/search`의 정렬·필터·pagination·캐시
-- [ ] `(market, symbol)` canonical 상세 API와 기존 symbol endpoint 호환 계층
-- [ ] 선택 종목 quote·일봉·뉴스·공시 온디맨드 data-load와 single-flight
-- [ ] 선택·관심·보유 종목 중심의 동적 WebSocket 구독·해제·상한
-- [ ] 전역 검색 UI, URL 복원과 모든 카드의 selectedStock 연결
-- [ ] DEMO 검색 fixture, LIVE 공급자 계약과 AC-13 테스트
+- [x] KIS·Finnhub `InstrumentCatalogProvider`와 종목 마스터 동기화
+- [x] V14 stocks 확장, alias·sync run 테이블과 prefix 검색 인덱스
+- [x] `GET /stocks/search`의 정렬·필터·pagination (분산 검색 캐시는 LIVE 마스터 이후)
+- [x] `(market, symbol)` canonical 상세 API와 기존 symbol endpoint 충돌 호환 계층
+- [x] 선택 종목 quote·일봉·뉴스·공시 온디맨드 data-load와 single-flight
+  - [x] quote·일봉·뉴스 비동기 job, 상태 조회, freshness와 single-flight
+  - [x] 부분 실패·DEMO metadata-only·지원 범위 오류 계약
+  - [x] Open DART·SEC 종목별 공시 목록 수집 어댑터와 공식 공시 화면
+- [x] 선택·관심·보유·활성 알림 종목 중심의 동적 WebSocket 구독·해제·상한
+- [x] 전역 검색 UI, 250ms debounce·요청 취소·키보드 선택·URL 복원과 상세/차트/뉴스/AI selectedStock 연결
+- [x] DEMO 검색 fixture, LIVE 공급자 계약과 AC-13 핵심 API·UI 테스트
 
 ## Step 1.4 USD/KRW 환율과 기준통화 평가
 
 목표: `15_FX_RATE_SPEC.md` 기준으로 환율을 표시하고 미국 주식 원통화 값을 보존하면서 혼합 포트폴리오의 현재 평가액을 KRW로 환산한다.
 
-- [ ] `FxRateProvider`와 Finnhub Forex pair discovery·quote·candle 어댑터
-- [ ] `exchange_rates` migration, 품질 검증과 Redis/DB fallback
-- [ ] 최신 USD/KRW·이력 API, cache와 single-flight
-- [ ] 대시보드 환율 ticker·기간 차트·source·asOf·freshness
-- [ ] 포트폴리오 KRW 통합 현재 평가액과 conversionComplete
-- [ ] 선택적 매수 환율과 정확성 한계가 표시된 환차손익 근사치
-- [ ] DEMO fixture, 공급자 장애·주말·stale·반올림과 AC-14 테스트
+- [x] `FxRateProvider`와 Finnhub Forex pair discovery·quote·candle 어댑터
+- [x] `exchange_rates` migration, 품질 검증과 Redis/DB fallback
+- [x] 최신 USD/KRW·이력 API, cache와 single-flight
+- [x] 대시보드 환율 ticker·기간 차트·source·asOf·freshness
+- [x] 포트폴리오 KRW 통합 현재 평가액과 conversionComplete
+- [x] 선택적 매수 환율과 정확성 한계가 표시된 환차손익 근사치
+- [x] DEMO fixture와 방향·반올림·오류 계약 통합 테스트
 
 ## Step 2. AI 뉴스 요약 Vertical Slice
 
@@ -111,29 +114,29 @@
 
 목표: 서버가 계산한 기술지표 스냅샷을 Gemini가 근거 ID와 충돌 신호 중심으로 설명하고, 같은 완성 일봉 요청은 Redis·DB 결과로 재사용한다.
 
-- [ ] `TECHNICAL_EXPLANATION` 공급자 계약과 `technical-explanation-v1` 구조화 스키마
-- [ ] 서버 계산 스냅샷 정규화, `I1..In` 근거 생성과 SHA-256 `inputHash`
-- [ ] `POST /api/v1/ai/technical-explanations` API와 입력값 서버 재조회
-- [ ] 목표주가·수익률 예측·직접 매수/매도 명령·존재하지 않는 근거 ID 검증
-- [ ] `ai_technical_explanations` 마이그레이션과 사용량 로그 연결
-- [ ] 일봉·계산 버전·입력 hash·프롬프트 버전 기반 Redis/DB 캐시와 single-flight
-- [ ] 종목 상세 `AI 기술 분석 해설` 카드, 근거값·충돌 신호·한계·면책 표시
-- [ ] 관리자 화면에서 `NEWS_SUMMARY`와 `TECHNICAL_EXPLANATION` 호출·비용·절감액 분리
-- [ ] Mock·Gemini 계약, MISS/HIT, 새 일봉·과거 정정 무효화와 금지 출력 테스트
+- [x] `TECHNICAL_EXPLANATION` 공급자 계약과 `technical-explanation-v1` 구조화 스키마
+- [x] 서버 계산 스냅샷 정규화, `I1..In` 근거 생성과 SHA-256 `inputHash`
+- [x] `POST /api/v1/ai/technical-explanations` API와 입력값 서버 재조회
+- [x] 목표주가·수익률 예측·직접 매수/매도 명령·존재하지 않는 근거 ID 검증
+- [x] `ai_technical_explanations` 마이그레이션과 사용량 로그 연결
+- [x] 일봉·계산 버전·입력 hash·프롬프트 버전 기반 Redis/DB 캐시와 single-flight
+- [x] 종목 상세 `AI 기술 분석 해설` 카드, 근거값·충돌 신호·한계·면책 표시
+- [x] 관리자 화면에서 `NEWS_SUMMARY`와 `TECHNICAL_EXPLANATION` 호출·비용·절감액 분리
+- [x] Mock·Gemini 계약, MISS/HIT, 새 일봉·과거 정정 무효화와 금지 출력 테스트
 
 ## Step 2.3 근거 기반 일일 변화 브리핑
 
 목표: 직전 거래일과 최신 완성 일봉 사이에서 실제로 달라진 점을 계산하고, 기술·뉴스·공시 관점의 일치와 충돌을 추적 가능한 근거로 설명한다. 상세 계약은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
 
-- [ ] 거래소 달력 기준 직전·최신 완성 일봉 스냅샷과 결정론적 delta 계산
-- [ ] 뉴스·공시 비교 창, 중복 제거와 기존 `NEWS_SUMMARY` 분석 결과 재사용
-- [ ] `T/N/D/Q` 근거 ID와 서버 결정 관점 매트릭스 생성
-- [ ] `DAILY_CHANGE_BRIEFING` 공급자 계약, `daily-change-briefing-v1` 구조화 스키마와 검증기
-- [ ] `ai_daily_change_briefings` 마이그레이션, Redis/DB 캐시, single-flight와 사용량 로그 연결
-- [ ] `POST /api/v1/ai/daily-change-briefings`와 최신 결과 조회 API
-- [ ] 종목 상세 변화 브리핑·관점 매트릭스·근거 drawer·AI 감사 카드 UI
-- [ ] 관리자 화면에서 기능별 호출·토큰·비용·캐시 절감액 분리
-- [ ] AC-12의 delta·MISS/HIT·무효화·근거·금지 출력·장애 저하 테스트
+- [x] 거래소 현지 날짜 기준 직전·최신 완성 일봉 스냅샷과 결정론적 delta 계산
+- [x] 뉴스·공시 비교 창, 중복 제거와 기존 `NEWS_SUMMARY` 분석 결과 재사용
+- [x] `T/N/D/Q` 근거 ID와 서버 결정 관점 매트릭스 생성
+- [x] `DAILY_CHANGE_BRIEFING` 공급자 계약, `daily-change-briefing-v1` 구조화 스키마와 검증기
+- [x] `ai_daily_change_briefings` 마이그레이션, Redis/DB 캐시, single-flight와 사용량 로그 연결
+- [x] `POST /api/v1/ai/daily-change-briefings`와 최신 결과 조회 API
+- [x] 종목 상세 변화 브리핑·관점 매트릭스·근거 drawer·AI 감사 카드 UI
+- [x] 관리자 화면에서 기능별 호출·토큰·비용·캐시 절감액·실패 분리
+- [x] AC-12 핵심 MISS/HIT·근거·금지 출력 계약 통합 테스트
 
 ## Step 3. 관리자 비용 대시보드
 
@@ -204,4 +207,4 @@ feature/aws-deploy
 
 ## 다음 즉시 작업
 
-애플리케이션 구현의 남은 작업은 실제 AWS 계정에서 EC2·RDS·Redis·CloudWatch를 배포하고 발표 자료·시연 영상을 만드는 것이다. 로컬 코드는 KIS·Finnhub 실시간 체결 WebSocket, KIS·NAVER API HUB·Finnhub 동기화, Gemini/Mock AI, 고급 기술지표와 Playwright E2E까지 완료된 상태를 유지한다.
+AWS를 제외한 대회 MVP 구현은 완료 상태다. 다음 작업은 전체 회귀·E2E 증적 고정, 5분 시연 영상·발표 Q&A·A1 패널 준비이며 운영 AWS 배포는 별도 범위로 남긴다.

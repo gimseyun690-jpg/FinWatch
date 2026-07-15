@@ -67,9 +67,9 @@
 
 ## 3. 종목과 시장 데이터
 
-### 종목 검색 — 계획, 미구현
+### 종목 검색 — V14 로컬 카탈로그 구현
 
-현재 `GET /stocks`는 DB에 등록된 활성 종목 전체만 반환하며 query·market·pagination을 처리하지 않는다. 신규 검색 계약은 다음 endpoint를 사용한다.
+`GET /stocks`는 가격 데이터가 준비된 기존 호환 목록을 반환한다. 전체 마스터 검색은 외부 공급자를 호출하지 않고 V14 로컬 카탈로그에서 다음 endpoint로 처리한다.
 
 ```text
 GET /stocks/search?q=하이닉스&market=KRX&type=STOCK&page=0&size=10
@@ -77,9 +77,66 @@ GET /stocks/{market}/{symbol}
 GET /stocks/{market}/{symbol}/prices?period=3M&interval=1D
 GET /stocks/{market}/{symbol}/technical
 POST /stocks/{market}/{symbol}/data-loads
+GET /stocks/{market}/{symbol}/data-loads/{jobId}
 ```
 
 검색 응답, 종목 식별, 온디맨드 수집, 기존 symbol 단독 endpoint의 호환·오류 계약은 `14_STOCK_DISCOVERY_SPEC.md`를 단일 상세 기준으로 한다.
+
+### `POST /stocks/{market}/{symbol}/data-loads`
+
+```json
+{
+  "resources": ["QUOTE", "DAILY_PRICES", "NEWS", "DISCLOSURES"]
+}
+```
+
+- 이미 신선한 데이터 또는 완성된 DEMO fixture: `200 READY`
+- 새 LIVE 수집 시작 또는 동일 요청 진행 중: `202 SYNCING`
+- 동일한 `(market, symbol, resources)` 동시 요청은 같은 `jobId`를 재사용한다.
+- 완료 상태는 `GET /stocks/{market}/{symbol}/data-loads/{jobId}`로 조회한다.
+- quote·일봉·뉴스·공시의 부분 실패는 `PARTIAL`로 반환하고 성공한 리소스를 유지한다.
+- `DISCLOSURES`는 KRX 종목에서 Open DART, NASDAQ·NYSE 종목에서 SEC EDGAR를 사용한다.
+
+```json
+{
+  "jobId": "5dcf0e48-5d72-4b24-9c76-94b32dd0c669",
+  "market": "KRX",
+  "symbol": "005930",
+  "status": "SYNCING",
+  "reused": false,
+  "startedAt": "2026-07-14T13:00:00Z",
+  "finishedAt": null,
+  "resources": [
+    { "resource": "QUOTE", "status": "PENDING", "provider": null, "imported": 0 }
+  ]
+}
+```
+
+### `GET /stocks/{market}/{symbol}/disclosures`
+
+저장된 공식 공시를 최신순으로 반환한다. 목록이 비어 있거나 최신 동기화가 필요하면 위 data-load API에 `DISCLOSURES`를 요청한다.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 301,
+      "market": "KRX",
+      "symbol": "005930",
+      "title": "분기보고서 (2026.06)",
+      "publisher": "삼성전자",
+      "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260814000001",
+      "publishedAt": "2026-08-14T00:00:00Z",
+      "source": "OPENDART",
+      "disclosureType": "A",
+      "aiAnalysisAllowed": false,
+      "fetchedAt": "2026-08-14T01:00:00Z"
+    }
+  ],
+  "message": "종목 공시 목록 조회 성공"
+}
+```
 
 ### `GET /stocks/{symbol}`
 
@@ -149,7 +206,7 @@ POST /stocks/{market}/{symbol}/data-loads
 }
 ```
 
-### 환율 — 계획, 미구현
+### 환율 — 구현됨
 
 ```text
 GET /market/fx-rates/USD/KRW
@@ -192,7 +249,11 @@ GET /market/fx-rates/pairs
 
 연결 직후 `snapshot`과 현재 장중 봉의 `candles`, 이후 변경마다 `quote`, `candle` 또는 `status` 이벤트를 전송한다. 프런트엔드는 지수 백오프로 자동 재연결하고 새 연결의 snapshot으로 상태를 복구한다. `sessionStatus=LIVE`만 `TICK`으로 표시하며 REST 초기값은 `SNAPSHOT`으로 구분한다.
 
+브라우저는 선택 종목이 바뀔 때 다음 메시지를 보낸다. 서버는 현재 세션 선택 종목을 최우선으로 두고 관심종목·보유종목·활성 알림을 합쳐 공급자별 구독 상한 안에서 동적으로 구독·해제한다.
+
 ```json
+{ "type": "select", "market": "KRX", "symbol": "005930" }
+{ "type": "subscription", "data": { "market": "KRX", "symbol": "005930" } }
 { "type": "quote", "data": { "symbol": "005930", "price": 255000, "source": "KIS_WS", "sessionStatus": "LIVE", "asOf": "2026-07-14T02:32:08Z" } }
 { "type": "candle", "data": { "symbol": "005930", "time": "2026-07-14T02:32:00Z", "open": 254500, "high": 255000, "low": 254000, "close": 255000, "volume": 1820, "currency": "KRW", "source": "KIS_WS" } }
 ```
@@ -217,6 +278,12 @@ GET /market/fx-rates/pairs
 ### `POST /admin/data/stocks/{symbol}/sync`
 
 ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급자를 호출하지 않고 `SKIPPED`, `LIVE`에서는 KRX 종목의 KIS 일봉·NAVER API HUB 뉴스와 미국 종목의 Finnhub 뉴스를 DB에 중복 없이 저장한다. 공급자 오류는 기존 DB 데이터를 삭제하지 않고 해당 결과를 `FALLBACK`으로 반환한다.
+
+### `POST /admin/data/catalogs/sync`
+
+### `POST /admin/data/catalogs/{provider}/sync`
+
+ADMIN 전용 종목 마스터 동기화 API다. `provider`는 `KIS_MASTER` 또는 `FINNHUB_SYMBOLS`다. DEMO에서는 외부 호출 없이 `SKIPPED`하며, LIVE에서는 KIS 코스피·코스닥 마스터와 Finnhub 미국 심볼을 로컬 `stocks`에 upsert한다. 빈 응답, 최소 종목 수 미달, 기존 활성 종목 대비 급감, 중복 식별자가 감지되면 기존 카탈로그를 그대로 유지하고 sync run을 `FAILED`로 기록한다.
 
 ```json
 {
@@ -350,9 +417,9 @@ ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급
 
 현재 MVP는 종목의 뉴스 전체 목록을 최신순으로 반환한다. `page`와 `size` 페이지네이션은 외부 뉴스 수집을 연결할 때 추가하며, 추가 전에는 해당 쿼리 계약을 지원한다고 간주하지 않는다.
 
-### `GET /news/{newsId}` — 계획, 미구현
+### `GET /news/{newsId}` — 구현됨
 
-원문 제공 권한에 따라 본문 대신 외부 링크와 수집된 메타데이터만 반환할 수 있다.
+원문 제공 권한에 따라 본문 대신 외부 링크와 수집된 메타데이터만 반환한다. `rightsProfile=STORE_AND_DISPLAY`일 때만 `contentDisplayAllowed=true`와 본문을 제공하며 나머지는 `content=null`이다. 없는 ID는 `404 NEWS_NOT_FOUND`다.
 
 ## 8. AI 뉴스 요약
 
@@ -415,7 +482,7 @@ ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급
 }
 ```
 
-## 8.1 AI 기술지표 해설 — 계획, 미구현
+## 8.1 AI 기술지표 해설 — 구현됨
 
 ### `POST /ai/technical-explanations`
 
@@ -433,7 +500,7 @@ ADMIN 전용 외부 데이터 동기화 API다. `DATA_MODE=DEMO`에서는 공급
 
 전체 요청·응답 필드, evidence, 오류와 검증 계약의 단일 기준은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`다.
 
-## 8.2 근거 기반 일일 변화 브리핑 — 계획, 미구현
+## 8.2 근거 기반 일일 변화 브리핑 — 구현됨
 
 - `POST /ai/daily-change-briefings`: 최신·직전 완성 일봉과 비교 구간 뉴스·공시를 서버가 재조회하여 브리핑을 생성하거나 캐시에서 반환한다.
 - `GET /stocks/{symbol}/daily-change-briefings/latest`: 저장된 최신 브리핑을 모델 호출 없이 조회한다.
@@ -495,8 +562,8 @@ ADMIN 전용이다. 기사 출처 정책을 다시 확인하고 SEC EDGAR 허용
     "averageResponseTimeMs": 214.8,
     "costCurrency": "USD",
     "featureUsage": [
-      { "feature": "NEWS_SUMMARY", "requestCount": 1284 },
-      { "feature": "TECHNICAL_EXPLANATION", "requestCount": 426 }
+      { "feature": "NEWS_SUMMARY", "requestCount": 1284, "modelCallCount": 339, "cacheHitCount": 945, "totalTokens": 864200, "estimatedCost": 1.92, "savedEstimatedCost": 4.86 },
+      { "feature": "TECHNICAL_EXPLANATION", "requestCount": 426, "modelCallCount": 120, "cacheHitCount": 306, "totalTokens": 231400, "estimatedCost": 0.61, "savedEstimatedCost": 1.72 }
     ]
   },
   "message": "AI 운영 지표 조회 성공",

@@ -3,6 +3,7 @@ import { getStockNews, summarizeNews } from '../api/news'
 import type { AiSummary, NewsArticle } from '../types/news'
 
 type Props = {
+  market: string
   symbol: string
   onUsageRecorded?: () => void
 }
@@ -51,7 +52,7 @@ const demoSummary: AiSummary = {
   generatedAt: '2026-07-13T03:00:00Z',
 }
 
-export function AiNewsSummary({ symbol, onUsageRecorded }: Props) {
+export function AiNewsSummary({ market, symbol, onUsageRecorded }: Props) {
   const [news, setNews] = useState<NewsArticle[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [summary, setSummary] = useState<AiSummary | null>(null)
@@ -65,7 +66,10 @@ export function AiNewsSummary({ symbol, onUsageRecorded }: Props) {
   useEffect(() => {
     const controller = new AbortController()
     setLoadingNews(true)
-    getStockNews(symbol, controller.signal)
+    setSummary(null)
+    setErrorMessage('')
+    setDemoRequestCount(0)
+    getStockNews(market, symbol, controller.signal)
       .then((items) => {
         setDemoMode(false)
         setNews(items)
@@ -73,13 +77,22 @@ export function AiNewsSummary({ symbol, onUsageRecorded }: Props) {
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
-        setDemoMode(true)
-        setNews(demoNews)
-        setSelectedId(demoNews[0].id)
+        if (market === 'KRX' && symbol === '000660') {
+          setDemoMode(true)
+          setNews(demoNews)
+          setSelectedId(demoNews[0].id)
+        } else {
+          setDemoMode(false)
+          setNews([])
+          setSelectedId(null)
+          setErrorMessage('이 종목의 뉴스를 불러오지 못했습니다. 다른 종목의 데모 뉴스로 대체하지 않습니다.')
+        }
       })
-      .finally(() => setLoadingNews(false))
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingNews(false)
+      })
     return () => controller.abort()
-  }, [symbol])
+  }, [market, symbol])
 
   function selectNews(newsId: number) {
     setSelectedId(newsId)
@@ -139,6 +152,7 @@ export function AiNewsSummary({ symbol, onUsageRecorded }: Props) {
       <div className="ai-news-layout">
         <div className="news-picker" aria-label="뉴스 목록">
           {loadingNews && <p>뉴스를 불러오는 중입니다.</p>}
+          {!loadingNews && news.length === 0 && <p>저장된 종목 뉴스가 없습니다.</p>}
           {!loadingNews && news.map((article) => (
             <button
               type="button"
@@ -159,9 +173,11 @@ export function AiNewsSummary({ symbol, onUsageRecorded }: Props) {
           {!summary ? (
             <div className="summary-empty">
               <span aria-hidden="true">AI</span>
-              <p>{selectedArticle?.aiAnalysisAllowed
-                ? '허용된 본문을 구간별로 분석하고 근거 범위와 비용을 함께 기록합니다.'
-                : '이 출처는 메타데이터와 원문 링크만 제공하며 본문은 AI에 전달하지 않습니다.'}</p>
+              <p>{selectedArticle == null
+                ? '이 종목에 저장된 뉴스가 없어 AI 분석을 실행할 수 없습니다.'
+                : selectedArticle.aiAnalysisAllowed
+                  ? '허용된 본문을 구간별로 분석하고 근거 범위와 비용을 함께 기록합니다.'
+                  : '이 출처는 메타데이터와 원문 링크만 제공하며 본문은 AI에 전달하지 않습니다.'}</p>
               {selectedArticle && (
                 <div className="news-source-disclosure">
                   <span>{selectedArticle.source} · {contentSourceLabel(selectedArticle.contentSource)}</span>
@@ -174,7 +190,7 @@ export function AiNewsSummary({ symbol, onUsageRecorded }: Props) {
                 onClick={requestSummary}
                 disabled={selectedId == null || summarizing || !selectedArticle?.aiAnalysisAllowed}
               >
-                {summarizing ? '분석 생성 중…' : selectedArticle?.aiAnalysisAllowed ? 'AI 분석 실행' : '원문 분석 불가'}
+                {summarizing ? '분석 생성 중…' : selectedArticle == null ? '뉴스 없음' : selectedArticle.aiAnalysisAllowed ? 'AI 분석 실행' : '원문 분석 불가'}
               </button>
             </div>
           ) : (

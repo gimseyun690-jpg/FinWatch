@@ -59,6 +59,12 @@ public class NewsArticle {
     @Column(nullable = false, length = 50)
     private String source;
 
+    @Column(name = "content_kind", nullable = false, length = 30)
+    private String contentKind;
+
+    @Column(name = "disclosure_type", length = 80)
+    private String disclosureType;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "content_source", nullable = false, length = 40)
     private ContentSource contentSource;
@@ -103,9 +109,25 @@ public class NewsArticle {
         article.finalUrl = url;
         article.publishedAt = publishedAt;
         article.source = source;
+        article.contentKind = "NEWS";
         article.contentSource = ContentSource.METADATA_ONLY;
         article.rightsProfile = RightsProfile.METADATA_ONLY;
         article.createdAt = Instant.now();
+        return article;
+    }
+
+    public static NewsArticle createDisclosure(
+            Stock stock,
+            String externalId,
+            String title,
+            String publisher,
+            String url,
+            Instant publishedAt,
+            String source,
+            String disclosureType) {
+        NewsArticle article = createMetadata(stock, externalId, title, publisher, url, publishedAt, source);
+        article.contentKind = "DISCLOSURE";
+        article.disclosureType = disclosureType;
         return article;
     }
 
@@ -147,6 +169,14 @@ public class NewsArticle {
 
     public String getSource() {
         return source;
+    }
+
+    public String getContentKind() {
+        return contentKind;
+    }
+
+    public String getDisclosureType() {
+        return disclosureType;
     }
 
     public ContentSource getContentSource() {

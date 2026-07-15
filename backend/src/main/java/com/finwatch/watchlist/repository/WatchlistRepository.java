@@ -29,4 +29,7 @@ public interface WatchlistRepository extends JpaRepository<Watchlist, Long> {
             @Param("symbol") String symbol);
 
     boolean existsByUserIdAndStockId(Long userId, Long stockId);
+
+    @Query("select distinct w.stock from Watchlist w where w.stock.active = true")
+    List<com.finwatch.stock.domain.Stock> findDistinctActiveStocksForRealtime();
 }

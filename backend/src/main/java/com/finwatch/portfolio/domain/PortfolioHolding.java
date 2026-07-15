@@ -46,6 +46,15 @@ public class PortfolioHolding {
     @Column(nullable = false, length = 3)
     private String currency;
 
+    @Column(name = "average_purchase_fx_rate", precision = 24, scale = 10)
+    private BigDecimal averagePurchaseFxRate;
+
+    @Column(name = "purchase_fx_base_currency", length = 3)
+    private String purchaseFxBaseCurrency;
+
+    @Column(name = "purchase_fx_quote_currency", length = 3)
+    private String purchaseFxQuoteCurrency;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -59,7 +68,10 @@ public class PortfolioHolding {
             AppUser user,
             Stock stock,
             BigDecimal quantity,
-            BigDecimal averagePurchasePrice) {
+            BigDecimal averagePurchasePrice,
+            BigDecimal averagePurchaseFxRate,
+            String purchaseFxBaseCurrency,
+            String purchaseFxQuoteCurrency) {
         Instant now = Instant.now();
         PortfolioHolding holding = new PortfolioHolding();
         holding.user = user;
@@ -67,14 +79,28 @@ public class PortfolioHolding {
         holding.quantity = quantity;
         holding.averagePurchasePrice = averagePurchasePrice;
         holding.currency = stock.getCurrency();
+        holding.averagePurchaseFxRate = averagePurchaseFxRate;
+        holding.purchaseFxBaseCurrency = purchaseFxBaseCurrency;
+        holding.purchaseFxQuoteCurrency = purchaseFxQuoteCurrency;
         holding.createdAt = now;
         holding.updatedAt = now;
         return holding;
     }
 
-    public void update(BigDecimal quantity, BigDecimal averagePurchasePrice) {
+    public void update(
+            BigDecimal quantity,
+            BigDecimal averagePurchasePrice,
+            BigDecimal averagePurchaseFxRate,
+            String purchaseFxBaseCurrency,
+            String purchaseFxQuoteCurrency,
+            boolean fxFieldsPresent) {
         if (quantity != null) this.quantity = quantity;
         if (averagePurchasePrice != null) this.averagePurchasePrice = averagePurchasePrice;
+        if (fxFieldsPresent) {
+            this.averagePurchaseFxRate = averagePurchaseFxRate;
+            this.purchaseFxBaseCurrency = purchaseFxBaseCurrency;
+            this.purchaseFxQuoteCurrency = purchaseFxQuoteCurrency;
+        }
         this.updatedAt = Instant.now();
     }
 
@@ -83,6 +109,9 @@ public class PortfolioHolding {
     public BigDecimal getQuantity() { return quantity; }
     public BigDecimal getAveragePurchasePrice() { return averagePurchasePrice; }
     public String getCurrency() { return currency; }
+    public BigDecimal getAveragePurchaseFxRate() { return averagePurchaseFxRate; }
+    public String getPurchaseFxBaseCurrency() { return purchaseFxBaseCurrency; }
+    public String getPurchaseFxQuoteCurrency() { return purchaseFxQuoteCurrency; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

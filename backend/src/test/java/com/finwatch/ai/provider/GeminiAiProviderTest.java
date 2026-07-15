@@ -7,12 +7,18 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+
+import com.finwatch.ai.dto.TechnicalExplanationInput;
+import com.finwatch.ai.dto.TechnicalExplanationInput.TechnicalEvidence;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -79,6 +85,51 @@ class GeminiAiProviderTest {
                     assertThat(exception.getCode()).isEqualTo("AI_RATE_LIMITED");
                     assertThat(exception.getMessage()).doesNotContain("fixture-key", "prompt");
                 });
+    }
+
+    @Test
+    void sendsServerTechnicalEvidenceAndParsesStructuredExplanation() {
+        String payload = """
+                {"summary":"기술지표 요약","trendExplanation":"추세 설명","momentumExplanation":"모멘텀 설명","volatilityExplanation":"변동성 설명","volumeExplanation":"거래량 설명","supportingSignals":[{"text":"이동평균 근거","evidenceIds":["I1"]}],"conflictingSignals":[],"riskNotes":["미래 가격을 예측하지 않습니다."],"dataLimitations":["DEMO 데이터입니다."]}
+                """.trim();
+        responseBody = """
+                {
+                  "candidates":[{"content":{"parts":[{"text":%s}]} ,"finishReason":"STOP"}],
+                  "usageMetadata":{"promptTokenCount":140,"candidatesTokenCount":60},
+                  "modelVersion":"gemini-test"
+                }
+                """.formatted(new ObjectMapper().writeValueAsString(payload));
+        TechnicalExplanationInput input = new TechnicalExplanationInput(
+                "KRX",
+                "000660",
+                "KRW",
+                "1D",
+                Instant.parse("2026-07-14T06:00:00Z"),
+                "DEMO",
+                "DEMO",
+                false,
+                "technical-v2-wilder",
+                90,
+                "BUY",
+                List.of(new TechnicalEvidence(
+                        "I1",
+                        "MOVING_AVERAGE",
+                        Map.of("ma5", "270100", "ma20", "268900"),
+                        "MA5 270100 > MA20 268900")));
+
+        var result = provider().explainTechnical(input, "technical-explanation-v1");
+
+        assertThat(result.summary()).isEqualTo("기술지표 요약");
+        assertThat(result.supportingSignals().getFirst().evidenceIds()).containsExactly("I1");
+        assertThat(result.inputTokens()).isEqualTo(140);
+        String prompt = new ObjectMapper().readTree(requestBody.get())
+                .get("contents").get(0).get("parts").get(0).get("text").asText();
+        assertThat(prompt)
+                .contains("읽기 전용 값")
+                .contains("목표주가")
+                .contains("\"symbol\":\"000660\"")
+                .contains("\"id\":\"I1\"");
+        assertThat(requestBody.get()).doesNotContain("fixture-key");
     }
 
     private GeminiAiProvider provider() {

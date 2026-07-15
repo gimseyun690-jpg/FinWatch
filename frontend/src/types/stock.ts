@@ -5,6 +5,46 @@ export type ApiResponse<T> = {
   timestamp: string
 }
 
+export type StockRef = {
+  stockId?: number
+  market: string
+  symbol: string
+}
+
+export type StockCatalogItem = StockRef & {
+  stockId: number
+  exchange: string
+  name: string
+  englishName: string | null
+  instrumentType: string
+  currency: string
+  active: boolean
+  tradable: boolean
+  status: string
+  dataAvailability: 'READY' | 'PARTIAL' | 'METADATA_ONLY' | 'UNAVAILABLE'
+  source: string
+}
+
+export type StockSearchPage = {
+  items: StockCatalogItem[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  catalogAsOf: string
+}
+
+export type CanonicalStockDetail = StockCatalogItem & {
+  catalogSource: string
+  catalogUpdatedAt: string
+  price: number | null
+  change: number | null
+  changeRate: number | null
+  volume: number | null
+  asOf: string | null
+  source: string | null
+}
+
 export type StockSummary = {
   symbol: string
   name: string

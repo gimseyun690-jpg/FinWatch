@@ -7,7 +7,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.finwatch.ai.repository.AiAnalysisRepository;
 import com.finwatch.news.dto.NewsResponse;
+import com.finwatch.news.dto.NewsDetailResponse;
 import com.finwatch.news.repository.NewsArticleRepository;
+import org.springframework.http.HttpStatus;
 
 @Service
 @Transactional(readOnly = true)
@@ -24,7 +26,32 @@ public class NewsQueryService {
     }
 
     public List<NewsResponse> getNews(String symbol) {
-        return newsArticleRepository.findAllByStockSymbolOrderByPublishedAtDesc(symbol).stream()
+        return toResponses(newsArticleRepository
+                .findAllByStockSymbolAndContentKindOrderByPublishedAtDesc(symbol, "NEWS"));
+    }
+
+    public List<NewsResponse> getNews(String market, String symbol) {
+        return toResponses(newsArticleRepository
+                .findAllByStockMarketAndStockSymbolAndContentKindOrderByPublishedAtDesc(
+                        market.trim().toUpperCase(java.util.Locale.ROOT),
+                        symbol.trim().toUpperCase(java.util.Locale.ROOT),
+                        "NEWS"));
+    }
+
+    public NewsDetailResponse getNewsDetail(Long newsId) {
+        var article = newsArticleRepository.findById(newsId)
+                .orElseThrow(() -> new NewsQueryException(HttpStatus.NOT_FOUND, "NEWS_NOT_FOUND", "뉴스를 찾을 수 없습니다."));
+        boolean displayAllowed = article.getRightsProfile() == com.finwatch.news.content.RightsProfile.STORE_AND_DISPLAY;
+        return new NewsDetailResponse(article.getId(), article.getStock().getMarket(), article.getStock().getSymbol(),
+                article.getExternalId(), article.getTitle(), article.getPublisher(), article.getUrl(), article.getCanonicalUrl(),
+                article.getContentKind(), article.getDisclosureType(), article.getPublishedAt(), article.getSource(),
+                article.getContentSource().name(), article.getRightsProfile().name(), article.isAiAnalysisAllowed(),
+                displayAllowed, displayAllowed ? article.getContent() : null, article.getContentHash(), article.getExtractorVersion(),
+                article.getFetchedAt(), aiAnalysisRepository.existsByNewsId(article.getId()));
+    }
+
+    private List<NewsResponse> toResponses(List<com.finwatch.news.domain.NewsArticle> articles) {
+        return articles.stream()
                 .map(article -> new NewsResponse(
                         article.getId(),
                         article.getStock().getSymbol(),

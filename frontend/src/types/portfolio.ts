@@ -6,6 +6,9 @@ export type PortfolioHolding = {
   currency: string
   quantity: number
   averagePurchasePrice: number
+  averagePurchaseFxRate: number | null
+  purchaseFxBaseCurrency: string | null
+  purchaseFxQuoteCurrency: string | null
   latestPrice: number | null
   priceAsOf: string | null
   priceSource: string | null
@@ -13,6 +16,10 @@ export type PortfolioHolding = {
   evaluationAmount: number | null
   profitLoss: number | null
   returnRate: number | null
+  convertedEvaluationAmount: number | null
+  convertedPurchaseAmount: number | null
+  convertedProfitLoss: number | null
+  fxEffectApproximation: number | null
   valuationStatus: 'VALUED' | 'PRICE_UNAVAILABLE'
   updatedAt: string
 }
@@ -27,6 +34,20 @@ export type PortfolioCurrencySummary = {
 }
 
 export type Portfolio = {
+  baseCurrency: 'KRW'
+  baseCurrencyTotalEvaluationAmount: number | null
+  baseCurrencyTotalPurchaseAmount: number | null
+  baseCurrencyProfitLoss: number | null
+  conversionComplete: boolean
+  profitLossComplete: boolean
+  fxRates: Array<{
+    pair: 'USD/KRW'
+    rate: number
+    asOf: string
+    source: string
+    rateType: string
+    freshness: string
+  }>
   currencySummaries: PortfolioCurrencySummary[]
   holdings: PortfolioHolding[]
 }

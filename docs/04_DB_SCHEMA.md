@@ -1,6 +1,6 @@
 # FinWatch DB 스키마
 
-상태: V5 마이그레이션까지 구현됨. PostgreSQL과 snake_case를 기준으로 한다.
+상태: V17 마이그레이션까지 구현됨. PostgreSQL과 snake_case를 기준으로 한다.
 
 ## 1. 관계 요약
 
@@ -9,10 +9,13 @@ users 1--N watchlists N--1 stocks
 users 1--N portfolio_holdings N--1 stocks
 users 1--N price_alerts N--1 stocks
 stocks 1--N market_prices
+stocks 1--N stock_aliases
 stocks 1--N news_articles
 news_articles 1--N ai_analyses
 users 1--N ai_usage_logs
 ai_analyses 1--N ai_usage_logs
+stocks 1--N ai_technical_explanations
+stocks 1--N ai_daily_change_briefings
 ```
 
 ## 2. 공통 규칙
@@ -44,15 +47,29 @@ ai_analyses 1--N ai_usage_logs
 | symbol | VARCHAR(30) | NOT NULL |
 | name | VARCHAR(150) | NOT NULL |
 | market | VARCHAR(30) | NOT NULL |
+| exchange | VARCHAR(30) | NOT NULL |
+| english_name | VARCHAR(150) | 영문 표시명 |
+| normalized_name | VARCHAR(150) | 검색용 정규화 이름, NOT NULL |
+| normalized_english_name | VARCHAR(150) | 검색용 영문 정규화 이름 |
+| instrument_type | VARCHAR(30) | STOCK / ETF / ADR 등, NOT NULL |
 | currency | VARCHAR(3) | NOT NULL |
 | active | BOOLEAN | NOT NULL DEFAULT true |
+| tradable | BOOLEAN | NOT NULL |
+| status | VARCHAR(30) | LISTED / DEMO_ONLY 등, NOT NULL |
+| provider | VARCHAR(50) | 마스터 공급자, NOT NULL |
+| provider_instrument_id | VARCHAR(100) | 공급자 종목 식별자, NOT NULL |
+| isin | VARCHAR(20) | 선택적 국제 식별자 |
+| listed_at | DATE | 선택적 상장일 |
+| delisted_at | DATE | 선택적 상장폐지일 |
+| catalog_updated_at | TIMESTAMPTZ | 공급자 기준 시각, NOT NULL |
 | created_at | TIMESTAMPTZ | NOT NULL |
+| updated_at | TIMESTAMPTZ | NOT NULL |
 
 UNIQUE `(market, symbol)`.
 
-현재 migration은 4개 데모 종목 조회에 필요한 최소 컬럼만 가진다. 전체 종목 검색 구현 시 `exchange`, 영문명·정규화 이름, 상품 유형, 공급자 식별자, ISIN, 거래 가능·상장 상태와 catalog 기준 시각을 추가하고 `stock_aliases`, `instrument_catalog_sync_runs` 및 검색 인덱스를 도입한다. 상세 컬럼·제약은 `14_STOCK_DISCOVERY_SPEC.md` 7절을 따른다.
+V14는 `stock_aliases`와 `instrument_catalog_sync_runs`, symbol·정규화 이름·필터 인덱스, DEMO 검색 fixture를 추가한다. LIVE KIS·Finnhub 마스터 upsert는 빈 응답·급감·중복 식별자 안전장치를 통과한 결과만 반영한다.
 
-### exchange_rates (계획, 미구현)
+### exchange_rates (V16 구현)
 
 USD/KRW 최신값·일봉은 base/quote, rate 또는 OHLC, rate type, source, provider symbol, asOf와 fetchedAt을 저장한다. UNIQUE `(base_currency, quote_currency, source, as_of)`와 pair별 최신 조회 인덱스를 적용한다. 포트폴리오의 선택적 매수 환율 컬럼을 포함한 전체 계약은 `15_FX_RATE_SPEC.md` 7절을 따른다.
 
@@ -132,6 +149,8 @@ UNIQUE `(stock_id, price_interval, recorded_at)`. 인덱스 `(stock_id, recorded
 | content | TEXT | 라이선스에 따라 NULL 가능 |
 | published_at | TIMESTAMPTZ | NOT NULL |
 | source | VARCHAR(50) | NOT NULL |
+| content_kind | VARCHAR(30) | NEWS / DISCLOSURE, NOT NULL |
+| disclosure_type | VARCHAR(100) | Open DART 공시 유형 또는 SEC form, 공시가 아니면 NULL |
 | content_source | VARCHAR(40) | PROVIDER_SUMMARY / ALLOWLIST_ARTICLE / OFFICIAL_DISCLOSURE / METADATA_ONLY |
 | rights_profile | VARCHAR(40) | METADATA_ONLY / TRANSIENT_AI / STORE_FOR_AI / STORE_AND_DISPLAY |
 | content_hash | VARCHAR(64) | 중복 기사 판별 |
@@ -140,7 +159,7 @@ UNIQUE `(stock_id, price_interval, recorded_at)`. 인덱스 `(stock_id, recorded
 | updated_at | TIMESTAMPTZ | 원문 갱신 시각 |
 | created_at | TIMESTAMPTZ | NOT NULL |
 
-UNIQUE `(source, external_id)`, 인덱스 `(stock_id, published_at DESC)`.
+UNIQUE `(source, external_id)`, 인덱스 `(stock_id, published_at DESC)`, `(stock_id, content_kind, published_at DESC)`.
 
 ### source_policies
 
@@ -191,13 +210,13 @@ UNIQUE `(host, path_prefix)`. 등록되지 않은 호스트와 경로는 DB 행�
 
 UNIQUE `(news_id, feature_type, prompt_version, content_hash)`, UNIQUE `(cache_key)`. 같은 뉴스라도 본문 hash가 바뀌면 과거 분석을 덮어쓰지 않고 새 버전을 만든다.
 
-### ai_technical_explanations (계획, 미구현)
+### ai_technical_explanations (V13 구현)
 
 뉴스 분석과 수명주기·입력 구조가 다르므로 기술지표 해설은 별도 테이블로 저장한다. 대상·입력 버전, 구조화 해설, evidence, 모델·토큰·원 생성 비용과 cacheKey를 보관하고 원시 OHLCV·전체 프롬프트는 저장하지 않는다.
 
-UNIQUE `(stock_id, interval, latest_recorded_at, calculation_version, input_hash, prompt_version)`, UNIQUE `(cache_key)`를 적용한다. 전체 컬럼과 저장·무효화 계약은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md` 9절을 따른다.
+DB 컬럼명 `analysis_interval`을 API의 `interval`에 매핑한다. UNIQUE `(stock_id, analysis_interval, latest_recorded_at, calculation_version, input_hash, prompt_version)`, UNIQUE `(cache_key)`를 적용한다. 전체 컬럼과 저장·무효화 계약은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md` 9절을 따른다.
 
-### ai_daily_change_briefings (계획, 미구현)
+### ai_daily_change_briefings (V17 구현)
 
 최신·직전 기술 스냅샷의 변화, 관점 매트릭스, `T/N/D/Q` evidence, AI 브리핑과 감사 메타데이터를 저장한다. 원시 OHLCV와 기사·공시 원문은 중복 저장하지 않는다.
 
@@ -230,9 +249,9 @@ UNIQUE `(stock_id, current_trading_date, input_hash, prompt_version)`, UNIQUE `(
 
 인덱스 `(created_at DESC)`, `(feature_type, created_at DESC)`, `(estimated_cost DESC)`.
 
-현재 마이그레이션에는 `technical_explanation_id`와 `daily_briefing_id`가 없다. 각 기능 구현 migration에서 컬럼과 FK를 추가한다. 성공 로그는 기능에 맞는 결과 FK 하나만 연결하고 실패 로그는 결과 FK가 모두 `NULL`일 수 있다. 세부 규칙은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`와 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
+V13에서 `technical_explanation_id`가 추가됐다. `daily_briefing_id`는 일일 변화 브리핑 migration에서 추가한다. 성공 로그는 기능에 맞는 결과 FK 하나만 연결하고 실패 로그는 결과 FK가 모두 `NULL`일 수 있다. 세부 규칙은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`와 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
 
-### prompt_templates (후속 운영 기능, 미구현)
+### prompt_templates (향후 운영 범위, 현재 대회 MVP 제외)
 
 | 컬럼 | 타입 | 제약/설명 |
 |---|---|---|
@@ -245,7 +264,7 @@ UNIQUE `(stock_id, current_trading_date, input_hash, prompt_version)`, UNIQUE `(
 
 UNIQUE `(feature_type, version)`. 기능별 활성 버전은 하나만 허용하도록 서비스에서 검증한다.
 
-### ai_model_prices (후속 운영 기능, 미구현)
+### ai_model_prices (향후 운영 범위, 현재 대회 MVP 제외)
 
 | 컬럼 | 타입 | 제약/설명 |
 |---|---|---|
@@ -285,5 +304,10 @@ Flyway를 사용하며 현재 적용 파일은 다음과 같다. 파일명과 �
 10. `V10__add_structured_ai_analysis.sql`: 긍정·위험 요인, 근거 구간, 분석 범위와 공급자 호출 수
 11. `V11__create_portfolio_holdings.sql`: 사용자별 보유 종목과 평가 입력
 12. `V12__create_price_alerts.sql`: 가격 알림 조건, 상태와 마지막 평가 정보
+13. `V13__create_ai_technical_explanations.sql`: 근거 기반 AI 기술지표 해설과 사용량 로그 FK
+14. `V14__expand_stock_catalog.sql`: 종목 마스터 메타데이터, 별칭·동기화 이력·검색 인덱스와 DEMO 검색 fixture
+15. `V15__classify_disclosure_articles.sql`: 뉴스·공시 콘텐츠 구분과 조회 인덱스
+16. `V16__create_exchange_rates.sql`: USD/KRW 환율 이력과 포트폴리오 매수 환율
+17. `V17__create_ai_daily_change_briefings.sql`: 일일 변화 브리핑 결과와 사용량 로그 FK
 
-`prompt_templates`, `ai_model_prices`는 논리 설계만 확정된 상태이며 후속 운영 기능에서 별도 마이그레이션으로 추가한다.
+`prompt_templates`, `ai_model_prices`는 현재 대회 MVP 범위가 아니다. 프롬프트 버전과 단가는 환경설정으로 고정하며, 운영 중 무중단 편집·시점별 단가 이력이 필요할 때 별도 마이그레이션으로 추가한다.

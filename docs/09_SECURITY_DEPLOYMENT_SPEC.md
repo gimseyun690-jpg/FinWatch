@@ -304,7 +304,7 @@ errorCode, externalProvider, cacheHit
 | RDS 장애 | 인증·조회·저장 중단 | readiness DOWN, 쓰기 중단, RDS 복구 또는 PITR, 무결성 smoke test | 복구 Runbook 없음 |
 | EC2/Nginx 장애 | 전체 서비스 중단 | ECR의 정상 digest와 환경 설정으로 재생성 | IaC와 재생성 절차 없음 |
 | Flyway 실패 | 새 버전 시작 실패 | 트래픽 전환 금지, 로그 확인, 호환 앱 rollback 또는 보정 migration | 시작 시 자동 실행만 구성됨 |
-| 데이터 공급자 지연 | 가격·뉴스가 오래됨 | 마지막 정상값의 source/asOf와 stale 상태 표시, 수집 중단 경보 | 실제 공급자 미구현 |
+| 데이터 공급자 지연 | 가격·뉴스가 오래됨 | 마지막 정상값의 source/asOf와 stale 상태 표시, 수집 중단 경보 | KIS·Naver·Finnhub·공시 어댑터 구현, 제출 전 LIVE smoke 필요 |
 | Secret 노출 | 외부 오용·계정 탈취 | 즉시 폐기·교체, JWT 강제 무효화, 로그·비용 조사 | 교체 Runbook 없음 |
 | AI 비용 급증 | 예산 초과 | 사용자·IP rate limit, 일 한도, MISS 차단, 운영자 경보 | 관리자 사후 지표만 존재 |
 

@@ -1,9 +1,9 @@
 # FinWatch 근거 기반 일일 변화 브리핑 명세
 
-상태: v0.1 계획·미구현
+상태: v1.0 MVP 구현
 기준일: 2026-07-14
 기능 유형: `DAILY_CHANGE_BRIEFING`
-활성 예정 프롬프트: `daily-change-briefing-v1`
+활성 프롬프트: `daily-change-briefing-v1`
 
 ## 1. 제품 목적과 차별화
 

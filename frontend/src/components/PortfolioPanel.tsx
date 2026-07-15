@@ -16,6 +16,7 @@ export function PortfolioPanel({ liveQuotes }: Props) {
   const [symbol, setSymbol] = useState('')
   const [quantity, setQuantity] = useState('1')
   const [averagePrice, setAveragePrice] = useState('')
+  const [purchaseFxRate, setPurchaseFxRate] = useState('')
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -66,9 +67,13 @@ export function PortfolioPanel({ liveQuotes }: Props) {
         quantity: Number(quantity),
         averagePurchasePrice: Number(averagePrice),
         currency: selectedStock.currency,
+        ...(selectedStock.currency === 'USD' && purchaseFxRate
+          ? { averagePurchaseFxRate: Number(purchaseFxRate), purchaseFxBaseCurrency: 'USD', purchaseFxQuoteCurrency: 'KRW' }
+          : {}),
       })
       await refresh()
       setAveragePrice('')
+      setPurchaseFxRate('')
       setEditing(false)
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : '보유 종목을 등록하지 못했습니다.')
@@ -105,12 +110,26 @@ export function PortfolioPanel({ liveQuotes }: Props) {
           </select>
           <input type="number" min="0.000001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="수량" aria-label="보유 수량" required />
           <input type="number" min="0" step="any" value={averagePrice} onChange={(event) => setAveragePrice(event.target.value)} placeholder="평균 매수가" aria-label="평균 매수가" required />
+          {selectedStock?.currency === 'USD' && <input type="number" min="0.0000000001" step="any" value={purchaseFxRate} onChange={(event) => setPurchaseFxRate(event.target.value)} placeholder="매수 당시 USD/KRW (선택)" aria-label="매수 당시 USD KRW 환율" />}
           <button type="submit" disabled={saving || !selectedStock}>{saving ? '저장 중…' : '등록'}</button>
         </form>
       )}
       {error && <p className="portfolio-error" role="alert">{error}</p>}
 
       <div className="currency-summary-grid">
+        {evaluatedPortfolio && (
+          <section className="currency-summary base-currency-summary">
+            <span>현재 환율 기준 총 평가액</span>
+            <strong>{evaluatedPortfolio.conversionComplete && evaluatedPortfolio.baseCurrencyTotalEvaluationAmount != null
+              ? formatMoney(evaluatedPortfolio.baseCurrencyTotalEvaluationAmount, 'KRW') : '환산 불완전'}</strong>
+            <small className={(evaluatedPortfolio.baseCurrencyProfitLoss ?? 0) >= 0 ? 'profit' : 'down'}>
+              {evaluatedPortfolio.profitLossComplete && evaluatedPortfolio.baseCurrencyProfitLoss != null
+                ? `${signedMoney(evaluatedPortfolio.baseCurrencyProfitLoss, 'KRW')} · 원화 통합 손익`
+                : '원화 손익 계산에는 매수 당시 환율이 필요합니다.'}
+            </small>
+            {evaluatedPortfolio.fxRates[0] && <em>USD/KRW {evaluatedPortfolio.fxRates[0].rate.toLocaleString('ko-KR')} · {evaluatedPortfolio.fxRates[0].source} · {evaluatedPortfolio.fxRates[0].freshness}</em>}
+          </section>
+        )}
         {evaluatedPortfolio?.currencySummaries.map((summary) => (
           <section className="currency-summary" key={summary.currency}>
             <span>{summary.currency} 평가액</span>
@@ -134,20 +153,38 @@ export function PortfolioPanel({ liveQuotes }: Props) {
               <strong>{holding.evaluationAmount == null ? '—' : formatMoney(holding.evaluationAmount, holding.currency)}</strong>
               <span className={(holding.profitLoss ?? 0) >= 0 ? 'profit' : 'down'}>{signedRate(holding.returnRate)}</span>
               {streaming && <small className="portfolio-live-label">LIVE · {holding.priceSource}</small>}
+              {holding.convertedEvaluationAmount != null && holding.currency !== 'KRW' && <small>약 {formatMoney(holding.convertedEvaluationAmount, 'KRW')}</small>}
+              {holding.fxEffectApproximation != null && <small>환율효과 근사 {signedMoney(holding.fxEffectApproximation, 'KRW')}</small>}
             </div>
             <button type="button" onClick={() => removeHolding(holding.id)} aria-label={`${holding.name} 보유 삭제`}>삭제</button>
           </div>
           )
         })}
       </div>
-      <p className="portfolio-note">KRW와 USD는 환율 없이 합산하지 않으며 실시간 시세를 우선하고, 없으면 최신 저장 가격으로 평가합니다.</p>
+      <p className="portfolio-note">원통화 금액을 보존하면서 검증된 USD/KRW 환율로만 원화 환산합니다. 환율이나 매수 환율이 없으면 불완전한 합계를 전체 자산·손익처럼 표시하지 않습니다.</p>
     </article>
   )
 }
 
 function applyLiveQuotes(portfolio: Portfolio | null, liveQuotes: Record<string, LiveQuote>): Portfolio | null {
   if (portfolio == null) return null
-  const holdings = portfolio.holdings.map((holding) => applyLiveQuote(holding, liveQuotes[holding.symbol]))
+  const fxRate = portfolio.fxRates.find((item) => item.pair === 'USD/KRW')?.rate ?? null
+  const holdings = portfolio.holdings.map((holding) => {
+    const live = applyLiveQuote(holding, liveQuotes[holding.symbol])
+    const convertedEvaluationAmount = live.evaluationAmount == null ? null
+      : live.currency === 'KRW' ? live.evaluationAmount
+        : live.currency === 'USD' && fxRate != null ? Math.round(live.evaluationAmount * fxRate) : null
+    const convertedPurchaseAmount = live.currency === 'KRW' ? live.purchaseAmount
+      : live.currency === 'USD' && live.averagePurchaseFxRate != null ? Math.round(live.purchaseAmount * live.averagePurchaseFxRate) : null
+    return {
+      ...live,
+      convertedEvaluationAmount,
+      convertedPurchaseAmount,
+      convertedProfitLoss: convertedEvaluationAmount == null || convertedPurchaseAmount == null ? null : convertedEvaluationAmount - convertedPurchaseAmount,
+      fxEffectApproximation: live.currency === 'USD' && fxRate != null && live.averagePurchaseFxRate != null && live.evaluationAmount != null
+        ? Math.round(live.evaluationAmount * (fxRate - live.averagePurchaseFxRate)) : null,
+    }
+  })
   const currencies = [...new Set(holdings.map((holding) => holding.currency))]
   const currencySummaries = currencies.map((currency) => {
     const items = holdings.filter((holding) => holding.currency === currency)
@@ -161,7 +198,20 @@ function applyLiveQuotes(portfolio: Portfolio | null, liveQuotes: Record<string,
     const returnRate = totalPurchaseAmount === 0 ? null : profitLoss / totalPurchaseAmount * 100
     return { currency, totalPurchaseAmount, totalEvaluationAmount, profitLoss, returnRate, valuationComplete }
   })
-  return { holdings, currencySummaries }
+  const conversionComplete = holdings.every((holding) => holding.convertedEvaluationAmount != null)
+  const profitLossComplete = conversionComplete && holdings.every((holding) => holding.convertedPurchaseAmount != null)
+  const baseCurrencyTotalEvaluationAmount = conversionComplete ? holdings.reduce((sum, holding) => sum + (holding.convertedEvaluationAmount ?? 0), 0) : null
+  const baseCurrencyTotalPurchaseAmount = profitLossComplete ? holdings.reduce((sum, holding) => sum + (holding.convertedPurchaseAmount ?? 0), 0) : null
+  return {
+    ...portfolio,
+    holdings,
+    currencySummaries,
+    conversionComplete,
+    profitLossComplete,
+    baseCurrencyTotalEvaluationAmount,
+    baseCurrencyTotalPurchaseAmount,
+    baseCurrencyProfitLoss: baseCurrencyTotalEvaluationAmount == null || baseCurrencyTotalPurchaseAmount == null ? null : baseCurrencyTotalEvaluationAmount - baseCurrencyTotalPurchaseAmount,
+  }
 }
 
 function applyLiveQuote(holding: PortfolioHolding, quote?: LiveQuote): PortfolioHolding {

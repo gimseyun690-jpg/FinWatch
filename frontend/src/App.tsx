@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import { StockDetail } from './components/StockDetail'
 import { AiNewsSummary } from './components/AiNewsSummary'
+import { DisclosurePanel } from './components/DisclosurePanel'
+import { FxRatePanel } from './components/FxRatePanel'
+import { AiTechnicalExplanation } from './components/AiTechnicalExplanation'
+import { DailyChangeBriefing } from './components/DailyChangeBriefing'
 import { AdminAiDashboard } from './components/AdminAiDashboard'
 import { LoginPage } from './components/LoginPage'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { PortfolioPanel } from './components/PortfolioPanel'
 import { AlertsPanel } from './components/AlertsPanel'
 import { PwaInstallButton } from './components/PwaInstallButton'
+import { GlobalStockSearch } from './components/GlobalStockSearch'
 import { useRealtimeQuotes } from './hooks/useRealtimeQuotes'
 import { clearSession, readSession, saveSession, UNAUTHORIZED_EVENT } from './auth/session'
 import type { AuthSession, LoginResponse } from './types/auth'
 import type { WatchlistItem } from './types/watchlist'
+import type { StockRef } from './types/stock'
 import './App.css'
 
 type ApiState = 'checking' | 'connected' | 'offline'
@@ -20,9 +26,24 @@ type HealthResponse = {
   timestamp: string
 }
 
+const defaultStock: StockRef = { market: 'KRX', symbol: '000660' }
+
+function stockFromLocation(): StockRef {
+  const match = window.location.pathname.match(/^\/stocks\/([^/]+)\/([^/]+)\/?$/)
+  if (!match) return defaultStock
+  try {
+    return {
+      market: decodeURIComponent(match[1]).toUpperCase(),
+      symbol: decodeURIComponent(match[2]).toUpperCase(),
+    }
+  } catch {
+    return defaultStock
+  }
+}
+
 function App() {
   const [apiState, setApiState] = useState<ApiState>('checking')
-  const [selectedSymbol, setSelectedSymbol] = useState('000660')
+  const [selectedStock, setSelectedStock] = useState<StockRef>(() => stockFromLocation())
   const [adminRefreshKey, setAdminRefreshKey] = useState(0)
   const [session, setSession] = useState<AuthSession | null>(() => readSession())
   const [watchlistEditorOpen, setWatchlistEditorOpen] = useState(false)
@@ -32,7 +53,7 @@ function App() {
     intradayCandles,
     connection: realtimeConnection,
     connectedProviders,
-  } = useRealtimeQuotes(session != null)
+  } = useRealtimeQuotes(session != null, selectedStock)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -48,6 +69,12 @@ function App() {
         setApiState('offline')
       })
     return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    const restoreStock = () => setSelectedStock(stockFromLocation())
+    window.addEventListener('popstate', restoreStock)
+    return () => window.removeEventListener('popstate', restoreStock)
   }, [])
 
   useEffect(() => {
@@ -70,8 +97,11 @@ function App() {
         ? '실시간 연결 중'
         : '실시간 끊김'
 
-  const selectStock = useCallback((symbol: string) => {
-    setSelectedSymbol(symbol)
+  const selectStock = useCallback((stock: StockRef) => {
+    const next = { ...stock, market: stock.market.toUpperCase(), symbol: stock.symbol.toUpperCase() }
+    setSelectedStock(next)
+    const canonicalPath = `/stocks/${encodeURIComponent(next.market)}/${encodeURIComponent(next.symbol)}`
+    if (window.location.pathname !== canonicalPath) window.history.pushState({}, '', canonicalPath)
     window.requestAnimationFrame(() => document.querySelector('#stock-detail')?.scrollIntoView({ behavior: 'smooth' }))
   }, [])
 
@@ -105,6 +135,7 @@ function App() {
           <a href="#news">AI 뉴스</a>
           {session.user.role === 'ADMIN' && <a href="#admin">관리자</a>}
         </nav>
+        <GlobalStockSearch selectedStock={selectedStock} onSelect={selectStock} />
         <div className="topbar-actions">
           <PwaInstallButton />
           <span className={`api-status ${apiState}`}><span className="status-dot" aria-hidden="true" />{statusText}</span>
@@ -125,11 +156,15 @@ function App() {
             <h1>개인 투자자용 메인 대시보드</h1>
             <p>관심종목과 포트폴리오, AI 뉴스 요약을 한눈에 확인하세요.</p>
           </div>
-          <button type="button" onClick={() => setWatchlistEditorOpen(true)}>+ 관심종목 추가</button>
+          <button type="button" onClick={() => setWatchlistEditorOpen(true)}>
+            + 관심종목 추가{watchlistCount == null ? '' : ` (${watchlistCount})`}
+          </button>
         </section>
 
+        <FxRatePanel />
+
         <WatchlistPanel
-          selectedSymbol={selectedSymbol}
+          selectedStock={selectedStock}
           editorOpen={watchlistEditorOpen}
           onSelect={selectStock}
           onEditorOpenChange={setWatchlistEditorOpen}
@@ -137,15 +172,29 @@ function App() {
           liveQuotes={liveQuotes}
         />
 
-        {watchlistCount !== 0 && (
-          <StockDetail
-            symbol={selectedSymbol}
-            liveQuote={liveQuotes[selectedSymbol]}
-            liveCandles={intradayCandles[selectedSymbol]}
-          />
-        )}
+        <StockDetail
+          stockRef={selectedStock}
+          liveQuote={liveQuotes[selectedStock.symbol]}
+          liveCandles={intradayCandles[selectedStock.symbol]}
+        />
+        <DailyChangeBriefing
+          market={selectedStock.market}
+          symbol={selectedStock.symbol}
+          onUsageRecorded={() => setAdminRefreshKey((key) => key + 1)}
+        />
+        <AiTechnicalExplanation
+          market={selectedStock.market}
+          symbol={selectedStock.symbol}
+          onUsageRecorded={() => setAdminRefreshKey((key) => key + 1)}
+        />
 
-        <AiNewsSummary symbol="000660" onUsageRecorded={() => setAdminRefreshKey((key) => key + 1)} />
+        <DisclosurePanel stock={selectedStock} />
+
+        <AiNewsSummary
+          market={selectedStock.market}
+          symbol={selectedStock.symbol}
+          onUsageRecorded={() => setAdminRefreshKey((key) => key + 1)}
+        />
 
         {session.user.role === 'ADMIN' && <AdminAiDashboard refreshKey={adminRefreshKey} />}
 

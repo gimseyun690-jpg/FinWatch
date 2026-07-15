@@ -8,8 +8,10 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,6 +45,7 @@ public class FinnhubRealtimeClient {
     private final ScheduledExecutorService scheduler;
     private final Map<String, BigDecimal> previousCloses = new ConcurrentHashMap<>();
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
+    private final AtomicBoolean connectionPending = new AtomicBoolean();
     private final AtomicInteger reconnectAttempts = new AtomicInteger();
 
     private volatile List<String> symbols = List.of();
@@ -75,20 +78,60 @@ public class FinnhubRealtimeClient {
     }
 
     public void start(List<String> symbols) {
-        this.symbols = symbols.stream().distinct().toList();
+        this.symbols = normalize(symbols);
+        stopped = false;
         if (this.symbols.isEmpty()) {
-            hub.updateProvider(PROVIDER, "DISABLED", "구독할 미국 종목이 없습니다.");
+            hub.updateProvider(PROVIDER, "IDLE", "구독할 미국 종목을 기다리는 중입니다.");
             return;
         }
         if (apiKey.isBlank()) {
             hub.updateProvider(PROVIDER, "ERROR", "FINNHUB_API_KEY가 필요합니다.");
             return;
         }
-        stopped = false;
         scheduler.execute(() -> {
             seedSnapshots();
             connect();
         });
+    }
+
+    public void updateSubscriptions(List<String> desiredSymbols) {
+        List<String> desired = normalize(desiredSymbols);
+        List<String> previous = symbols;
+        symbols = desired;
+        if (stopped) {
+            return;
+        }
+        if (apiKey.isBlank()) {
+            hub.updateProvider(PROVIDER, "ERROR", "FINNHUB_API_KEY가 필요합니다.");
+            return;
+        }
+        Set<String> previousSet = Set.copyOf(previous);
+        Set<String> desiredSet = Set.copyOf(desired);
+        List<String> additions = desired.stream().filter(symbol -> !previousSet.contains(symbol)).toList();
+        List<String> removals = previous.stream().filter(symbol -> !desiredSet.contains(symbol)).toList();
+        WebSocket socket = activeSocket;
+        if (socket == null) {
+            if (desired.isEmpty()) {
+                hub.updateProvider(PROVIDER, "IDLE", "구독할 미국 종목을 기다리는 중입니다.");
+            } else {
+                scheduler.execute(() -> {
+                    seedSnapshots(additions);
+                    connect();
+                });
+            }
+            return;
+        }
+        removals.forEach(symbol -> socket.sendText(subscriptionMessage("unsubscribe", symbol), true));
+        seedSnapshots(additions);
+        additions.forEach(symbol -> socket.sendText(subscriptionMessage("subscribe", symbol), true));
+        hub.updateProvider(
+                PROVIDER,
+                desired.isEmpty() ? "IDLE" : "CONNECTED",
+                desired.size() + "개 미국 종목 trade 구독 중");
+    }
+
+    public List<String> subscribedSymbols() {
+        return symbols;
     }
 
     public void stop() {
@@ -103,7 +146,11 @@ public class FinnhubRealtimeClient {
     }
 
     private void seedSnapshots() {
-        for (String symbol : symbols) {
+        seedSnapshots(symbols);
+    }
+
+    private void seedSnapshots(List<String> targetSymbols) {
+        for (String symbol : targetSymbols) {
             if (stopped) {
                 return;
             }
@@ -127,7 +174,7 @@ public class FinnhubRealtimeClient {
     }
 
     private void connect() {
-        if (stopped) {
+        if (stopped || symbols.isEmpty() || !connectionPending.compareAndSet(false, true)) {
             return;
         }
         hub.updateProvider(PROVIDER, reconnectAttempts.get() == 0 ? "CONNECTING" : "RECONNECTING", "Finnhub trade stream 연결 중");
@@ -136,6 +183,7 @@ public class FinnhubRealtimeClient {
                 .buildAsync(websocketUri, new Listener())
                 .whenComplete((socket, error) -> {
                     if (error != null) {
+                        connectionPending.set(false);
                         hub.updateProvider(PROVIDER, "ERROR", "Finnhub WebSocket 연결 실패: " + safeMessage(error));
                         scheduleReconnect();
                     }
@@ -168,7 +216,7 @@ public class FinnhubRealtimeClient {
     }
 
     private void scheduleReconnect() {
-        if (stopped || !reconnectScheduled.compareAndSet(false, true)) {
+        if (stopped || symbols.isEmpty() || !reconnectScheduled.compareAndSet(false, true)) {
             return;
         }
         int attempt = reconnectAttempts.incrementAndGet();
@@ -182,7 +230,21 @@ public class FinnhubRealtimeClient {
     }
 
     private String subscribeMessage(String symbol) {
-        return objectMapper.writeValueAsString(Map.of("type", "subscribe", "symbol", symbol));
+        return subscriptionMessage("subscribe", symbol);
+    }
+
+    private String subscriptionMessage(String type, String symbol) {
+        return objectMapper.writeValueAsString(Map.of("type", type, "symbol", symbol));
+    }
+
+    private List<String> normalize(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return List.copyOf(new LinkedHashSet<>(values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(value -> value.trim().toUpperCase(java.util.Locale.ROOT))
+                .toList()));
     }
 
     private String safeMessage(Throwable throwable) {
@@ -203,6 +265,7 @@ public class FinnhubRealtimeClient {
 
         @Override
         public void onOpen(WebSocket webSocket) {
+            connectionPending.set(false);
             activeSocket = webSocket;
             reconnectAttempts.set(0);
             reconnectScheduled.set(false);
@@ -236,6 +299,7 @@ public class FinnhubRealtimeClient {
 
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            connectionPending.set(false);
             if (activeSocket == webSocket) {
                 activeSocket = null;
             }
@@ -248,6 +312,7 @@ public class FinnhubRealtimeClient {
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
+            connectionPending.set(false);
             if (activeSocket == webSocket) {
                 activeSocket = null;
             }

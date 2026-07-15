@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { StockRef } from '../types/stock'
 import type {
   LiveQuote,
   IntradayCandle,
@@ -9,7 +10,7 @@ import type {
 } from '../types/realtime'
 
 type RealtimeEvent = {
-  type: 'snapshot' | 'quote' | 'status' | 'candle' | 'candles'
+  type: 'snapshot' | 'quote' | 'status' | 'candle' | 'candles' | 'subscription'
   data: RealtimeSnapshot | LiveQuote | RealtimeProviderStatus | IntradayCandle | IntradayCandleSnapshot
 }
 
@@ -26,11 +27,25 @@ function websocketUrl() {
   return `${protocol}//${window.location.host}/ws/quotes`
 }
 
-export function useRealtimeQuotes(enabled: boolean) {
+export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
   const [quotes, setQuotes] = useState<Record<string, LiveQuote>>({})
   const [providers, setProviders] = useState<Record<string, RealtimeProviderStatus>>({})
   const [intradayCandles, setIntradayCandles] = useState<Record<string, IntradayCandle[]>>({})
   const [connection, setConnection] = useState<RealtimeConnectionState>('disconnected')
+  const socketRef = useRef<WebSocket | null>(null)
+  const selectedStockRef = useRef<StockRef | undefined>(selectedStock)
+  const selectedMarket = selectedStock?.market
+  const selectedSymbol = selectedStock?.symbol
+
+  useEffect(() => {
+    selectedStockRef.current = selectedMarket && selectedSymbol
+      ? { market: selectedMarket, symbol: selectedSymbol }
+      : undefined
+    const socket = socketRef.current
+    if (selectedMarket && selectedSymbol && socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'select', market: selectedMarket, symbol: selectedSymbol }))
+    }
+  }, [selectedMarket, selectedSymbol])
 
   useEffect(() => {
     if (!enabled) {
@@ -47,10 +62,15 @@ export function useRealtimeQuotes(enabled: boolean) {
       if (disposed) return
       setConnection(attempt === 0 ? 'connecting' : 'reconnecting')
       socket = new WebSocket(websocketUrl())
+      socketRef.current = socket
 
       socket.onopen = () => {
         attempt = 0
         setConnection('connected')
+        const currentStock = selectedStockRef.current
+        if (currentStock) {
+          socket?.send(JSON.stringify({ type: 'select', market: currentStock.market, symbol: currentStock.symbol }))
+        }
       }
 
       socket.onmessage = (message) => {
@@ -94,6 +114,7 @@ export function useRealtimeQuotes(enabled: boolean) {
       }
 
       socket.onclose = () => {
+        if (socketRef.current === socket) socketRef.current = null
         if (disposed) return
         attempt += 1
         setConnection('reconnecting')
@@ -109,6 +130,7 @@ export function useRealtimeQuotes(enabled: boolean) {
       disposed = true
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
       socket?.close(1000, 'page closed')
+      if (socketRef.current === socket) socketRef.current = null
     }
   }, [enabled])
 

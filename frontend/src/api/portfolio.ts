@@ -19,6 +19,9 @@ export async function createHolding(input: {
   quantity: number
   averagePurchasePrice: number
   currency: string
+  averagePurchaseFxRate?: number
+  purchaseFxBaseCurrency?: string
+  purchaseFxQuoteCurrency?: string
 }) {
   return readData<PortfolioHolding>(await authFetch('/api/v1/portfolios/holdings', {
     method: 'POST',

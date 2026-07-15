@@ -1,12 +1,14 @@
 package com.finwatch.stock.api;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.ActiveProfiles;
@@ -76,5 +78,105 @@ class StockApiIntegrationTest {
                         .queryParam("period", "3M")
                         .queryParam("interval", "1H"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void searchesLocalCatalogWithRankingFiltersAndPagination() throws Exception {
+        mockMvc.perform(get("/api/v1/stocks/search")
+                        .with(jwt())
+                        .queryParam("q", "삼성")
+                        .queryParam("page", "0")
+                        .queryParam("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].symbol").value("005930"))
+                .andExpect(jsonPath("$.data.items[0].market").value("KRX"))
+                .andExpect(jsonPath("$.data.items[0].dataAvailability").value("READY"))
+                .andExpect(jsonPath("$.data.items[1].symbol").value("207940"))
+                .andExpect(jsonPath("$.data.catalogAsOf").isNotEmpty());
+
+        mockMvc.perform(get("/api/v1/stocks/search")
+                        .with(jwt())
+                        .queryParam("q", "AAPL")
+                        .queryParam("market", "NASDAQ")
+                        .queryParam("type", "STOCK")
+                        .queryParam("page", "0")
+                        .queryParam("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].symbol").value("AAPL"))
+                .andExpect(jsonPath("$.data.items[0].englishName").value("Apple Inc."))
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.size").value(1))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+
+        mockMvc.perform(get("/api/v1/stocks/search").with(jwt()).queryParam("q", "005930"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].symbol").value("005930"))
+                .andExpect(jsonPath("$.data.items[0].name").value("삼성전자"));
+
+        mockMvc.perform(get("/api/v1/stocks/search").with(jwt()).queryParam("q", "Apple"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].symbol").value("AAPL"))
+                .andExpect(jsonPath("$.data.items[0].market").value("NASDAQ"));
+
+        mockMvc.perform(get("/api/v1/stocks/search")
+                        .with(jwt())
+                        .queryParam("q", "Apple/../../"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("STOCK_SEARCH_QUERY_INVALID"));
+    }
+
+    @Test
+    void canonicalEndpointsDistinguishMarketAndExposeMetadataOnlyState() throws Exception {
+        mockMvc.perform(get("/api/v1/stocks/KRX/005930").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.stockId").isNumber())
+                .andExpect(jsonPath("$.data.market").value("KRX"))
+                .andExpect(jsonPath("$.data.symbol").value("005930"))
+                .andExpect(jsonPath("$.data.dataAvailability").value("READY"))
+                .andExpect(jsonPath("$.data.price").isNumber());
+
+        mockMvc.perform(get("/api/v1/stocks/KRX/005930/prices")
+                        .with(jwt())
+                        .queryParam("period", "3M"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.symbol").value("005930"))
+                .andExpect(jsonPath("$.data.items").isNotEmpty());
+
+        mockMvc.perform(get("/api/v1/stocks/NASDAQ/MSFT").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("Microsoft"))
+                .andExpect(jsonPath("$.data.dataAvailability").value("METADATA_ONLY"))
+                .andExpect(jsonPath("$.data.price").doesNotExist());
+
+        mockMvc.perform(get("/api/v1/stocks/TEST").with(jwt()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STOCK_SYMBOL_AMBIGUOUS"));
+
+        mockMvc.perform(get("/api/v1/stocks/NYSE/TEST").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.market").value("NYSE"))
+                .andExpect(jsonPath("$.data.name").value("Demo Holdings"));
+    }
+
+    @Test
+    void dataLoadUsesExistingDemoDataAndRejectsMetadataOnlyFixtures() throws Exception {
+        mockMvc.perform(post("/api/v1/stocks/KRX/005930/data-loads")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resources\":[\"QUOTE\",\"DAILY_PRICES\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("READY"))
+                .andExpect(jsonPath("$.data.resources[0].status").value("READY"));
+
+        mockMvc.perform(post("/api/v1/stocks/NASDAQ/MSFT/data-loads")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resources\":[\"QUOTE\",\"DAILY_PRICES\"]}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("DATA_NOT_SUPPORTED"));
+
+        mockMvc.perform(get("/api/v1/stocks/KRX/005930/disclosures").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray());
     }
 }

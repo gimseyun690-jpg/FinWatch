@@ -11,8 +11,8 @@ async function readData<T>(response: Response): Promise<T> {
   return body.data
 }
 
-export async function getStockNews(symbol: string, signal?: AbortSignal) {
-  const response = await authFetch(`/api/v1/stocks/${encodeURIComponent(symbol)}/news`, { signal })
+export async function getStockNews(market: string, symbol: string, signal?: AbortSignal) {
+  const response = await authFetch(`/api/v1/stocks/${encodeURIComponent(market)}/${encodeURIComponent(symbol)}/news`, { signal })
   return readData<NewsArticle[]>(response)
 }
 

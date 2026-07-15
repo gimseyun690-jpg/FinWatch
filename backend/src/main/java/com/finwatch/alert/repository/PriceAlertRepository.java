@@ -40,4 +40,7 @@ public interface PriceAlertRepository extends JpaRepository<PriceAlert, Long> {
             @Param("status") AlertStatus status,
             @Param("above") AlertCondition above,
             @Param("below") AlertCondition below);
+
+    @Query("select distinct a.stock from PriceAlert a where a.status = :status and a.stock.active = true")
+    List<com.finwatch.stock.domain.Stock> findDistinctActiveStocksForRealtime(@Param("status") AlertStatus status);
 }

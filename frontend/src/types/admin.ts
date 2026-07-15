@@ -5,12 +5,21 @@ export type { ApiResponse }
 export type AiFeatureUsage = {
   feature: string
   requestCount: number
+  successCount: number
+  failedCount: number
+  modelCallCount: number
+  cacheHitCount: number
+  totalTokens: number
+  estimatedCost: number
+  savedEstimatedCost: number
 }
 
 export type AiMetrics = {
   from: string
   to: string
   requestCount: number
+  successCount: number
+  failedCount: number
   modelCallCount: number
   cacheHitCount: number
   cacheMissCount: number
@@ -41,6 +50,7 @@ export type AiUsageLog = {
   responseTimeMs: number
   promptVersion: string
   status: string
+  errorCode?: string | null
   createdAt: string
 }
 

@@ -21,6 +21,7 @@ public record AiUsageLogResponse(
         int responseTimeMs,
         String promptVersion,
         String status,
+        String errorCode,
         Instant createdAt) {
 
     public static AiUsageLogResponse from(AiUsageLog log) {
@@ -40,6 +41,7 @@ public record AiUsageLogResponse(
                 log.getResponseTimeMs(),
                 log.getPromptVersion(),
                 log.getStatus(),
+                log.getErrorCode(),
                 log.getCreatedAt());
     }
 }

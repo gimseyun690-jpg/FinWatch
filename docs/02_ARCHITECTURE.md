@@ -46,7 +46,7 @@ EC2 + Nginx
 CloudWatch <- EC2/API 로그와 기본 인프라 메트릭
 ```
 
-MVP에서는 비용과 구현 난도를 낮추기 위해 EC2 한 대에 Nginx와 Spring Boot를 배포한다. 개발 단계 Redis는 Docker로 실행할 수 있다. 작품소개서에 명시된 Redis는 운영 시 ElastiCache로 전환하는 것을 권장하지만 예산에 따라 EC2 Redis를 임시 사용할 수 있다.
+운영 배포를 진행할 경우 비용과 구현 난도를 낮추기 위해 EC2 한 대에 Nginx와 Spring Boot를 배포한다. 개발 단계 Redis는 Docker로 실행할 수 있다. 운영 캐시는 예산과 가용성 요구에 따라 ElastiCache 또는 단일 서버 Redis 중에서 선택한다. AWS 배포 자체는 현재 구현 범위에서 제외한다.
 
 ## 4. 백엔드 모듈
 
@@ -119,11 +119,11 @@ DB의 `ai_analyses`는 감사와 캐시 복구를 위한 영속 결과이며 Red
 
 Gemini는 추세·모멘텀·변동성·거래량과 충돌 신호를 설명할 뿐 지표·종합 신호를 다시 계산하거나 목표주가와 매매 명령을 만들지 않는다. 상세 계약은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`를 따른다.
 
-계획된 일일 변화 브리핑은 이전·현재 기술 스냅샷의 서버 계산 delta와 기존 뉴스·공시 분석을 재사용한다. 원문을 중복 전송하지 않고 기술·뉴스·공시 관점과 근거를 분리하며 상세 계약은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
+구현된 일일 변화 브리핑은 이전·현재 기술 스냅샷의 서버 계산 delta와 기존 뉴스·공시 분석을 재사용한다. 원문을 중복 전송하지 않고 기술·뉴스·공시 관점과 근거를 분리하며 상세 계약은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
 
-계획된 종목 탐색 기능은 KRX·미국 전체 종목의 가벼운 마스터를 PostgreSQL에 동기화해 로컬 검색하고, 선택·관심·보유 종목만 시세·일봉·뉴스와 WebSocket 구독 대상으로 승격한다. 검색과 온디맨드 수집의 상세 계약은 `14_STOCK_DISCOVERY_SPEC.md`를 따른다.
+구현된 종목 탐색 기능은 KRX·미국 전체 종목의 가벼운 마스터를 PostgreSQL에 동기화해 로컬 검색하고, 선택·관심·보유 종목만 시세·일봉·뉴스와 WebSocket 구독 대상으로 승격한다. 검색과 온디맨드 수집의 상세 계약은 `14_STOCK_DISCOVERY_SPEC.md`를 따른다.
 
-계획된 환율 기능은 Finnhub Forex를 기존 키로 우선 사용하고 검증된 USD/KRW 스냅샷을 DB·Redis에 저장한다. 주식 원통화 값과 환산값을 분리하며 환율 장애가 원통화 조회를 막지 않는 계약은 `15_FX_RATE_SPEC.md`를 따른다.
+구현된 환율 기능은 Finnhub Forex를 우선 사용하고 검증된 USD/KRW 스냅샷을 DB·Redis에 저장한다. 주식 원통화 값과 환산값을 분리하며 환율 장애가 원통화 조회를 막지 않는 계약은 `15_FX_RATE_SPEC.md`를 따른다.
 
 ## 7. 데이터 공급자 경계
 
@@ -159,9 +159,9 @@ Gemini는 추세·모멘텀·변동성·거래량과 충돌 신호를 설명할 
 | 항목 | 결정 | 이유 |
 |---|---|---|
 | Backend | Spring Boot 모듈형 모놀리스 | 구현·배포·디버깅 단순화 |
-| Database | PostgreSQL | 작품소개서 후보 중 하나로 확정하여 개발 흔들림 방지 |
+| Database | PostgreSQL | 관계형 데이터 무결성, 집계, 마이그레이션 관리에 적합 |
 | Cache | Redis | 반복 AI 요청 제거와 TTL 지원 |
-| Frontend | React + TypeScript + Vite PWA | 작품소개서 기준과 빠른 개발 |
+| Frontend | React + TypeScript + Vite PWA | 타입 안전성과 빠른 개발, 설치형 웹 경험 제공 |
 | Detail Chart | Lightweight Charts | 캔들·시간축·십자선을 제공하고 Primitive로 그리기 도구 확장 |
 | API | REST + JSON | 프론트·백엔드 병렬 개발 용이 |
 | Time | DB UTC, API ISO-8601 | 배포 지역과 무관한 일관성 |

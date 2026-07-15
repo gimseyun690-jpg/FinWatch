@@ -48,7 +48,9 @@ public class DemoPortfolioInitializer implements ApplicationRunner {
         if (user == null || stock == null || holdingRepository.existsByUserIdAndStockId(user.getId(), stock.getId())) {
             return;
         }
+        BigDecimal purchaseFx = "USD".equals(stock.getCurrency()) ? new BigDecimal("1320.40") : null;
         holdingRepository.save(PortfolioHolding.create(
-                user, stock, new BigDecimal(quantity), new BigDecimal(averagePrice)));
+                user, stock, new BigDecimal(quantity), new BigDecimal(averagePrice), purchaseFx,
+                purchaseFx == null ? null : "USD", purchaseFx == null ? null : "KRW"));
     }
 }

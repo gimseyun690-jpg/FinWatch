@@ -83,6 +83,18 @@ public class ExternalDataSyncService {
         return sync(List.of(stock));
     }
 
+    @Transactional
+    public DataSyncResponse syncStock(String market, String symbol) {
+        String normalizedMarket = market == null ? "" : market.trim().toUpperCase(Locale.ROOT);
+        String normalizedSymbol = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+        Stock stock = stockRepository.findByMarketAndSymbolAndActiveTrue(normalizedMarket, normalizedSymbol)
+                .orElseThrow(() -> new DataSyncException(
+                        HttpStatus.NOT_FOUND,
+                        "STOCK_NOT_FOUND",
+                        "활성 종목을 찾을 수 없습니다: " + normalizedMarket + ":" + normalizedSymbol));
+        return sync(List.of(stock));
+    }
+
     private DataSyncResponse sync(List<Stock> stocks) {
         Instant startedAt = Instant.now();
         List<StockSyncResult> results = new ArrayList<>();

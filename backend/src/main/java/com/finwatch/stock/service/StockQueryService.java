@@ -7,6 +7,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
@@ -29,6 +30,7 @@ import com.finwatch.stock.dto.StockResponses.StockSummary;
 import com.finwatch.stock.dto.StockResponses.TechnicalAnalysis;
 import com.finwatch.stock.dto.StockResponses.TechnicalEvent;
 import com.finwatch.stock.dto.StockResponses.TechnicalSeriesPoint;
+import com.finwatch.stock.dto.StockSearchResponses.CanonicalStockDetail;
 import com.finwatch.stock.repository.MarketPriceRepository;
 import com.finwatch.stock.repository.StockRepository;
 import com.finwatch.technical.TechnicalAnalysisCalculator;
@@ -64,6 +66,7 @@ public class StockQueryService {
 
     public List<StockSummary> getStocks() {
         return stockRepository.findAllByActiveTrueOrderByMarketAscNameAsc().stream()
+                .filter(stock -> marketPriceRepository.existsByStockId(stock.getId()))
                 .map(this::toSummary)
                 .toList();
     }
@@ -72,8 +75,19 @@ public class StockQueryService {
         return toSummary(findStock(symbol));
     }
 
+    public CanonicalStockDetail getStock(String market, String symbol) {
+        return toCanonicalDetail(findStock(market, symbol));
+    }
+
     public PriceHistory getPriceHistory(String symbol, String period, String interval) {
-        Stock stock = findStock(symbol);
+        return getPriceHistory(findStock(symbol), period, interval);
+    }
+
+    public PriceHistory getPriceHistory(String market, String symbol, String period, String interval) {
+        return getPriceHistory(findStock(market, symbol), period, interval);
+    }
+
+    private PriceHistory getPriceHistory(Stock stock, String period, String interval) {
         String normalizedPeriod = period.toUpperCase(Locale.ROOT);
         String normalizedInterval = interval.toUpperCase(Locale.ROOT);
         if (!DAILY_INTERVAL.equals(normalizedInterval)) {
@@ -101,7 +115,14 @@ public class StockQueryService {
     }
 
     public PriceHistory getIntradayPriceHistory(String symbol, int limit) {
-        Stock stock = findStock(symbol);
+        return getIntradayPriceHistory(findStock(symbol), limit);
+    }
+
+    public PriceHistory getIntradayPriceHistory(String market, String symbol, int limit) {
+        return getIntradayPriceHistory(findStock(market, symbol), limit);
+    }
+
+    private PriceHistory getIntradayPriceHistory(Stock stock, int limit) {
         if (limit < 1 || limit > 600) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit은 1~600 범위여야 합니다.");
         }
@@ -119,7 +140,14 @@ public class StockQueryService {
     }
 
     public TechnicalAnalysis getTechnicalAnalysis(String symbol) {
-        Stock stock = findStock(symbol);
+        return getTechnicalAnalysis(findStock(symbol));
+    }
+
+    public TechnicalAnalysis getTechnicalAnalysis(String market, String symbol) {
+        return getTechnicalAnalysis(findStock(market, symbol));
+    }
+
+    private TechnicalAnalysis getTechnicalAnalysis(Stock stock) {
         List<MarketPrice> prices = marketPriceRepository
                 .findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), DAILY_INTERVAL);
         if (prices.size() < 60) {
@@ -206,9 +234,70 @@ public class StockQueryService {
                 latest.getSource());
     }
 
+    private CanonicalStockDetail toCanonicalDetail(Stock stock) {
+        Optional<MarketPrice> latest = marketPriceRepository.findTopByStockIdOrderByRecordedAtDesc(stock.getId());
+        StockSummary quote = latest.isPresent() ? toSummary(stock) : null;
+        return new CanonicalStockDetail(
+                stock.getId(),
+                stock.getMarket(),
+                stock.getExchange(),
+                stock.getSymbol(),
+                stock.getName(),
+                stock.getEnglishName(),
+                stock.getInstrumentType(),
+                stock.getCurrency(),
+                stock.isActive(),
+                stock.isTradable(),
+                stock.getStatus(),
+                latest.isPresent() ? "READY" : "METADATA_ONLY",
+                stock.getProvider(),
+                stock.getCatalogUpdatedAt(),
+                quote == null ? null : quote.price(),
+                quote == null ? null : quote.change(),
+                quote == null ? null : quote.changeRate(),
+                quote == null ? null : quote.volume(),
+                quote == null ? null : quote.asOf(),
+                quote == null ? null : quote.source());
+    }
+
     private Stock findStock(String symbol) {
-        return stockRepository.findFirstBySymbolAndActiveTrue(symbol)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "종목을 찾을 수 없습니다."));
+        String normalizedSymbol = normalizeSymbol(symbol);
+        List<Stock> candidates = stockRepository
+                .findAllBySymbolIgnoreCaseAndActiveTrueOrderByMarketAsc(normalizedSymbol);
+        if (candidates.isEmpty()) {
+            throw new StockQueryException(HttpStatus.NOT_FOUND, "STOCK_NOT_FOUND", "종목을 찾을 수 없습니다.");
+        }
+        if (candidates.size() > 1) {
+            throw new StockQueryException(
+                    HttpStatus.CONFLICT,
+                    "STOCK_SYMBOL_AMBIGUOUS",
+                    "같은 symbol이 여러 시장에 존재합니다. market을 포함한 canonical 경로를 사용해 주세요.");
+        }
+        return candidates.getFirst();
+    }
+
+    private Stock findStock(String market, String symbol) {
+        String normalizedMarket = normalizeMarket(market);
+        String normalizedSymbol = normalizeSymbol(symbol);
+        return stockRepository.findByMarketAndSymbolAndActiveTrue(normalizedMarket, normalizedSymbol)
+                .orElseThrow(() -> new StockQueryException(
+                        HttpStatus.NOT_FOUND,
+                        "STOCK_NOT_FOUND",
+                        "해당 시장의 종목을 찾을 수 없습니다."));
+    }
+
+    private String normalizeMarket(String market) {
+        if (market == null || !market.trim().matches("[A-Za-z0-9._-]{2,30}")) {
+            throw new StockQueryException(HttpStatus.BAD_REQUEST, "STOCK_MARKET_INVALID", "market 형식이 올바르지 않습니다.");
+        }
+        return market.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeSymbol(String symbol) {
+        if (symbol == null || !symbol.trim().matches("[A-Za-z0-9._-]{1,30}")) {
+            throw new StockQueryException(HttpStatus.BAD_REQUEST, "STOCK_SYMBOL_INVALID", "symbol 형식이 올바르지 않습니다.");
+        }
+        return symbol.trim().toUpperCase(Locale.ROOT);
     }
 
     private List<MarketPrice> filterPrices(List<MarketPrice> allPrices, String period) {

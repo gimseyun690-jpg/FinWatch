@@ -38,6 +38,21 @@ app:
     mode: ${DATA_MODE:DEMO}
     connect-timeout: ${DATA_CONNECT_TIMEOUT:3s}
     read-timeout: ${DATA_READ_TIMEOUT:10s}
+    catalog:
+      minimum-received: ${CATALOG_MINIMUM_RECEIVED:100}
+      minimum-retention-ratio: ${CATALOG_MINIMUM_RETENTION_RATIO:0.50}
+    load:
+      quote-freshness: ${DATA_LOAD_QUOTE_FRESHNESS:15s}
+      daily-price-freshness: ${DATA_LOAD_DAILY_PRICE_FRESHNESS:12h}
+      news-freshness: ${DATA_LOAD_NEWS_FRESHNESS:15m}
+    disclosures:
+      lookback-days: ${DISCLOSURE_LOOKBACK_DAYS:365}
+      identifier-cache-ttl: ${DISCLOSURE_IDENTIFIER_CACHE_TTL:24h}
+    fx:
+      finnhub-exchange: ${FX_FINNHUB_EXCHANGE:OANDA}
+      cache-ttl: ${FX_CACHE_TTL:60s}
+      fresh-within: ${FX_FRESH_WITHIN:15m}
+      delayed-within: ${FX_DELAYED_WITHIN:36h}
     kis:
       app-key: ${KIS_APP_KEY:}
       app-secret: ${KIS_APP_SECRET:}
@@ -47,6 +62,9 @@ app:
       paper-base-url: ${KIS_PAPER_BASE_URL:https://openapivts.koreainvestment.com:29443}
       prod-websocket-url: ${KIS_PROD_WEBSOCKET_URL:ws://ops.koreainvestment.com:21000}
       paper-websocket-url: ${KIS_PAPER_WEBSOCKET_URL:ws://ops.koreainvestment.com:31000}
+      catalog:
+        kospi-url: ${KIS_KOSPI_MASTER_URL:https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip}
+        kosdaq-url: ${KIS_KOSDAQ_MASTER_URL:https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip}
     naver:
       client-id: ${NAVER_API_HUB_CLIENT_ID:}
       client-secret: ${NAVER_API_HUB_CLIENT_SECRET:}
@@ -55,9 +73,19 @@ app:
       api-key: ${FINNHUB_API_KEY:}
       base-url: ${FINNHUB_BASE_URL:https://finnhub.io/api/v1}
       websocket-url: ${FINNHUB_WEBSOCKET_URL:wss://ws.finnhub.io}
+    opendart:
+      base-url: ${OPENDART_BASE_URL:https://opendart.fss.or.kr/api}
+    sec-edgar:
+      user-agent: ${SEC_EDGAR_USER_AGENT:${ARTICLE_USER_AGENT:}}
+      data-base-url: ${SEC_EDGAR_DATA_BASE_URL:https://data.sec.gov}
+      web-base-url: ${SEC_EDGAR_WEB_BASE_URL:https://www.sec.gov}
   realtime:
     enabled: ${REALTIME_ENABLED:true}
     reconnect-max-delay: ${REALTIME_RECONNECT_MAX_DELAY:30s}
+    kis-max-subscriptions: ${REALTIME_KIS_MAX_SUBSCRIPTIONS:40}
+    finnhub-max-subscriptions: ${REALTIME_FINNHUB_MAX_SUBSCRIPTIONS:50}
+    selection-grace: ${REALTIME_SELECTION_GRACE:30s}
+    subscription-refresh: ${REALTIME_SUBSCRIPTION_REFRESH:15s}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
   auth:
@@ -72,6 +100,15 @@ app:
     prompt-version: ${AI_PROMPT_VERSION:news-analysis-v2}
     allowed-prompt-versions: ${AI_ALLOWED_PROMPT_VERSIONS:}
     cache-ttl: ${AI_CACHE_TTL:24h}
+    technical-prompt-version: ${AI_TECHNICAL_PROMPT_VERSION:technical-explanation-v1}
+    technical-allowed-prompt-versions: ${AI_TECHNICAL_ALLOWED_PROMPT_VERSIONS:}
+    technical-cache-ttl: ${AI_TECHNICAL_CACHE_TTL:24h}
+    daily-briefing-prompt-version: ${AI_DAILY_BRIEFING_PROMPT_VERSION:daily-change-briefing-v1}
+    daily-briefing-allowed-prompt-versions: ${AI_DAILY_BRIEFING_ALLOWED_PROMPT_VERSIONS:}
+    daily-briefing-cache-ttl: ${AI_DAILY_BRIEFING_CACHE_TTL:24h}
+    requests-per-minute: ${AI_REQUESTS_PER_MINUTE:20}
+    daily-budget-usd: ${AI_DAILY_BUDGET_USD:2.00}
+    budget-zone: ${AI_BUDGET_ZONE:Asia/Seoul}
     max-segment-characters: ${AI_MAX_SEGMENT_CHARACTERS:1800}
     max-segments: ${AI_MAX_SEGMENTS:4}
     input-price-per-million: ${AI_INPUT_PRICE_PER_MILLION:0.25}

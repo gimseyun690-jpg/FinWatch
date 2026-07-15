@@ -1,4 +1,13 @@
-import type { ApiResponse, PriceHistory, PricePeriod, StockSummary, TechnicalAnalysis } from '../types/stock'
+import type {
+  ApiResponse,
+  CanonicalStockDetail,
+  PriceHistory,
+  PricePeriod,
+  StockRef,
+  StockSearchPage,
+  StockSummary,
+  TechnicalAnalysis,
+} from '../types/stock'
 import { authFetch } from './client'
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -10,31 +19,40 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return body.data
 }
 
-export function getStock(symbol: string, signal?: AbortSignal) {
-  return get<StockSummary>(`/api/v1/stocks/${encodeURIComponent(symbol)}`, signal)
+function canonicalPath(stock: StockRef) {
+  return `/api/v1/stocks/${encodeURIComponent(stock.market)}/${encodeURIComponent(stock.symbol)}`
+}
+
+export function getStock(stock: StockRef, signal?: AbortSignal) {
+  return get<CanonicalStockDetail>(canonicalPath(stock), signal)
 }
 
 export function getStocks(signal?: AbortSignal) {
   return get<StockSummary[]>('/api/v1/stocks', signal)
 }
 
-export function getStockPrices(symbol: string, period: PricePeriod = '3M', signal?: AbortSignal) {
+export function getStockPrices(stock: StockRef, period: PricePeriod = '3M', signal?: AbortSignal) {
   return get<PriceHistory>(
-    `/api/v1/stocks/${encodeURIComponent(symbol)}/prices?period=${period}&interval=1D`,
+    `${canonicalPath(stock)}/prices?period=${period}&interval=1D`,
     signal,
   )
 }
 
-export function getStockIntraday(symbol: string, signal?: AbortSignal) {
+export function getStockIntraday(stock: StockRef, signal?: AbortSignal) {
   return get<PriceHistory>(
-    `/api/v1/stocks/${encodeURIComponent(symbol)}/intraday?limit=390`,
+    `${canonicalPath(stock)}/intraday?limit=390`,
     signal,
   )
 }
 
-export function getTechnicalAnalysis(symbol: string, signal?: AbortSignal) {
+export function getTechnicalAnalysis(stock: StockRef, signal?: AbortSignal) {
   return get<TechnicalAnalysis>(
-    `/api/v1/stocks/${encodeURIComponent(symbol)}/technical`,
+    `${canonicalPath(stock)}/technical`,
     signal,
   )
+}
+
+export function searchStocks(query: string, signal?: AbortSignal, page = 0, size = 10) {
+  const params = new URLSearchParams({ q: query, page: String(page), size: String(size) })
+  return get<StockSearchPage>(`/api/v1/stocks/search?${params.toString()}`, signal)
 }

@@ -28,6 +28,14 @@ public class AiUsageLog {
     @JoinColumn(name = "analysis_id")
     private AiAnalysis analysis;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "technical_explanation_id")
+    private AiTechnicalExplanation technicalExplanation;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "daily_briefing_id")
+    private AiDailyChangeBriefing dailyBriefing;
+
     @Column(name = "feature_type", nullable = false, length = 40)
     private String featureType;
 
@@ -64,6 +72,9 @@ public class AiUsageLog {
     @Column(nullable = false, length = 20)
     private String status;
 
+    @Column(name = "error_code", length = 80)
+    private String errorCode;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -96,6 +107,116 @@ public class AiUsageLog {
         log.responseTimeMs = responseTimeMs;
         log.promptVersion = promptVersion;
         log.status = "SUCCESS";
+        log.createdAt = Instant.now();
+        return log;
+    }
+
+    public static AiUsageLog technicalSuccess(
+            String requestId,
+            AiTechnicalExplanation explanation,
+            String modelName,
+            Long stockId,
+            int inputTokens,
+            int outputTokens,
+            BigDecimal estimatedCost,
+            BigDecimal savedEstimatedCost,
+            boolean cacheHit,
+            int responseTimeMs,
+            String promptVersion) {
+        AiUsageLog log = base(
+                requestId,
+                "TECHNICAL_EXPLANATION",
+                "STOCK",
+                stockId,
+                modelName,
+                inputTokens,
+                outputTokens,
+                estimatedCost,
+                savedEstimatedCost,
+                cacheHit,
+                responseTimeMs,
+                promptVersion,
+                "SUCCESS",
+                null);
+        log.technicalExplanation = explanation;
+        return log;
+    }
+
+    public static AiUsageLog failure(
+            String requestId,
+            String featureType,
+            String targetType,
+            Long targetId,
+            String modelName,
+            int responseTimeMs,
+            String promptVersion,
+            String errorCode) {
+        return base(
+                requestId,
+                featureType,
+                targetType,
+                targetId,
+                modelName,
+                0,
+                0,
+                BigDecimal.ZERO.setScale(8),
+                BigDecimal.ZERO.setScale(8),
+                false,
+                responseTimeMs,
+                promptVersion,
+                "FAILED",
+                errorCode);
+    }
+
+    public static AiUsageLog dailyBriefingSuccess(
+            String requestId,
+            AiDailyChangeBriefing briefing,
+            String modelName,
+            Long stockId,
+            int inputTokens,
+            int outputTokens,
+            BigDecimal estimatedCost,
+            BigDecimal savedEstimatedCost,
+            boolean cacheHit,
+            int responseTimeMs,
+            String promptVersion) {
+        AiUsageLog log = base(requestId, "DAILY_CHANGE_BRIEFING", "STOCK", stockId, modelName,
+                inputTokens, outputTokens, estimatedCost, savedEstimatedCost, cacheHit,
+                responseTimeMs, promptVersion, "SUCCESS", null);
+        log.dailyBriefing = briefing;
+        return log;
+    }
+
+    private static AiUsageLog base(
+            String requestId,
+            String featureType,
+            String targetType,
+            Long targetId,
+            String modelName,
+            int inputTokens,
+            int outputTokens,
+            BigDecimal estimatedCost,
+            BigDecimal savedEstimatedCost,
+            boolean cacheHit,
+            int responseTimeMs,
+            String promptVersion,
+            String status,
+            String errorCode) {
+        AiUsageLog log = new AiUsageLog();
+        log.requestId = requestId;
+        log.featureType = featureType;
+        log.targetType = targetType;
+        log.targetId = targetId;
+        log.modelName = modelName;
+        log.inputTokens = inputTokens;
+        log.outputTokens = outputTokens;
+        log.estimatedCost = estimatedCost;
+        log.savedEstimatedCost = savedEstimatedCost;
+        log.cacheHit = cacheHit;
+        log.responseTimeMs = responseTimeMs;
+        log.promptVersion = promptVersion;
+        log.status = status;
+        log.errorCode = errorCode;
         log.createdAt = Instant.now();
         return log;
     }
@@ -154,6 +275,10 @@ public class AiUsageLog {
 
     public String getStatus() {
         return status;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
     }
 
     public Instant getCreatedAt() {

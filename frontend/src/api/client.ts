@@ -4,7 +4,7 @@ export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}
   const headers = new Headers(init.headers)
   const token = accessToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const timeoutSignal = AbortSignal.timeout(10_000)
+  const timeoutSignal = AbortSignal.timeout(20_000)
   const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal
 
   const response = await fetch(input, { ...init, headers, signal })

@@ -14,6 +14,43 @@ const stock = {
   source: 'DEMO',
 }
 
+const canonicalStock = {
+  stockId: 1,
+  ...stock,
+  exchange: 'KRX',
+  englishName: 'SK hynix',
+  instrumentType: 'STOCK',
+  active: true,
+  tradable: true,
+  status: 'LISTED',
+  dataAvailability: 'READY',
+  catalogSource: 'KIS_MASTER',
+  catalogUpdatedAt: now,
+}
+
+const appleStock = {
+  stockId: 4,
+  symbol: 'AAPL',
+  name: 'Apple',
+  market: 'NASDAQ',
+  exchange: 'NASDAQ',
+  englishName: 'Apple Inc.',
+  instrumentType: 'STOCK',
+  currency: 'USD',
+  active: true,
+  tradable: true,
+  status: 'LISTED',
+  dataAvailability: 'READY',
+  catalogSource: 'FINNHUB_SYMBOLS',
+  catalogUpdatedAt: now,
+  price: 212.42,
+  change: 2.1,
+  changeRate: 1.0,
+  volume: 48120000,
+  asOf: now,
+  source: 'DEMO',
+}
+
 const prices = Array.from({ length: 90 }, (_, index) => {
   const close = 2380000 + index * 3800 + Math.round(Math.sin(index / 4) * 18000)
   return {
@@ -80,6 +117,8 @@ async function mockApi(page: Page) {
 
     if (path === '/api/v1/health') {
       body = { status: 'UP', timestamp: now }
+    } else if (path === '/api/v1/market/fx-rates/USD/KRW') {
+      body = response({ baseCurrency: 'USD', quoteCurrency: 'KRW', rate: 1382.5, previousClose: 1380.6, change: 1.9, changeRate: 0.1376, rateType: 'DEMO', source: 'DEMO', providerSymbol: 'DEMO:USDKRW', asOf: now, fetchedAt: now, freshness: 'FRESH' })
     } else if (path === '/api/v1/auth/login') {
       body = response({
         accessToken: 'fixture.jwt.token',
@@ -91,15 +130,42 @@ async function mockApi(page: Page) {
       body = response([{ id: 1, ...stock, addedAt: now }])
     } else if (path === '/api/v1/stocks') {
       body = response([stock])
+    } else if (path === '/api/v1/stocks/search') {
+      const query = url.searchParams.get('q')?.toUpperCase() ?? ''
+      const searchItems = query.includes('AAPL') || query.includes('APPLE')
+        ? [{
+            stockId: appleStock.stockId,
+            market: appleStock.market,
+            exchange: appleStock.exchange,
+            symbol: appleStock.symbol,
+            name: appleStock.name,
+            englishName: appleStock.englishName,
+            instrumentType: appleStock.instrumentType,
+            currency: appleStock.currency,
+            active: true,
+            tradable: true,
+            status: 'LISTED',
+            dataAvailability: 'READY',
+            source: 'FINNHUB_SYMBOLS',
+          }]
+        : []
+      body = response({ items: searchItems, page: 0, size: 10, totalElements: searchItems.length, totalPages: searchItems.length ? 1 : 0, catalogAsOf: now })
     } else if (path === '/api/v1/stocks/000660') {
       body = response(stock)
-    } else if (path === '/api/v1/stocks/000660/prices') {
+    } else if (path === '/api/v1/stocks/KRX/000660') {
+      body = response(canonicalStock)
+    } else if (path === '/api/v1/stocks/NASDAQ/AAPL') {
+      body = response(appleStock)
+    } else if (path === '/api/v1/stocks/000660/prices' || path === '/api/v1/stocks/KRX/000660/prices') {
       body = response({ symbol: stock.symbol, interval: '1D', period: url.searchParams.get('period') ?? '3M', items: prices })
-    } else if (path === '/api/v1/stocks/000660/intraday') {
+    } else if (path === '/api/v1/stocks/NASDAQ/AAPL/prices') {
+      body = response({ symbol: appleStock.symbol, interval: '1D', period: url.searchParams.get('period') ?? '3M', items: prices.map((item) => ({ ...item, open: item.open / 10000, high: item.high / 10000, low: item.low / 10000, close: item.close / 10000 })) })
+    } else if (path === '/api/v1/stocks/000660/intraday' || path === '/api/v1/stocks/KRX/000660/intraday') {
       body = response({ symbol: stock.symbol, interval: '1m', period: 'SESSION', items: intradayCandles })
-    } else if (path === '/api/v1/stocks/000660/technical') {
+    } else if (path === '/api/v1/stocks/000660/technical' || path === '/api/v1/stocks/KRX/000660/technical' || path === '/api/v1/stocks/NASDAQ/AAPL/technical') {
+      const responseSymbol = path.includes('/AAPL/') ? 'AAPL' : stock.symbol
       body = response({
-        symbol: stock.symbol,
+        symbol: responseSymbol,
         calculatedAt: now,
         calculationVersion: 'technical-v2-wilder',
         summarySignal: 'BUY',
@@ -112,20 +178,87 @@ async function mockApi(page: Page) {
         events: [{ time: prices[75].time, type: 'MA_GOLDEN_CROSS', signal: 'BUY' }],
         disclaimer: '기술적 신호는 투자 권유가 아닌 참고 정보입니다.',
       })
-    } else if (path.endsWith('/news')) {
+    } else if (path.endsWith('/news') || path.endsWith('/disclosures')) {
       body = response([])
     } else if (path === '/api/v1/admin/ai/metrics') {
       body = response({
-        from: now, to: now, requestCount: 0, modelCallCount: 0, cacheHitCount: 0, cacheMissCount: 0,
+        from: now, to: now, requestCount: 0, successCount: 0, failedCount: 0, modelCallCount: 0, cacheHitCount: 0, cacheMissCount: 0,
         inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCost: 0, cacheHitRate: 0,
         savedEstimatedCost: 0, averageResponseTimeMs: 0, costCurrency: 'USD', featureUsage: [],
       })
     } else if (path === '/api/v1/admin/ai/usage-logs') {
       body = response({ items: [], page: 0, size: 10, totalElements: 0, totalPages: 0 })
+    } else if (path === '/api/v1/ai/technical-explanations') {
+      body = response({
+        analysisId: 1,
+        symbol: stock.symbol,
+        market: stock.market,
+        interval: '1D',
+        latestRecordedAt: prices.at(-1)?.time ?? now,
+        source: 'DEMO',
+        freshness: 'DEMO',
+        calculationVersion: 'technical-v2-wilder',
+        promptVersion: 'technical-explanation-v1',
+        inputHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        summarySignal: 'BUY',
+        summary: '추세와 모멘텀은 상승 우세지만 변동성 위험을 함께 확인해야 합니다.',
+        trendExplanation: '단기 이동평균이 중장기 이동평균 위에 있습니다.',
+        momentumExplanation: 'RSI는 과매수 경계에 가까우며 MACD는 양수입니다.',
+        volatilityExplanation: 'ATR 기준 변동 폭이 존재합니다.',
+        volumeExplanation: '현재 거래량을 20일 평균과 함께 확인해야 합니다.',
+        supportingSignals: [{ text: '이동평균 정배열', evidenceIds: ['I1'] }],
+        conflictingSignals: [{ text: 'RSI 과열 경계', evidenceIds: ['I2'] }],
+        riskNotes: ['단일 시점 기술지표만으로 미래 수익을 보장할 수 없습니다.'],
+        dataLimitations: ['DEMO 데이터이므로 실제 투자 판단에 사용할 수 없습니다.'],
+        evidence: [
+          { id: 'I1', indicator: 'MOVING_AVERAGE', values: { ma5: '2700000', ma20: '2660000' }, displayValue: 'MA5 2,700,000 · MA20 2,660,000' },
+          { id: 'I2', indicator: 'RSI', values: { value: '68.4', period: '14' }, displayValue: 'RSI(14) 68.4' },
+        ],
+        modelName: 'mock-technical-v1',
+        cacheHit: false,
+        inputTokens: 420,
+        outputTokens: 180,
+        estimatedCost: 0,
+        costCurrency: 'USD',
+        responseTimeMs: 18,
+        generatedAt: now,
+        disclaimer: '기술지표 해설은 투자 권유가 아닌 참고 정보입니다.',
+      })
+    } else if (path === '/api/v1/ai/daily-change-briefings' && request.method() === 'POST') {
+      body = response({
+        briefingId: 1, symbol: stock.symbol, market: stock.market,
+        currentTradingDate: '2026-07-13', previousTradingDate: '2026-07-12', baselineStatus: 'AVAILABLE',
+        relation: 'CONFLICTING', headline: '상승 흐름과 과열 주의 신호가 함께 나타났습니다.',
+        headlineEvidenceIds: ['T1', 'T3'], changeSummary: '종가와 모멘텀이 개선됐지만 RSI 경계를 함께 확인해야 합니다.',
+        changeSummaryEvidenceIds: ['T1', 'T3', 'T4'],
+        viewpoints: [
+          { viewpoint: 'TREND', status: 'POSITIVE', changeType: 'STRENGTHENED', headline: '가격과 이동평균 관계', evidenceIds: ['T1', 'T2'] },
+          { viewpoint: 'MOMENTUM', status: 'POSITIVE', changeType: 'STRENGTHENED', headline: 'RSI와 MACD 변화', evidenceIds: ['T3', 'T4'] },
+          { viewpoint: 'OVERHEAT', status: 'CAUTION', changeType: 'NEW', headline: 'RSI 과열 경계', evidenceIds: ['T3'] },
+          { viewpoint: 'VOLATILITY', status: 'NEUTRAL', changeType: 'UNCHANGED', headline: 'ATR 변동성 변화', evidenceIds: ['T5'] },
+          { viewpoint: 'VOLUME', status: 'CONFIRMING', changeType: 'STRENGTHENED', headline: '거래량 확인 여부', evidenceIds: ['T1', 'T6'] },
+          { viewpoint: 'NEWS', status: 'INSUFFICIENT', changeType: 'INSUFFICIENT', headline: '검증된 신규 근거 없음', evidenceIds: [] },
+          { viewpoint: 'DISCLOSURE', status: 'INSUFFICIENT', changeType: 'INSUFFICIENT', headline: '검증된 신규 근거 없음', evidenceIds: [] },
+        ],
+        newStrengths: [{ text: '전일보다 종가 흐름이 높아졌습니다.', evidenceIds: ['T1'] }],
+        newRisks: [{ text: '과열 경계를 함께 확인해야 합니다.', evidenceIds: ['T3'] }],
+        unchangedContext: [], alignedViews: [], conflictingViews: [{ text: '긍정과 주의가 함께 존재합니다.', evidenceIds: ['T1', 'T3'] }],
+        dataLimitations: ['DEMO 데이터이므로 실제 투자 판단에 사용할 수 없습니다.'],
+        evidence: [
+          { id: 'T1', domain: 'TECHNICAL', kind: 'PRICE_CHANGE', currentValue: '2723000', previousValue: '2700000', delta: '23000', displayValue: '종가 2,700,000 → 2,723,000', sourceRef: { type: 'CHART_INDICATOR', target: 'PRICE' } },
+          { id: 'T3', domain: 'TECHNICAL', kind: 'RSI_CHANGE', currentValue: '68.4', previousValue: '65.2', delta: '3.2', displayValue: 'RSI14 65.2 → 68.4', sourceRef: { type: 'CHART_INDICATOR', target: 'RSI' } },
+          { id: 'Q1', domain: 'QUALITY', kind: 'DATA_QUALITY', currentValue: null, previousValue: null, delta: null, displayValue: '가격 출처 DEMO', sourceRef: { type: 'DATA_QUALITY', source: 'DEMO' } },
+        ],
+        audit: { sources: { TECHNICAL: ['CHART_INDICATOR'], QUALITY: ['DEMO'] }, latestRecordedAt: now, calculationVersion: 'technical-v2-wilder', briefingInputVersion: 'daily-briefing-input-v1', promptVersion: 'daily-change-briefing-v1', modelName: 'mock-daily-v1', evidenceCount: 3, excludedContentCount: 0, cacheHit: false, inputTokens: 420, outputTokens: 180, estimatedCost: 0, savedEstimatedCost: 0, costCurrency: 'USD', responseTimeMs: 21, generatedAt: now },
+        staleBriefing: false, disclaimer: 'AI 브리핑은 투자 권유가 아닌 정보 정리 결과입니다.',
+      })
     } else if (path === '/api/v1/admin/data/sync') {
       body = response({ mode: 'DEMO', startedAt: now, finishedAt: now, pricesImported: 0, newsImported: 0, stocks: [] })
     } else if (path === '/api/v1/portfolios') {
       body = response({
+        baseCurrency: 'KRW', baseCurrencyTotalPurchaseAmount: 2500000, baseCurrencyTotalEvaluationAmount: 2723000,
+        baseCurrencyProfitLoss: 223000, baseCurrencyReturnRate: 8.92, conversionComplete: true, profitLossComplete: true,
+        fxRates: [{ pair: 'USD/KRW', rate: 1382.5, rateType: 'DEMO', source: 'DEMO', asOf: now, freshness: 'FRESH' }],
         currencySummaries: [{
           currency: 'KRW', totalPurchaseAmount: 2500000, totalEvaluationAmount: 2723000,
           profitLoss: 223000, returnRate: 8.92, valuationComplete: true,
@@ -216,4 +349,48 @@ test('mobile chart has no horizontal overflow and exposes touch-sized controls',
   const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
   expect(hasOverflow).toBe(false)
   await expect(page.getByText('기술적 신호와 AI 요약은 투자 권유가 아닌 참고 정보입니다.')).toBeVisible()
+})
+
+test('technical AI explanation exposes evidence and audit metadata', async ({ page }) => {
+  await login(page)
+
+  await page.getByRole('button', { name: 'AI 기술 해설 실행' }).click()
+  await expect(page.locator('.ai-technical-card .cache-badge')).toHaveText('CACHE MISS')
+  await expect(page.locator('.technical-ai-summary')).toContainText('추세와 모멘텀은 상승 우세')
+  await expect(page.locator('.technical-signal-grid')).toContainText('I1')
+  await expect(page.locator('.technical-limitations')).toContainText('DEMO 데이터')
+
+  await page.getByText('서버 계산 근거 2개 보기').click()
+  await expect(page.locator('.technical-evidence-drawer')).toContainText('I1 · 이동평균')
+  await expect(page.locator('.analysis-disclaimer').last()).toContainText('technical-explanation-v1')
+})
+
+test('daily change briefing exposes viewpoint conflicts, evidence and audit metadata', async ({ page }) => {
+  await login(page)
+
+  await page.getByRole('button', { name: '오늘의 변화 생성' }).click()
+  await expect(page.locator('.daily-briefing-card')).toContainText('상승 흐름과 과열 주의 신호')
+  await expect(page.locator('.daily-briefing-card')).toContainText('관점 충돌')
+  await expect(page.locator('.viewpoint-matrix')).toContainText('주의')
+  await page.getByText('검증 근거 3개 보기').click()
+  await expect(page.locator('.briefing-evidence')).toContainText('T1 · 기술')
+  await page.getByText('AI 감사 정보').click()
+  await expect(page.locator('.briefing-audit')).toContainText('daily-change-briefing-v1')
+})
+
+test('global search selects a canonical market and restores every detail context', async ({ page }) => {
+  await login(page)
+
+  const search = page.getByPlaceholder('종목명 또는 심볼 검색')
+  await search.fill('AAPL')
+  await expect(page.getByRole('option', { name: /AAPL/ })).toBeVisible()
+  await search.press('Enter')
+
+  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
+  await expect(page.getByRole('heading', { name: 'Apple 기술적 분석' })).toBeVisible()
+  await expect(page.getByRole('img', { name: /AAPL 3M 일봉 캔들 및 거래량 차트/ })).toBeVisible()
+  await expect(page.locator('.ai-technical-card')).toContainText('NASDAQ · AAPL')
+
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'SK하이닉스 기술적 분석' })).toBeVisible()
 })
