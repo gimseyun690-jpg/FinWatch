@@ -227,6 +227,7 @@ public class StockDataLoadService {
                 provider = "FINNHUB";
             }
             quoteHub.publish(new LiveQuote(
+                    stock.getMarket(),
                     quote.symbol(), quote.price(), quote.change(), quote.changeRate(), quote.volume(),
                     quote.currency(), quote.fetchedAt(), provider + "_REST", "SNAPSHOT"));
             markSuccessful(stock, DataLoadResource.QUOTE, quote.fetchedAt());
@@ -295,7 +296,7 @@ public class StockDataLoadService {
             return successfulAsOf(stock, resource, newsFreshness, now);
         }
         if (resource == DataLoadResource.QUOTE) {
-            return quoteHub.find(stock.getSymbol())
+            return quoteHub.find(stock.getMarket(), stock.getSymbol())
                     .map(LiveQuote::asOf)
                     .filter(asOf -> asOf.isAfter(now.minus(quoteFreshness)))
                     .orElseGet(() -> successfulAsOf(stock, resource, quoteFreshness, now));

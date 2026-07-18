@@ -1,5 +1,6 @@
 import type { ApiResponse } from '../types/stock'
 import type { DataLoadJob, Disclosure } from '../types/disclosure'
+import type { AiSummary } from '../types/news'
 import { authFetch } from './client'
 
 async function readData<T>(response: Response): Promise<T> {
@@ -36,4 +37,14 @@ export async function getDataLoadJob(market: string, symbol: string, jobId: stri
     { signal },
   )
   return readData<DataLoadJob>(response)
+}
+
+export async function summarizeDisclosure(disclosureId: number, signal?: AbortSignal) {
+  const response = await authFetch('/api/v1/ai/disclosure-summaries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disclosureId }),
+    signal,
+  })
+  return readData<AiSummary>(response)
 }

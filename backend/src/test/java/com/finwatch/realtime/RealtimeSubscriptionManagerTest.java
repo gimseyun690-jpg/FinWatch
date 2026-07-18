@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
@@ -56,6 +57,7 @@ class RealtimeSubscriptionManagerTest {
         assertThat(manager.currentPlan().krxSymbols()).containsExactly("000660");
         assertThat(manager.currentPlan().usSymbols()).containsExactly("AAPL");
         verify(kisClient).start(List.of("000660"));
+        verify(finnhubClient).updateInstrumentMarkets(Map.of("AAPL", "NASDAQ"));
         verify(finnhubClient).start(List.of("AAPL"));
     }
 
@@ -84,6 +86,31 @@ class RealtimeSubscriptionManagerTest {
         manager.releaseSession("session-1");
         manager.reconcileNow();
         assertThat(manager.currentPlan().krxSymbols()).containsExactly("005930");
+    }
+
+    @Test
+    void marksFinnhubSymbolMarketUnknownWhenSubscriptionContextsConflict() {
+        StockRepository stockRepository = mock(StockRepository.class);
+        WatchlistRepository watchlistRepository = mock(WatchlistRepository.class);
+        PortfolioHoldingRepository holdingRepository = mock(PortfolioHoldingRepository.class);
+        PriceAlertRepository alertRepository = mock(PriceAlertRepository.class);
+        KisRealtimeClient kisClient = mock(KisRealtimeClient.class);
+        FinnhubRealtimeClient finnhubClient = mock(FinnhubRealtimeClient.class);
+        Stock nasdaqDuplicate = stock("NASDAQ", "DUP");
+        Stock nyseDuplicate = stock("NYSE", "DUP");
+        when(watchlistRepository.findDistinctActiveStocksForRealtime())
+                .thenReturn(List.of(nasdaqDuplicate, nyseDuplicate));
+        when(holdingRepository.findDistinctActiveStocksForRealtime()).thenReturn(List.of());
+        when(alertRepository.findDistinctActiveStocksForRealtime(AlertStatus.ACTIVE)).thenReturn(List.of());
+        manager = manager(
+                stockRepository, watchlistRepository, holdingRepository, alertRepository,
+                kisClient, finnhubClient, 40, Duration.ZERO);
+
+        manager.reconcileNow();
+
+        assertThat(manager.currentPlan().usSymbols()).containsExactly("DUP");
+        verify(finnhubClient).updateInstrumentMarkets(Map.of("DUP", "UNKNOWN"));
+        verify(finnhubClient).start(List.of("DUP"));
     }
 
     private RealtimeSubscriptionManager manager(

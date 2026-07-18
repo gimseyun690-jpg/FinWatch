@@ -43,6 +43,20 @@ class RealtimeCandleAggregatorTest {
         });
     }
 
+    @Test
+    void isolatesCandlesForIdenticalSymbolsInDifferentMarkets() {
+        quoteHub.publish(quote("KRX", "DUP", "85000", "10", "2026-07-14T01:00:02Z", "KIS_WS", "LIVE"));
+        quoteHub.publish(quote("NASDAQ", "DUP", "125.50", "2", "2026-07-14T01:00:03Z", "FINNHUB_WS", "LIVE"));
+
+        assertThat(aggregator.find("KRX", "DUP", 10)).singleElement()
+                .extracting(IntradayCandle::close)
+                .isEqualTo(new BigDecimal("85000"));
+        assertThat(aggregator.find("NASDAQ", "DUP", 10)).singleElement()
+                .extracting(IntradayCandle::close)
+                .isEqualTo(new BigDecimal("125.50"));
+        assertThat(aggregator.find("DUP", 10)).isEmpty();
+    }
+
     private LiveQuote quote(String symbol, String price, String volume, String asOf, String source) {
         return quote(symbol, price, volume, asOf, source, "LIVE");
     }
@@ -54,7 +68,19 @@ class RealtimeCandleAggregatorTest {
             String asOf,
             String source,
             String sessionStatus) {
+        return quote(source.startsWith("KIS") ? "KRX" : "NASDAQ", symbol, price, volume, asOf, source, sessionStatus);
+    }
+
+    private LiveQuote quote(
+            String market,
+            String symbol,
+            String price,
+            String volume,
+            String asOf,
+            String source,
+            String sessionStatus) {
         return new LiveQuote(
+                market,
                 symbol,
                 new BigDecimal(price),
                 BigDecimal.ZERO,

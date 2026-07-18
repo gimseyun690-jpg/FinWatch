@@ -12,7 +12,22 @@ public final class ProviderRestClientFactory {
     }
 
     public static RestClient create(String baseUrl, Duration connectTimeout, Duration readTimeout) {
-        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
+        return create(baseUrl, connectTimeout, readTimeout, HttpClient.Redirect.NEVER);
+    }
+
+    public static RestClient createFollowingRedirects(String baseUrl, Duration connectTimeout, Duration readTimeout) {
+        return create(baseUrl, connectTimeout, readTimeout, HttpClient.Redirect.NORMAL);
+    }
+
+    private static RestClient create(
+            String baseUrl,
+            Duration connectTimeout,
+            Duration readTimeout,
+            HttpClient.Redirect redirectPolicy) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .followRedirects(redirectPolicy)
+                .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(readTimeout);
         return RestClient.builder().baseUrl(baseUrl).requestFactory(requestFactory).build();

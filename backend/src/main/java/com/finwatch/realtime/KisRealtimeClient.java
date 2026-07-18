@@ -174,6 +174,7 @@ public class KisRealtimeClient {
             try {
                 var quote = marketDataClient.getDomesticQuote(symbol);
                 hub.publish(new LiveQuote(
+                        "KRX",
                         quote.symbol(),
                         quote.price(),
                         quote.change(),

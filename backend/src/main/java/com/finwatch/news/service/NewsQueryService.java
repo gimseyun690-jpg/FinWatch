@@ -43,9 +43,9 @@ public class NewsQueryService {
                 .orElseThrow(() -> new NewsQueryException(HttpStatus.NOT_FOUND, "NEWS_NOT_FOUND", "뉴스를 찾을 수 없습니다."));
         boolean displayAllowed = article.getRightsProfile() == com.finwatch.news.content.RightsProfile.STORE_AND_DISPLAY;
         return new NewsDetailResponse(article.getId(), article.getStock().getMarket(), article.getStock().getSymbol(),
-                article.getExternalId(), article.getTitle(), article.getPublisher(), article.getUrl(), article.getCanonicalUrl(),
+                article.getExternalId(), article.getTitle(), NewsPublisherName.resolve(article.getPublisher(), article.getCanonicalUrl()), article.getUrl(), article.getCanonicalUrl(),
                 article.getContentKind(), article.getDisclosureType(), article.getPublishedAt(), article.getSource(),
-                article.getContentSource().name(), article.getRightsProfile().name(), article.isAiAnalysisAllowed(),
+                article.getContentSource().name(), article.getRightsProfile().name(), article.isAiSummaryRequestAllowed(),
                 displayAllowed, displayAllowed ? article.getContent() : null, article.getContentHash(), article.getExtractorVersion(),
                 article.getFetchedAt(), aiAnalysisRepository.existsByNewsId(article.getId()));
     }
@@ -56,14 +56,14 @@ public class NewsQueryService {
                         article.getId(),
                         article.getStock().getSymbol(),
                         article.getTitle(),
-                        article.getPublisher(),
+                        NewsPublisherName.resolve(article.getPublisher(), article.getCanonicalUrl()),
                         article.getCanonicalUrl(),
                         article.getPublishedAt(),
                         aiAnalysisRepository.existsByNewsId(article.getId()),
                         article.getSource(),
                         article.getContentSource().name(),
                         article.getRightsProfile().name(),
-                        article.isAiAnalysisAllowed(),
+                        article.isAiSummaryRequestAllowed(),
                         article.getFetchedAt()))
                 .toList();
     }

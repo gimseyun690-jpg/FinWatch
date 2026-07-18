@@ -339,6 +339,8 @@ public class GeminiAiProvider implements AiProvider {
                 supportingSignals와 conflictingSignals는 반드시 DATA의 evidence ID만 사용하세요.
                 추세, 모멘텀, 변동성, 거래량을 균형 있게 설명하고 충돌하는 신호를 숨기지 마세요.
                 source 또는 freshness가 DEMO/STALE이면 dataLimitations에 명시하세요.
+                종목 코드·기준 시각·지표 수치를 언급할 때는 DATA에 있는 값을 그대로 사용하세요.
+                DATA에 없는 숫자, 퍼센트, 기간, 순번을 새로 만들지 마세요. 불필요한 숫자는 근거 ID로 대신 표현하세요.
 
                 프롬프트 버전: %s
                 <DATA>

@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.finwatch.data.provider.FinnhubNewsClient;
+import com.finwatch.data.provider.FinnhubMarketDataClient;
 import com.finwatch.data.provider.KisMarketDataClient;
 import com.finwatch.data.provider.NaverNewsSearchClient;
 import com.finwatch.data.provider.ProviderException;
@@ -28,6 +29,7 @@ import com.finwatch.data.sync.DataSyncResponses.DataSyncResponse;
 import com.finwatch.data.sync.DataSyncResponses.ProviderSyncResult;
 import com.finwatch.data.sync.DataSyncResponses.StockSyncResult;
 import com.finwatch.news.domain.NewsArticle;
+import com.finwatch.news.service.NewsPublisherName;
 import com.finwatch.news.repository.NewsArticleRepository;
 import com.finwatch.stock.domain.MarketPrice;
 import com.finwatch.stock.domain.Stock;
@@ -38,8 +40,10 @@ import com.finwatch.stock.repository.StockRepository;
 public class ExternalDataSyncService {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final ZoneId NEW_YORK = ZoneId.of("America/New_York");
     private static final LocalTime KRX_CLOSE = LocalTime.of(15, 30);
-    private static final int MARKET_LOOKBACK_DAYS = 365;
+    private static final LocalTime US_CLOSE = LocalTime.of(16, 0);
+    private static final int MARKET_LOOKBACK_DAYS = 5 * 366;
     private static final int NEWS_LOOKBACK_DAYS = 30;
 
     private final DataMode dataMode;
@@ -49,6 +53,7 @@ public class ExternalDataSyncService {
     private final KisMarketDataClient kisMarketDataClient;
     private final NaverNewsSearchClient naverNewsSearchClient;
     private final FinnhubNewsClient finnhubNewsClient;
+    private final FinnhubMarketDataClient finnhubMarketDataClient;
 
     public ExternalDataSyncService(
             @Value("${app.data.mode:DEMO}") String dataMode,
@@ -57,7 +62,8 @@ public class ExternalDataSyncService {
             NewsArticleRepository newsArticleRepository,
             KisMarketDataClient kisMarketDataClient,
             NaverNewsSearchClient naverNewsSearchClient,
-            FinnhubNewsClient finnhubNewsClient) {
+            FinnhubNewsClient finnhubNewsClient,
+            FinnhubMarketDataClient finnhubMarketDataClient) {
         this.dataMode = DataMode.from(dataMode);
         this.stockRepository = stockRepository;
         this.marketPriceRepository = marketPriceRepository;
@@ -65,6 +71,7 @@ public class ExternalDataSyncService {
         this.kisMarketDataClient = kisMarketDataClient;
         this.naverNewsSearchClient = naverNewsSearchClient;
         this.finnhubNewsClient = finnhubNewsClient;
+        this.finnhubMarketDataClient = finnhubMarketDataClient;
     }
 
     @Transactional
@@ -131,9 +138,7 @@ public class ExternalDataSyncService {
             return new StockSyncResult(
                     stock.getSymbol(),
                     stock.getMarket(),
-                    ProviderSyncResult.skipped(
-                            "FINNHUB_REALTIME",
-                            "미국 현재가는 Finnhub 실시간 허브에서 제공하며 일봉 DB 동기화는 아직 지원하지 않습니다."),
+                    syncUsPrices(stock),
                     syncFinnhubNews(stock));
         }
         return new StockSyncResult(
@@ -146,42 +151,9 @@ public class ExternalDataSyncService {
     private ProviderSyncResult syncKisPrices(Stock stock) {
         try {
             LocalDate today = LocalDate.now(SEOUL);
-            List<MarketPrice> imported = new ArrayList<>();
-            int updated = 0;
-            for (Bar bar : kisMarketDataClient
-                    .getDomesticDailyBars(stock.getSymbol(), today.minusDays(MARKET_LOOKBACK_DAYS), today)
-                    .items()) {
-                Instant recordedAt = bar.sessionDate().atTime(KRX_CLOSE).atZone(SEOUL).toInstant();
-                Instant sessionStart = bar.sessionDate().atStartOfDay(SEOUL).toInstant();
-                Instant sessionEnd = bar.sessionDate().plusDays(1).atStartOfDay(SEOUL).toInstant();
-                List<MarketPrice> sameSession = marketPriceRepository
-                        .findAllByStockIdAndIntervalAndRecordedAtBetween(stock.getId(), "1D", sessionStart, sessionEnd);
-                MarketPrice existing = sameSession.stream()
-                        .filter(price -> "KIS".equals(price.getSource()))
-                        .findFirst()
-                        .orElseGet(() -> sameSession.stream()
-                                .filter(price -> "DEMO".equals(price.getSource()))
-                                .findFirst()
-                                .orElse(null));
-                if (existing != null) {
-                    existing.applyProviderBar(
-                            bar.open(), bar.high(), bar.low(), bar.close(), bar.volume(), "KIS");
-                    updated++;
-                    continue;
-                }
-                imported.add(MarketPrice.create(
-                        stock,
-                        "1D",
-                        bar.open(),
-                        bar.high(),
-                        bar.low(),
-                        bar.close(),
-                        bar.volume(),
-                        recordedAt,
-                        "KIS"));
-            }
-            marketPriceRepository.saveAll(imported);
-            return ProviderSyncResult.success("KIS", imported.size() + updated);
+            var series = kisMarketDataClient
+                    .getDomesticDailyBars(stock.getSymbol(), today.minusDays(MARKET_LOOKBACK_DAYS), today);
+            return persistBars(stock, series.items(), "KIS", SEOUL, KRX_CLOSE);
         } catch (ProviderException exception) {
             return ProviderSyncResult.fallback("KIS", fallbackMessage(exception));
         }
@@ -204,7 +176,7 @@ public class ExternalDataSyncService {
                         stock,
                         externalId,
                         truncate(item.title(), 500),
-                        "Naver News",
+                        NewsPublisherName.resolve(null, url),
                         truncate(url, 1000),
                         item.publishedAt() == null ? result.fetchedAt() : item.publishedAt(),
                         "NAVER_API_HUB"));
@@ -214,6 +186,84 @@ public class ExternalDataSyncService {
         } catch (ProviderException exception) {
             return ProviderSyncResult.fallback("NAVER_API_HUB", fallbackMessage(exception));
         }
+    }
+
+    private ProviderSyncResult syncUsPrices(Stock stock) {
+        ProviderException finnhubFailure = null;
+        try {
+            LocalDate today = LocalDate.now(NEW_YORK);
+            var series = finnhubMarketDataClient.dailyBars(
+                    stock.getSymbol(),
+                    today.minusDays(MARKET_LOOKBACK_DAYS),
+                    today);
+            if (!series.items().isEmpty()) {
+                return persistBars(stock, series.items(), "FINNHUB", NEW_YORK, US_CLOSE);
+            }
+        } catch (ProviderException exception) {
+            finnhubFailure = exception;
+        }
+
+        try {
+            LocalDate today = LocalDate.now(NEW_YORK);
+            var series = kisMarketDataClient.getOverseasDailyBars(
+                    stock.getMarket(),
+                    stock.getSymbol(),
+                    today.minusDays(MARKET_LOOKBACK_DAYS),
+                    today);
+            if (!series.items().isEmpty()) {
+                return persistBars(stock, series.items(), "KIS_OVERSEAS", NEW_YORK, US_CLOSE);
+            }
+            return ProviderSyncResult.fallback(
+                    "FINNHUB+KIS_OVERSEAS",
+                    "미국 일봉 공급자가 이 종목의 가격 이력을 반환하지 않았습니다.");
+        } catch (ProviderException kisFailure) {
+            String finnhubMessage = finnhubFailure == null
+                    ? "Finnhub 일봉 응답이 비어 있습니다."
+                    : fallbackMessage(finnhubFailure);
+            return ProviderSyncResult.fallback(
+                    "FINNHUB+KIS_OVERSEAS",
+                    finnhubMessage + " KIS 해외 일봉 fallback: " + fallbackMessage(kisFailure));
+        }
+    }
+
+    private ProviderSyncResult persistBars(
+            Stock stock,
+            List<Bar> bars,
+            String provider,
+            ZoneId zone,
+            LocalTime closeTime) {
+        List<MarketPrice> imported = new ArrayList<>();
+        int updated = 0;
+        for (Bar bar : bars) {
+            Instant recordedAt = bar.sessionDate().atTime(closeTime).atZone(zone).toInstant();
+            Instant sessionStart = bar.sessionDate().atStartOfDay(zone).toInstant();
+            Instant sessionEnd = bar.sessionDate().plusDays(1).atStartOfDay(zone).toInstant();
+            MarketPrice existing = marketPriceRepository
+                    .findAllByStockIdAndIntervalAndRecordedAtBetween(stock.getId(), "1D", sessionStart, sessionEnd)
+                    .stream()
+                    .findFirst()
+                    .orElse(null);
+            if (existing != null) {
+                existing.applyProviderBar(
+                        bar.open(), bar.high(), bar.low(), bar.close(), bar.volume(), provider);
+                updated++;
+                continue;
+            }
+            imported.add(MarketPrice.create(
+                    stock,
+                    "1D",
+                    bar.open(),
+                    bar.high(),
+                    bar.low(),
+                    bar.close(),
+                    bar.volume(),
+                    recordedAt,
+                    provider));
+        }
+        marketPriceRepository.saveAll(imported);
+        marketPriceRepository.flush();
+        marketPriceRepository.deleteDemoHistory(stock.getId(), "1D");
+        return ProviderSyncResult.success(provider, imported.size() + updated);
     }
 
     private ProviderSyncResult syncFinnhubNews(Stock stock) {

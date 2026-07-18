@@ -59,6 +59,7 @@ class IntradayCandleApiIntegrationTest {
 
     private LiveQuote quote(String price, String volume, String asOf) {
         return new LiveQuote(
+                "KRX",
                 "005930",
                 new BigDecimal(price),
                 BigDecimal.ZERO,

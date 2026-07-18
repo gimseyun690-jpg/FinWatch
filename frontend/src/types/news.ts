@@ -11,7 +11,7 @@ export type NewsArticle = {
   publishedAt: string
   summaryAvailable: boolean
   source: string
-  contentSource: 'PROVIDER_SUMMARY' | 'ALLOWLIST_ARTICLE' | 'OFFICIAL_DISCLOSURE' | 'METADATA_ONLY'
+  contentSource: 'PROVIDER_SUMMARY' | 'ALLOWLIST_ARTICLE' | 'ON_DEMAND_ARTICLE' | 'OFFICIAL_DISCLOSURE' | 'METADATA_ONLY'
   rightsProfile: 'METADATA_ONLY' | 'TRANSIENT_AI' | 'STORE_FOR_AI' | 'STORE_AND_DISPLAY'
   aiAnalysisAllowed: boolean
   fetchedAt: string | null

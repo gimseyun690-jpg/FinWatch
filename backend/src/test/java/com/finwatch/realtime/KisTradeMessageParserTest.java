@@ -17,6 +17,7 @@ class KisTradeMessageParserTest {
 
         assertThat(quotes).hasSize(1);
         LiveQuote quote = quotes.getFirst();
+        assertThat(quote.market()).isEqualTo("KRX");
         assertThat(quote.symbol()).isEqualTo("005930");
         assertThat(quote.price()).isEqualByComparingTo("85000");
         assertThat(quote.change()).isEqualByComparingTo("1200");

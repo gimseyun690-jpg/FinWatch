@@ -40,6 +40,7 @@ class LatestPriceResolverTest {
         Stock stock = stock("AAPL");
         storedPrice(stock, "320.10", Instant.parse("2026-07-14T01:00:00Z"));
         quoteHub.publish(new LiveQuote(
+                "NASDAQ",
                 "AAPL", new BigDecimal("317.31"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 "USD", Instant.parse("2026-07-13T20:00:00Z"), "FINNHUB_REST", "SNAPSHOT"));
 
@@ -54,6 +55,7 @@ class LatestPriceResolverTest {
         Stock stock = mock(Stock.class);
         when(stock.getId()).thenReturn(1L);
         when(stock.getSymbol()).thenReturn(symbol);
+        when(stock.getMarket()).thenReturn("AAPL".equals(symbol) ? "NASDAQ" : "KRX");
         return stock;
     }
 
@@ -68,6 +70,7 @@ class LatestPriceResolverTest {
 
     private LiveQuote quote(String symbol, String price, Instant asOf) {
         return new LiveQuote(
+                "KRX",
                 symbol, new BigDecimal(price), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ONE,
                 "KRW", asOf, "KIS_WS", "LIVE");
     }

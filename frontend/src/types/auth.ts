@@ -6,17 +6,21 @@ export type UserRole = 'USER' | 'ADMIN'
 
 export type AuthUser = {
   id: number
-  email: string
+  displayName: string
+  email: string | null
+  profileImageUrl: string | null
   role: UserRole
+  authProvider: 'LOCAL' | 'KAKAO'
 }
 
 export type LoginResponse = {
-  accessToken: string
-  tokenType: 'Bearer'
-  expiresIn: number
+  authenticated: true
+  expiresAt: string
   user: AuthUser
 }
 
-export type AuthSession = LoginResponse & {
-  expiresAt: number
+export type AuthSession = LoginResponse
+
+export type KakaoLoginStatus = {
+  enabled: boolean
 }

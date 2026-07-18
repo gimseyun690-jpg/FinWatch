@@ -32,6 +32,7 @@ export const demoPriceHistory: PriceHistory = {
   symbol: '000660',
   interval: '1D',
   period: '3M',
+  source: 'DEMO',
   items: prices,
 }
 

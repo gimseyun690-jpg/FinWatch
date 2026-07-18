@@ -1,0 +1,51 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_MAX_POOL_SIZE:8}
+      minimum-idle: ${DB_MIN_IDLE:1}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:5000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:3000}
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+
+server:
+  shutdown: graceful
+  forward-headers-strategy: framework
+
+management:
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: FinWatch
+    version: ${APP_VERSION}
+    environment: portfolio
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    root: INFO
+    org.springframework.security: WARN
+
+app:
+  public-base-url: ${APP_PUBLIC_BASE_URL}
+  data:
+    mode: LIVE
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  auth:
+    jwt-secret: ${JWT_SECRET}
+    frontend-base-url: ${FRONTEND_BASE_URL}
+    demo-users-enabled: false
+    session:
+      cookie-secure: true
+      cookie-same-site: Lax
+  ai:
+    provider: ${AI_PROVIDER:gemini}

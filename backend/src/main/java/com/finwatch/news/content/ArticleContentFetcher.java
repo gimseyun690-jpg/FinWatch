@@ -29,6 +29,7 @@ public class ArticleContentFetcher {
     private final String configuredUserAgent;
     private final int maxRedirects;
     private final int maxResponseBytes;
+    private final int onDemandMinIntervalMs;
 
     public ArticleContentFetcher(
             SourcePolicyResolver sourcePolicyResolver,
@@ -38,7 +39,8 @@ public class ArticleContentFetcher {
             ArticleContentExtractor contentExtractor,
             @Value("${app.news-content.user-agent:}") String configuredUserAgent,
             @Value("${app.news-content.max-redirects}") int maxRedirects,
-            @Value("${app.news-content.max-response-bytes}") int maxResponseBytes) {
+            @Value("${app.news-content.max-response-bytes}") int maxResponseBytes,
+            @Value("${app.news-content.on-demand-min-interval-ms:1000}") int onDemandMinIntervalMs) {
         this.sourcePolicyResolver = sourcePolicyResolver;
         this.urlSafetyValidator = urlSafetyValidator;
         this.domainRateLimiter = domainRateLimiter;
@@ -47,14 +49,23 @@ public class ArticleContentFetcher {
         this.configuredUserAgent = configuredUserAgent == null ? "" : configuredUserAgent.trim();
         this.maxRedirects = maxRedirects;
         this.maxResponseBytes = maxResponseBytes;
+        this.onDemandMinIntervalMs = Math.max(0, onDemandMinIntervalMs);
     }
 
     public FetchedArticleContent fetch(URI canonicalUrl) {
+        return fetch(canonicalUrl, false);
+    }
+
+    public FetchedArticleContent fetchForAiSummary(URI canonicalUrl) {
+        return fetch(canonicalUrl, true);
+    }
+
+    private FetchedArticleContent fetch(URI canonicalUrl, boolean allowOnDemandNews) {
         URI currentUrl = canonicalUrl;
         Set<String> rateLimitedHosts = new HashSet<>();
 
         for (int redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
-            SourcePolicyDecision policy = authorize(currentUrl);
+            SourcePolicyDecision policy = authorize(currentUrl, allowOnDemandNews);
             URI safeUrl = urlSafetyValidator.validate(currentUrl);
             String userAgent = resolveUserAgent(policy);
             if (rateLimitedHosts.add(safeUrl.getHost())) {
@@ -122,12 +133,26 @@ public class ArticleContentFetcher {
         throw new IllegalStateException("Redirect loop terminated unexpectedly.");
     }
 
-    private SourcePolicyDecision authorize(URI uri) {
+    private SourcePolicyDecision authorize(URI uri, boolean allowOnDemandNews) {
         SourcePolicyDecision policy = sourcePolicyResolver.resolve(uri);
-        if (!policy.allowsDirectFetch()) {
+        if (policy.allowsDirectFetch()) {
+            return policy;
+        }
+        if (!allowOnDemandNews
+                || policy.fetchMode() == SourceFetchMode.BLOCKED
+                || policy.fetchMode() == SourceFetchMode.API_CONTENT) {
             throw NewsContentException.unavailable();
         }
-        return policy;
+        return new SourcePolicyDecision(
+                uri.getHost(),
+                "/",
+                SourceFetchMode.ALLOWLIST_FETCH,
+                RightsProfile.STORE_FOR_AI,
+                ContentSource.ON_DEMAND_ARTICLE,
+                onDemandMinIntervalMs,
+                false,
+                "user-initiated-ai-news-summary",
+                null);
     }
 
     private String resolveUserAgent(SourcePolicyDecision policy) {

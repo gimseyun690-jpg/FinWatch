@@ -15,4 +15,8 @@ public interface AiAnalysisRepository extends JpaRepository<AiAnalysis, Long> {
             Long newsId, String featureType, String promptVersion, String contentHash);
 
     List<AiAnalysis> findAllByNewsIdAndContentHash(Long newsId, String contentHash);
+
+    List<AiAnalysis> findAllByNewsIdInAndFeatureTypeOrderByGeneratedAtDescIdDesc(
+            List<Long> newsIds,
+            String featureType);
 }

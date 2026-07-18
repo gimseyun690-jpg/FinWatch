@@ -46,7 +46,7 @@ EC2 + Nginx
 CloudWatch <- EC2/API 로그와 기본 인프라 메트릭
 ```
 
-운영 배포를 진행할 경우 비용과 구현 난도를 낮추기 위해 EC2 한 대에 Nginx와 Spring Boot를 배포한다. 개발 단계 Redis는 Docker로 실행할 수 있다. 운영 캐시는 예산과 가용성 요구에 따라 ElastiCache 또는 단일 서버 Redis 중에서 선택한다. AWS 배포 자체는 현재 구현 범위에서 제외한다.
+운영 배포는 비용과 구현 난도를 낮추기 위해 EC2 한 대에 Nginx·Spring Boot·비영속 Redis를 배포하고 PostgreSQL은 private RDS로 분리한다. CloudFormation·Docker·GitHub OIDC 배포 산출물은 구현되었으며, 실제 AWS 리소스 생성은 계정·도메인·예산 승인 후 `20_AWS_RUNBOOK.md`에 따라 수행한다. 가용성 요구가 높아지면 ALB·다중 compute·ElastiCache/Valkey로 승격한다.
 
 ## 4. 백엔드 모듈
 
@@ -124,6 +124,8 @@ Gemini는 추세·모멘텀·변동성·거래량과 충돌 신호를 설명할 
 구현된 종목 탐색 기능은 KRX·미국 전체 종목의 가벼운 마스터를 PostgreSQL에 동기화해 로컬 검색하고, 선택·관심·보유 종목만 시세·일봉·뉴스와 WebSocket 구독 대상으로 승격한다. 검색과 온디맨드 수집의 상세 계약은 `14_STOCK_DISCOVERY_SPEC.md`를 따른다.
 
 구현된 환율 기능은 Finnhub Forex를 우선 사용하고 계정 권한으로 거절되면 Frankfurter 일일 기준환율을 명시적인 `REFERENCE` fallback으로 사용한다. 검증된 USD/KRW 스냅샷은 DB·Redis에 저장하고, 주식 원통화 값과 환산값을 분리하며 환율 장애가 원통화 조회를 막지 않는 계약은 `15_FX_RATE_SPEC.md`를 따른다.
+
+계획된 화면 구조 개편은 단일 `App.tsx` anchor 화면을 반응형 App Shell과 route outlet으로 분리한다. 뉴스·공시는 PostgreSQL 서버 pagination으로 조회하고 필터 상태는 URL에 보존하며 상세 계약은 `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md`를 따른다.
 
 ## 7. 데이터 공급자 경계
 

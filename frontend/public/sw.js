@@ -1,5 +1,19 @@
-const CACHE_NAME = 'finwatch-shell-v4'
-const APP_SHELL = ['/', '/offline.html', '/manifest.webmanifest', '/finwatch-icon.svg']
+const CACHE_NAME = 'finwatch-shell-v12'
+const APP_SHELL = [
+  '/',
+  '/offline.html',
+  '/manifest.webmanifest',
+  '/favicon.png',
+  '/apple-touch-icon.png',
+  '/finwatch-logo.png',
+  '/finwatch-logo-dark.png',
+  '/finwatch-icon-64.png',
+  '/finwatch-icon-128.png',
+  '/finwatch-icon-192.png',
+  '/finwatch-icon-256.png',
+  '/finwatch-icon-512.png',
+  '/finwatch-icon-maskable-512.png',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(precacheCurrentBuild())
@@ -15,7 +29,8 @@ async function precacheCurrentBuild() {
   const assetPaths = [...html.matchAll(/(?:src|href)="([^"#]+)"/g)]
     .map((match) => match[1])
     .filter((path) => path.startsWith('/') && !path.startsWith('/api/'))
-  const paths = [...new Set([...APP_SHELL.slice(1), ...assetPaths])]
+  const manifestPaths = await loadBuildManifestPaths()
+  const paths = [...new Set([...APP_SHELL.slice(1), ...assetPaths, ...manifestPaths])]
   await Promise.all(paths.map(async (path) => {
     try {
       const response = await fetch(path, { cache: 'reload' })
@@ -26,6 +41,24 @@ async function precacheCurrentBuild() {
   }))
 }
 
+async function loadBuildManifestPaths() {
+  try {
+    const response = await fetch('/.vite/manifest.json', { cache: 'reload' })
+    if (!response.ok) return []
+    const manifest = await response.json()
+    const paths = ['/.vite/manifest.json']
+    for (const entry of Object.values(manifest)) {
+      if (typeof entry?.file === 'string') paths.push(`/${entry.file}`)
+      for (const path of [...(entry?.css ?? []), ...(entry?.assets ?? [])]) {
+        if (typeof path === 'string') paths.push(`/${path}`)
+      }
+    }
+    return paths
+  } catch {
+    return []
+  }
+}
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))),
@@ -34,20 +67,32 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET' || new URL(event.request.url).pathname.startsWith('/api/')) return
+  const url = new URL(event.request.url)
+  if (event.request.method !== 'GET' || url.pathname.startsWith('/api/')) return
+  if (url.pathname.startsWith('/src/') || url.pathname.startsWith('/@') || url.pathname.startsWith('/node_modules/')) return
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok && url.origin === self.location.origin) {
+            const copy = response.clone()
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
+          }
+          return response
+        })
+        .catch(() => caches.match('/').then((shell) => shell || caches.match('/offline.html'))),
+    )
+    return
+  }
 
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok && new URL(event.request.url).origin === self.location.origin) {
-          const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
-        }
-        return response
-      })
-      .catch(() => {
-        if (event.request.mode === 'navigate') return caches.match('/offline.html')
-        return caches.match(event.request)
-      }),
+    caches.match(event.request, { ignoreVary: true }).then((cached) => cached || fetch(event.request).then((response) => {
+      if (response.ok && url.origin === self.location.origin) {
+        const copy = response.clone()
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
+      }
+      return response
+    })),
   )
 })

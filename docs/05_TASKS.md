@@ -43,7 +43,7 @@
 - [x] 추세선·수평선 생성·수정·삭제와 데이터 좌표 유지
 - [x] KIS·Finnhub WebSocket 체결의 인메모리 1분 OHLCV 집계
 - [x] 1분 봉 REST 조회와 `candles`·`candle` WebSocket 이벤트
-- [x] 일봉/1분봉 전환, 장중 시간축과 봉 간격별 그리기 분리
+- [x] 실제 일봉 기반 일봉/주봉/월봉과 실시간 1분봉 전환, 장중 시간축과 봉 간격별 그리기 분리
 - [x] 데스크톱·모바일 상호작용·접근성 E2E 검증
 
 ## Step 1.2 포트폴리오 완성형 기술지표 확장
@@ -64,6 +64,7 @@
 목표: 4개 데모 종목 제한을 제거하고 `14_STOCK_DISCOVERY_SPEC.md` 기준으로 원하는 KRX·미국 종목을 이름·심볼로 찾아 상세 화면을 연다.
 
 - [x] KIS·Finnhub `InstrumentCatalogProvider`와 종목 마스터 동기화
+- [x] LIVE 시작 후 및 24시간 주기의 안전한 전체 종목 마스터 자동 동기화
 - [x] V14 stocks 확장, alias·sync run 테이블과 prefix 검색 인덱스
 - [x] `GET /stocks/search`의 정렬·필터·pagination (분산 검색 캐시는 LIVE 마스터 이후)
 - [x] `(market, symbol)` canonical 상세 API와 기존 symbol endpoint 충돌 호환 계층
@@ -73,6 +74,9 @@
   - [x] Open DART·SEC 종목별 공시 목록 수집 어댑터와 공식 공시 화면
 - [x] 선택·관심·보유·활성 알림 종목 중심의 동적 WebSocket 구독·해제·상한
 - [x] 전역 검색 UI, 250ms debounce·요청 취소·키보드 선택·URL 복원과 상세/차트/뉴스/AI selectedStock 연결
+- [x] 관심종목 개수 제한 제거, 전체 카탈로그 검색·연속 등록·canonical 삭제 UI
+- [x] 관심종목 등록 직후 실시간 구독 갱신과 quote·일봉·뉴스·공시 자동 준비
+- [x] KIS 최대 약 5년 국내 일봉 기간 분할·호출 간격·부분 성공, Finnhub 일봉 권한 오류 시 KIS 해외 일봉 fallback
 - [x] DEMO 검색 fixture, LIVE 공급자 계약과 AC-13 핵심 API·UI 테스트
 
 ## Step 1.4 USD/KRW 환율과 기준통화 평가
@@ -87,6 +91,19 @@
 - [x] 포트폴리오 KRW 통합 현재 평가액과 conversionComplete
 - [x] 선택적 매수 환율과 정확성 한계가 표시된 환차손익 근사치
 - [x] DEMO fixture와 방향·반올림·오류 계약 통합 테스트
+
+## Step 1.5 Sidebar 내비게이션과 뉴스·공시 페이징
+
+목표: `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md` 기준으로 단일 anchor 대시보드를 route 기반 App Shell로 분리하고 뉴스·공시를 서버 pagination으로 조회한다.
+
+- [x] `/content-feed` filter·정렬·page envelope와 허용값 validation
+- [x] 뉴스·공시 pagination repository, V18 PostgreSQL 인덱스와 100,000건 fixture 성능 테스트
+- [x] React router·Auth/Admin guard·Not Found·기존 URL 호환
+- [x] 데스크톱 Sidebar·Topbar와 모바일 Bottom Navigation·More Drawer
+- [x] 대시보드 요약화와 종목 상세 4개 route 탭
+- [x] 뉴스·공시 통합 목록, URL filter·pagination·권리/AI 상태 badge
+- [x] loading·empty·partial·error·offline와 요청 취소·응답 역전 방지
+- [x] 접근성·390px·PWA 직접 URL·회귀 E2E와 AC-15 핵심 자동 검증
 
 ## Step 2. AI 뉴스 요약 Vertical Slice
 
@@ -109,6 +126,7 @@
 - [x] HTML/XML 본문 추출, `contentHash`와 extractor 버전 멱등 저장
 - [x] Gemini 전문 분석 범위·긍정/위험 요인·근거 segment 출력
 - [x] 본문 변경 시 캐시 무효화와 구간별 토큰·비용 합산
+- [x] 공시 카드의 원클릭 원문 확보·Gemini 요약·Redis 캐시·감사 메타데이터 UI
 - [x] 프롬프트 인젝션·금지 도메인·429·삭제 요청 테스트
 
 ## Step 2.2 AI 기술지표 해설 Vertical Slice
@@ -210,4 +228,4 @@ feature/aws-deploy
 
 ## 다음 즉시 작업
 
-AWS를 제외한 대회 MVP 구현은 완료 상태다. 다음 작업은 전체 회귀·E2E 증적 고정, 5분 시연 영상·발표 Q&A·A1 패널 준비이며 운영 AWS 배포는 별도 범위로 남긴다.
+대회 MVP와 AWS 배포 코드·IaC·CI/CD 산출물은 구현 상태다. 실제 AWS 리소스 생성은 계정·도메인·예산·책임자 승인 뒤 `20_AWS_RUNBOOK.md`로 수행하며, 그 전에는 배포 완료로 표시하지 않는다. 제출 준비의 다음 작업은 전체 회귀·E2E 증적 고정, 5분 시연 영상·발표 Q&A·A1 패널 준비다.

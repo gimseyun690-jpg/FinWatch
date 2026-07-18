@@ -1,0 +1,12 @@
+[Unit]
+Description=Renew FinWatch TLS certificate and reload Nginx
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/finwatch/current/scripts/aws/renew-tls.sh
+User=root
+Group=root
+PrivateTmp=true
+NoNewPrivileges=true

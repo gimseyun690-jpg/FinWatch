@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -26,8 +27,8 @@ public class RealtimeCandleAggregator {
         quoteHub.addListener(this::accept);
     }
 
-    public List<IntradayCandle> find(String symbol, int limit) {
-        var symbolCandles = candles.get(symbol);
+    public List<IntradayCandle> find(String market, String symbol, int limit) {
+        var symbolCandles = candles.get(canonical(market, symbol));
         if (symbolCandles == null || symbolCandles.isEmpty()) {
             return List.of();
         }
@@ -37,10 +38,26 @@ public class RealtimeCandleAggregator {
                 .toList();
     }
 
+    /**
+     * Legacy symbol-only lookup. Ambiguous symbols intentionally produce no candles.
+     */
+    public List<IntradayCandle> find(String symbol, int limit) {
+        String normalizedSymbol = normalize(symbol);
+        List<String> matches = candles.keySet().stream()
+                .filter(key -> key.endsWith(":" + normalizedSymbol))
+                .limit(2)
+                .toList();
+        return matches.size() == 1
+                ? find(matches.getFirst().substring(0, matches.getFirst().indexOf(':')), normalizedSymbol, limit)
+                : List.of();
+    }
+
     public IntradayCandleSnapshot snapshot() {
         List<IntradayCandle> items = candles.values().stream()
                 .flatMap(symbolCandles -> symbolCandles.values().stream())
-                .sorted(Comparator.comparing(IntradayCandle::symbol).thenComparing(IntradayCandle::time))
+                .sorted(Comparator.comparing(IntradayCandle::market)
+                        .thenComparing(IntradayCandle::symbol)
+                        .thenComparing(IntradayCandle::time))
                 .toList();
         return new IntradayCandleSnapshot(items);
     }
@@ -60,7 +77,8 @@ public class RealtimeCandleAggregator {
 
         Instant minute = quote.asOf().truncatedTo(ChronoUnit.MINUTES);
         BigDecimal tickVolume = tickVolume(quote);
-        var symbolCandles = candles.computeIfAbsent(quote.symbol(), ignored -> new ConcurrentSkipListMap<>());
+        String instrumentKey = quote.canonicalKey();
+        var symbolCandles = candles.computeIfAbsent(instrumentKey, ignored -> new ConcurrentSkipListMap<>());
         IntradayCandle updated = symbolCandles.compute(minute, (ignored, current) -> merge(current, quote, minute, tickVolume));
         trim(symbolCandles);
         notifyListeners(updated);
@@ -73,7 +91,7 @@ public class RealtimeCandleAggregator {
         }
 
         BigDecimal[] delta = {BigDecimal.ZERO};
-        lastCumulativeVolumes.compute(quote.symbol(), (ignored, previous) -> {
+        lastCumulativeVolumes.compute(quote.canonicalKey(), (ignored, previous) -> {
             if (previous != null && volume.compareTo(previous) >= 0) {
                 delta[0] = volume.subtract(previous);
             }
@@ -89,6 +107,7 @@ public class RealtimeCandleAggregator {
             BigDecimal tickVolume) {
         if (current == null) {
             return new IntradayCandle(
+                    quote.market(),
                     quote.symbol(),
                     minute,
                     quote.price(),
@@ -100,6 +119,7 @@ public class RealtimeCandleAggregator {
                     quote.source());
         }
         return new IntradayCandle(
+                current.market(),
                 current.symbol(),
                 current.time(),
                 current.open(),
@@ -129,5 +149,14 @@ public class RealtimeCandleAggregator {
                 // Chart delivery must not interrupt market data ingestion.
             }
         }
+    }
+
+    private String canonical(String market, String symbol) {
+        String normalizedMarket = normalize(market);
+        return (normalizedMarket.isBlank() ? "UNKNOWN" : normalizedMarket) + ":" + normalize(symbol);
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 }

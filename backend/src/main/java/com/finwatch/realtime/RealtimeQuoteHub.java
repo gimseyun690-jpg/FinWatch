@@ -3,6 +3,7 @@ package com.finwatch.realtime;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -22,7 +23,7 @@ public class RealtimeQuoteHub {
             return;
         }
         boolean[] accepted = {false};
-        quotes.compute(quote.symbol(), (symbol, current) -> {
+        quotes.compute(quote.canonicalKey(), (key, current) -> {
             if (current == null || !quote.asOf().isBefore(current.asOf())) {
                 accepted[0] = true;
                 return quote;
@@ -44,13 +45,26 @@ public class RealtimeQuoteHub {
         notifyListeners(new RealtimeEvent("status", status));
     }
 
+    public Optional<LiveQuote> find(String market, String symbol) {
+        return Optional.ofNullable(quotes.get(canonical(market, symbol)));
+    }
+
+    /**
+     * Legacy symbol-only lookup. It deliberately returns empty when the symbol exists in
+     * more than one market, so callers can never consume a quote from the wrong market.
+     */
     public Optional<LiveQuote> find(String symbol) {
-        return Optional.ofNullable(quotes.get(symbol));
+        String normalizedSymbol = normalize(symbol);
+        List<LiveQuote> matches = quotes.values().stream()
+                .filter(quote -> quote.symbol().equals(normalizedSymbol))
+                .limit(2)
+                .toList();
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }
 
     public RealtimeSnapshot snapshot() {
         List<LiveQuote> quoteItems = quotes.values().stream()
-                .sorted(Comparator.comparing(LiveQuote::symbol))
+                .sorted(Comparator.comparing(LiveQuote::market).thenComparing(LiveQuote::symbol))
                 .toList();
         List<RealtimeProviderStatus> statuses = providerStatuses.values().stream()
                 .sorted(Comparator.comparing(RealtimeProviderStatus::provider))
@@ -78,5 +92,14 @@ public class RealtimeQuoteHub {
         }
         String sanitized = message.replaceAll("[\\r\\n\\t]+", " ").trim();
         return sanitized.length() <= 240 ? sanitized : sanitized.substring(0, 240);
+    }
+
+    private String canonical(String market, String symbol) {
+        String normalizedMarket = normalize(market);
+        return (normalizedMarket.isBlank() ? "UNKNOWN" : normalizedMarket) + ":" + normalize(symbol);
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 }

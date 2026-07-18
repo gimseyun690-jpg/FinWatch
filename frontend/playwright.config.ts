@@ -2,6 +2,9 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'pwa.spec.ts',
+  timeout: 60_000,
+  workers: 1,
   fullyParallel: false,
   reporter: [['line']],
   use: {

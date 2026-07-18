@@ -7,6 +7,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import com.finwatch.ai.dto.TechnicalExplanationInput;
@@ -16,6 +18,7 @@ import com.finwatch.ai.provider.AiProvider.TechnicalSignalExplanation;
 @Component
 public class TechnicalExplanationResponseValidator {
 
+    private static final Logger log = LoggerFactory.getLogger(TechnicalExplanationResponseValidator.class);
     private static final List<String> PROHIBITED_PHRASES = List.of(
             "목표주가", "적정주가", "매수하세요", "매도하세요", "반드시 상승", "반드시 하락",
             "수익을 보장합니다", "수익 보장", "수익률은", "상승 확률", "하락 확률");
@@ -70,6 +73,10 @@ public class TechnicalExplanationResponseValidator {
     private void validateNumbers(String output, TechnicalExplanationInput input) {
         Set<String> allowed = new HashSet<>(List.of("1", "2", "5", "14", "20", "30", "60", "70"));
         allowed.add(Integer.toString(input.sampleCount()));
+        collectNumbers(input.symbol(), allowed);
+        collectNumbers(input.interval(), allowed);
+        collectNumbers(input.latestRecordedAt().toString(), allowed);
+        collectNumbers(input.calculationVersion(), allowed);
         for (var evidence : input.evidence()) {
             collectNumbers(evidence.displayValue(), allowed);
             evidence.values().values().forEach(value -> collectNumbers(value, allowed));
@@ -78,6 +85,7 @@ public class TechnicalExplanationResponseValidator {
         while (matcher.find()) {
             String normalized = normalizeNumber(matcher.group());
             if (!allowed.contains(normalized)) {
+                log.warn("Rejected technical explanation number absent from server evidence: {}", normalized);
                 throw AiProviderException.invalid("입력 근거에서 추적할 수 없는 숫자가 포함되었습니다.");
             }
         }

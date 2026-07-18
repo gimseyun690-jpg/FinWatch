@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
+import java.time.Instant;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,10 +15,13 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.finwatch.ai.repository.AiAnalysisRepository;
 import com.finwatch.ai.repository.AiUsageLogRepository;
 import com.finwatch.news.repository.NewsArticleRepository;
+import com.finwatch.news.domain.NewsArticle;
+import com.finwatch.stock.repository.StockRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,6 +39,9 @@ class AiNewsSummaryIntegrationTest {
 
     @Autowired
     private AiUsageLogRepository aiUsageLogRepository;
+
+    @Autowired
+    private StockRepository stockRepository;
 
     @BeforeEach
     void resetUsageData() {
@@ -76,19 +84,26 @@ class AiNewsSummaryIntegrationTest {
     }
 
     @Test
-    void metadataOnlyNewsCannotBeSentToAiProvider() throws Exception {
-        Long newsId = newsArticleRepository.findByExternalId("demo-news-000660-metadata-only")
-                .orElseThrow()
-                .getId();
-        String body = "{\"newsId\":" + newsId + ",\"promptVersion\":\"news-analysis-v2\"}";
+    @Transactional
+    void onDemandNewsFetchStillBlocksPrivateNetworkTargets() throws Exception {
+        var stock = stockRepository.findFirstBySymbolAndActiveTrue("000660").orElseThrow();
+        NewsArticle article = newsArticleRepository.saveAndFlush(NewsArticle.createMetadata(
+                stock,
+                "news-private-target-test",
+                "Private target must stay blocked",
+                "Security Test",
+                "http://127.0.0.1/private-news",
+                Instant.parse("2026-07-15T00:00:00Z"),
+                "TEST"));
+        String body = "{\"newsId\":" + article.getId() + ",\"promptVersion\":\"news-analysis-v2\"}";
 
         mockMvc.perform(post("/api/v1/ai/news-summaries")
                         .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value("NEWS_CONTENT_UNAVAILABLE"));
+                .andExpect(jsonPath("$.code").value("ARTICLE_PRIVATE_ADDRESS_BLOCKED"));
 
         org.assertj.core.api.Assertions.assertThat(aiAnalysisRepository.count()).isZero();
         org.assertj.core.api.Assertions.assertThat(aiUsageLogRepository.count()).isZero();

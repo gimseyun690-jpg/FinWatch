@@ -17,6 +17,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
       repositories:
         enabled: false
   flyway:
@@ -43,6 +44,7 @@ management:
           include: readinessState,db,redis
 
 app:
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:5173}
   data:
     mode: ${DATA_MODE:DEMO}
     connect-timeout: ${DATA_CONNECT_TIMEOUT:3s}
@@ -50,6 +52,9 @@ app:
     catalog:
       minimum-received: ${CATALOG_MINIMUM_RECEIVED:100}
       minimum-retention-ratio: ${CATALOG_MINIMUM_RETENTION_RATIO:0.50}
+      auto-sync-enabled: ${CATALOG_AUTO_SYNC_ENABLED:true}
+      auto-sync-initial-delay: ${CATALOG_AUTO_SYNC_INITIAL_DELAY:30s}
+      auto-sync-interval: ${CATALOG_AUTO_SYNC_INTERVAL:24h}
     load:
       quote-freshness: ${DATA_LOAD_QUOTE_FRESHNESS:15s}
       daily-price-freshness: ${DATA_LOAD_DAILY_PRICE_FRESHNESS:12h}
@@ -103,9 +108,31 @@ app:
     jwt-secret: ${JWT_SECRET:finwatch-local-jwt-secret-change-before-production-2026}
     issuer: ${JWT_ISSUER:finwatch-api}
     access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:1h}
+    frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
     demo-users-enabled: ${DEMO_USERS_ENABLED:true}
     demo-user-password: ${DEMO_USER_PASSWORD:FinWatch123!}
     demo-admin-password: ${DEMO_ADMIN_PASSWORD:FinWatchAdmin123!}
+    session:
+      cookie-name: ${SESSION_COOKIE_NAME:FW_SESSION}
+      idle-ttl: ${SESSION_IDLE_TTL:1h}
+      absolute-ttl: ${SESSION_ABSOLUTE_TTL:8h}
+      cookie-secure: ${SESSION_COOKIE_SECURE:false}
+      cookie-same-site: ${SESSION_COOKIE_SAME_SITE:Lax}
+      cookie-domain: ${SESSION_COOKIE_DOMAIN:}
+    kakao:
+      enabled: ${KAKAO_LOGIN_ENABLED:false}
+      client-id: ${KAKAO_REST_API_KEY:}
+      client-secret: ${KAKAO_CLIENT_SECRET:}
+      issuer: ${KAKAO_ISSUER:https://kauth.kakao.com}
+      authorization-uri: ${KAKAO_AUTHORIZATION_URI:https://kauth.kakao.com/oauth/authorize}
+      token-uri: ${KAKAO_TOKEN_URI:https://kauth.kakao.com/oauth/token}
+      jwk-set-uri: ${KAKAO_JWK_SET_URI:https://kauth.kakao.com/.well-known/jwks.json}
+      redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/v1/auth/kakao/callback}
+      attempt-ttl: ${KAKAO_OAUTH_ATTEMPT_TTL:5m}
+      correlation-cookie-name: ${KAKAO_CORRELATION_COOKIE_NAME:FW_KAKAO_CORRELATION}
+      requests-per-minute: ${KAKAO_REQUESTS_PER_MINUTE:10}
+      connect-timeout: ${KAKAO_CONNECT_TIMEOUT:3s}
+      read-timeout: ${KAKAO_READ_TIMEOUT:10s}
   ai:
     provider: ${AI_PROVIDER:mock}
     prompt-version: ${AI_PROMPT_VERSION:news-analysis-v2}
@@ -136,6 +163,7 @@ app:
     read-timeout: ${ARTICLE_READ_TIMEOUT:5s}
     max-response-bytes: ${ARTICLE_MAX_RESPONSE_BYTES:1048576}
     max-redirects: ${ARTICLE_MAX_REDIRECTS:3}
+    on-demand-min-interval-ms: ${ARTICLE_ON_DEMAND_MIN_INTERVAL_MS:1000}
     opendart-api-key: ${OPENDART_API_KEY:}
     opendart-max-archive-entries: ${OPENDART_MAX_ARCHIVE_ENTRIES:50}
     opendart-max-uncompressed-bytes: ${OPENDART_MAX_UNCOMPRESSED_BYTES:4194304}

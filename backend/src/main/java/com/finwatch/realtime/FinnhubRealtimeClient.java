@@ -9,6 +9,7 @@ import java.net.http.WebSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +50,7 @@ public class FinnhubRealtimeClient {
     private final AtomicInteger reconnectAttempts = new AtomicInteger();
 
     private volatile List<String> symbols = List.of();
+    private volatile Map<String, String> instrumentMarkets = Map.of();
     private volatile WebSocket activeSocket;
     private volatile boolean stopped = true;
 
@@ -92,6 +94,26 @@ public class FinnhubRealtimeClient {
             seedSnapshots();
             connect();
         });
+    }
+
+    /**
+     * Supplies the canonical market selected by the subscription planner. Finnhub trade
+     * frames only contain a symbol, so no exchange is guessed from the provider or currency.
+     */
+    public void updateInstrumentMarkets(Map<String, String> marketsBySymbol) {
+        if (marketsBySymbol == null || marketsBySymbol.isEmpty()) {
+            instrumentMarkets = Map.of();
+            return;
+        }
+        Map<String, String> normalized = new java.util.LinkedHashMap<>();
+        marketsBySymbol.forEach((symbol, market) -> {
+            String normalizedSymbol = normalizeValue(symbol);
+            String normalizedMarket = normalizeValue(market);
+            if (!normalizedSymbol.isBlank()) {
+                normalized.put(normalizedSymbol, normalizedMarket.isBlank() ? "UNKNOWN" : normalizedMarket);
+            }
+        });
+        instrumentMarkets = Map.copyOf(normalized);
     }
 
     public void updateSubscriptions(List<String> desiredSymbols) {
@@ -158,6 +180,7 @@ public class FinnhubRealtimeClient {
                 var quote = marketDataClient.quote(symbol);
                 previousCloses.put(symbol, quote.price().subtract(quote.change()));
                 hub.publish(new LiveQuote(
+                        marketFor(symbol),
                         quote.symbol(),
                         quote.price(),
                         quote.change(),
@@ -203,6 +226,7 @@ public class FinnhubRealtimeClient {
                     ? BigDecimal.ZERO
                     : change.multiply(BigDecimal.valueOf(100)).divide(previousClose, 4, RoundingMode.HALF_UP);
             hub.publish(new LiveQuote(
+                    marketFor(trade.symbol()),
                     trade.symbol(),
                     trade.price(),
                     change,
@@ -245,6 +269,14 @@ public class FinnhubRealtimeClient {
                 .filter(value -> value != null && !value.isBlank())
                 .map(value -> value.trim().toUpperCase(java.util.Locale.ROOT))
                 .toList()));
+    }
+
+    private String marketFor(String symbol) {
+        return instrumentMarkets.getOrDefault(normalizeValue(symbol), "UNKNOWN");
+    }
+
+    private String normalizeValue(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
     private String safeMessage(Throwable throwable) {

@@ -4,10 +4,11 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import com.finwatch.news.domain.NewsArticle;
 
-public interface NewsArticleRepository extends JpaRepository<NewsArticle, Long> {
+public interface NewsArticleRepository extends JpaRepository<NewsArticle, Long>, JpaSpecificationExecutor<NewsArticle> {
 
     List<NewsArticle> findAllByStockSymbolOrderByPublishedAtDesc(String symbol);
 

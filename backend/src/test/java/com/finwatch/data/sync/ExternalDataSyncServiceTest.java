@@ -22,6 +22,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 
 import com.finwatch.data.provider.FinnhubNewsClient;
+import com.finwatch.data.provider.FinnhubMarketDataClient;
 import com.finwatch.data.provider.KisMarketDataClient;
 import com.finwatch.data.provider.NaverNewsSearchClient;
 import com.finwatch.data.provider.ProviderException;
@@ -46,6 +47,7 @@ class ExternalDataSyncServiceTest {
     private KisMarketDataClient kisMarketDataClient;
     private NaverNewsSearchClient naverNewsSearchClient;
     private FinnhubNewsClient finnhubNewsClient;
+    private FinnhubMarketDataClient finnhubMarketDataClient;
 
     @BeforeEach
     void setUp() {
@@ -55,6 +57,7 @@ class ExternalDataSyncServiceTest {
         kisMarketDataClient = mock(KisMarketDataClient.class);
         naverNewsSearchClient = mock(NaverNewsSearchClient.class);
         finnhubNewsClient = mock(FinnhubNewsClient.class);
+        finnhubMarketDataClient = mock(FinnhubMarketDataClient.class);
     }
 
     @Test
@@ -120,7 +123,7 @@ class ExternalDataSyncServiceTest {
     }
 
     @Test
-    void liveUsSyncPersistsFinnhubNewsAndKeepsDatabasePrices() {
+    void liveUsSyncPersistsFinnhubDailyBarsAndNews() {
         Stock stock = stock(2L, "AAPL", "Apple", "NASDAQ");
         when(stockRepository.findFirstBySymbolAndActiveTrue("AAPL")).thenReturn(Optional.of(stock));
         when(finnhubNewsClient.companyNews(anyString(), any(LocalDate.class), any(LocalDate.class)))
@@ -141,13 +144,52 @@ class ExternalDataSyncServiceTest {
                                 "finnhub"))));
         when(newsArticleRepository.findBySourceAndExternalId("FINNHUB", "123"))
                 .thenReturn(Optional.empty());
+        when(finnhubMarketDataClient.dailyBars(anyString(), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(new BarSeries(
+                        "AAPL",
+                        "1D",
+                        "finnhub",
+                        Instant.parse("2026-07-13T00:00:00Z"),
+                        List.of(new Bar(
+                                LocalDate.of(2026, 7, 11),
+                                decimal("210"),
+                                decimal("214"),
+                                decimal("209"),
+                                decimal("212.5"),
+                                decimal("48120000")))));
 
         var result = service("LIVE").syncStock("aapl");
 
-        assertThat(result.stocks().getFirst().marketPrices().status()).isEqualTo("SKIPPED");
+        assertThat(result.stocks().getFirst().marketPrices().status()).isEqualTo("SUCCESS");
+        assertThat(result.pricesImported()).isEqualTo(1);
         assertThat(result.newsImported()).isEqualTo(1);
-        verify(marketPriceRepository, never()).saveAll(any());
+        verify(marketPriceRepository).saveAll(any());
         verify(newsArticleRepository).saveAll(any());
+    }
+
+    @Test
+    void liveUsSyncFallsBackToKisOverseasWhenFinnhubCandlesRequirePremium() {
+        Stock stock = stock(2L, "MSFT", "Microsoft", "NASDAQ");
+        when(stockRepository.findFirstBySymbolAndActiveTrue("MSFT")).thenReturn(Optional.of(stock));
+        when(finnhubMarketDataClient.dailyBars(anyString(), any(LocalDate.class), any(LocalDate.class)))
+                .thenThrow(new ProviderException(HttpStatus.BAD_GATEWAY, "FINNHUB_CANDLE_HTTP_403", "premium"));
+        when(kisMarketDataClient.getOverseasDailyBars(anyString(), anyString(), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(new BarSeries(
+                        "MSFT", "1D", "kis-overseas", Instant.now(),
+                        List.of(new Bar(
+                                LocalDate.of(2026, 7, 11),
+                                decimal("500"), decimal("508"), decimal("497"), decimal("506.45"), decimal("18340000")))));
+        when(finnhubNewsClient.companyNews(anyString(), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(new CompanyNewsResult(
+                        "MSFT", LocalDate.now().minusDays(30), LocalDate.now(), Instant.now(), List.of()));
+
+        var result = service("LIVE").syncStock("MSFT");
+
+        assertThat(result.stocks().getFirst().marketPrices().provider()).isEqualTo("KIS_OVERSEAS");
+        assertThat(result.stocks().getFirst().marketPrices().status()).isEqualTo("SUCCESS");
+        ArgumentCaptor<List<MarketPrice>> prices = ArgumentCaptor.forClass(List.class);
+        verify(marketPriceRepository).saveAll(prices.capture());
+        assertThat(prices.getValue()).singleElement().extracting(MarketPrice::getSource).isEqualTo("KIS_OVERSEAS");
     }
 
     @Test
@@ -178,6 +220,7 @@ class ExternalDataSyncServiceTest {
         ArgumentCaptor<List<MarketPrice>> prices = ArgumentCaptor.forClass(List.class);
         verify(marketPriceRepository).saveAll(prices.capture());
         assertThat(prices.getValue()).isEmpty();
+        verify(marketPriceRepository).deleteDemoHistory(1L, "1D");
     }
 
     @Test
@@ -205,7 +248,8 @@ class ExternalDataSyncServiceTest {
                 newsArticleRepository,
                 kisMarketDataClient,
                 naverNewsSearchClient,
-                finnhubNewsClient);
+                finnhubNewsClient,
+                finnhubMarketDataClient);
     }
 
     private Stock stock(Long id, String symbol, String name, String market) {

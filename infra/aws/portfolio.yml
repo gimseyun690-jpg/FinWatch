@@ -1,0 +1,706 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: FinWatch portfolio environment - single public EC2, private encrypted RDS, ECR, SSM, Secrets, CloudWatch and Budget.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: finwatch
+    AllowedPattern: '^[a-z][a-z0-9-]{2,20}$'
+  EnvironmentName:
+    Type: String
+    Default: portfolio
+    AllowedValues: [portfolio, staging]
+  PublicHost:
+    Type: String
+    Description: Canonical host only, for example finwatch.example.com.
+  CertificateEmail:
+    Type: String
+    Description: Email used by the EC2 Nginx certificate runbook.
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Optional existing Route 53 public hosted zone ID.
+  BudgetEmail:
+    Type: String
+    Default: ''
+    Description: Optional cost notification email. Subscription confirmation is required.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 35
+    MinValue: 1
+  VpcCidr:
+    Type: String
+    Default: 10.42.0.0/16
+  PublicSubnetCidr:
+    Type: String
+    Default: 10.42.0.0/24
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: 10.42.10.0/24
+  PrivateSubnet2Cidr:
+    Type: String
+    Default: 10.42.11.0/24
+  InstanceType:
+    Type: String
+    Default: t3.small
+  DBInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DBEngineVersion:
+    Type: String
+    Default: '17.6'
+    Description: Confirm availability in the selected Region before deployment.
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+  RedisImage:
+    Type: String
+    Description: Digest-pinned Redis image, for example redis@sha256:...
+  CertbotImage:
+    Type: String
+    Description: Version or digest-pinned Certbot image used for issue and renewal.
+  DockerComposeVersion:
+    Type: String
+    Default: v5.3.1
+    AllowedPattern: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+    Description: Pinned Docker Compose release installed as a Docker CLI plugin.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Conditions:
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
+  HasBudgetEmail: !Not [!Equals [!Ref BudgetEmail, '']]
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - {Key: Name, Value: !Sub '${ProjectName}-${EnvironmentName}-vpc'}
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnetCidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - {Key: Name, Value: !Sub '${ProjectName}-${EnvironmentName}-public-a'}
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - {Key: Name, Value: !Sub '${ProjectName}-${EnvironmentName}-private-a'}
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet2Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - {Key: Name, Value: !Sub '${ProjectName}-${EnvironmentName}-private-b'}
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: FinWatch public HTTPS edge; no SSH or application ports.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: HTTP redirect and ACME}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS}
+      SecurityGroupEgress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: AWS and HTTPS providers}
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: OS repositories and ACME}
+        - {IpProtocol: udp, FromPort: 53, ToPort: 53, CidrIp: !Ref VpcCidr, Description: VPC DNS}
+        - {IpProtocol: tcp, FromPort: 53, ToPort: 53, CidrIp: !Ref VpcCidr, Description: VPC DNS fallback}
+        - {IpProtocol: tcp, FromPort: 21000, ToPort: 21000, CidrIp: 0.0.0.0/0, Description: KIS production WebSocket}
+        - {IpProtocol: tcp, FromPort: 31000, ToPort: 31000, CidrIp: 0.0.0.0/0, Description: KIS paper WebSocket}
+      Tags:
+        - {Key: Name, Value: !Sub '${ProjectName}-${EnvironmentName}-web-sg'}
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL only from the FinWatch web security group.
+      VpcId: !Ref Vpc
+      SecurityGroupEgress: []
+      Tags:
+        - {Key: Name, Value: !Sub '${ProjectName}-${EnvironmentName}-db-sg'}
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  DatabaseIngressFromWeb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DatabaseSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref WebSecurityGroup
+      Description: PostgreSQL from FinWatch EC2 only
+
+  WebEgressToDatabase:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref WebSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      DestinationSecurityGroupId: !Ref DatabaseSecurityGroup
+      Description: PostgreSQL to private RDS only
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: FinWatch private RDS subnets
+      SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  DatabaseParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: FinWatch PostgreSQL 17 TLS requirements
+      Family: postgres17
+      Parameters:
+        rds.force_ssl: '1'
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-${EnvironmentName}'
+      Engine: postgres
+      EngineVersion: !Ref DBEngineVersion
+      DBName: finwatch
+      MasterUsername: finwatch_admin
+      ManageMasterUserPassword: true
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      MaxAllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      PubliclyAccessible: false
+      MultiAZ: false
+      AutoMinorVersionUpgrade: true
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: true
+      DeletionProtection: true
+      EnablePerformanceInsights: false
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBParameterGroupName: !Ref DatabaseParameterGroup
+      VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  DatabaseApplicationSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/database-application'
+      Description: Dedicated non-master FinWatch PostgreSQL application account.
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"finwatch_app"}'
+        GenerateStringKey: password
+        PasswordLength: 40
+        ExcludePunctuation: true
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  JwtSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/jwt'
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: JWT_SECRET
+        PasswordLength: 64
+        ExcludePunctuation: true
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  RedisSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/redis'
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: REDIS_PASSWORD
+        PasswordLength: 40
+        ExcludePunctuation: true
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  ProviderSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/providers'
+      Description: Provider keys populated after stack creation; never committed or read by CI.
+      SecretString: '{}'
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  BackendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-backend'
+      ImageScanningConfiguration: {ScanOnPush: true}
+      ImageTagMutability: IMMUTABLE
+      EncryptionConfiguration: {EncryptionType: AES256}
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep 20 release images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}}]}'
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  FrontendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-frontend'
+      ImageScanningConfiguration: {ScanOnPush: true}
+      ImageTagMutability: IMMUTABLE
+      EncryptionConfiguration: {EncryptionType: AES256}
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep 20 release images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}}]}'
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  DeploymentBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-deployment-bundles
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration: {NoncurrentDays: 7}
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/${ProjectName}/${EnvironmentName}/backend'
+      RetentionInDays: 30
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  NginxLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/${ProjectName}/${EnvironmentName}/nginx'
+      RetentionInDays: 30
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  RedisLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/${ProjectName}/${EnvironmentName}/redis'
+      RetentionInDays: 14
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${EnvironmentName}-ec2'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ec2.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: finwatch-runtime-read
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ecr:GetAuthorizationToken]
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:GetDownloadUrlForLayer, ecr:BatchGetImage]
+                Resource: [!GetAtt BackendRepository.Arn, !GetAtt FrontendRepository.Arn]
+              - Effect: Allow
+                Action: [s3:GetObject]
+                Resource: !Sub '${DeploymentBucket.Arn}/releases/*'
+              - Effect: Allow
+                Action: [ssm:GetParameters, ssm:GetParametersByPath]
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${EnvironmentName}/*'
+              - Effect: Allow
+                Action: [secretsmanager:GetSecretValue]
+                Resource: [!Ref DatabaseApplicationSecret, !Ref JwtSecret, !Ref RedisSecret, !Ref ProviderSecret]
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents, logs:DescribeLogStreams]
+                Resource:
+                  - !Sub '${BackendLogGroup.Arn}:*'
+                  - !Sub '${NginxLogGroup.Arn}:*'
+                  - !Sub '${RedisLogGroup.Arn}:*'
+              - Effect: Allow
+                Action: [cloudwatch:PutMetricData]
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: FinWatch/Host
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  WebInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: [DefaultPublicRoute, BackendLogGroup, NginxLogGroup, RedisLogGroup]
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: [!Ref WebSecurityGroup]
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+        HttpPutResponseHopLimit: 1
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 30
+            Encrypted: true
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          dnf update -y
+          dnf install -y amazon-cloudwatch-agent docker jq postgresql15
+          compose_asset=docker-compose-linux-x86_64
+          compose_base=https://github.com/docker/compose/releases/download/${DockerComposeVersion}
+          install -d -m 0755 /usr/local/lib/docker/cli-plugins
+          curl --fail --silent --show-error --location "$compose_base/$compose_asset" \
+            --output /usr/local/lib/docker/cli-plugins/docker-compose
+          curl --fail --silent --show-error --location "$compose_base/$compose_asset.sha256" \
+            --output /tmp/docker-compose.sha256
+          expected_compose_sha="$(awk '{print $1}' /tmp/docker-compose.sha256)"
+          echo "$expected_compose_sha  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum --check --strict
+          rm -f /tmp/docker-compose.sha256
+          chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+          docker compose version
+          systemctl enable --now docker
+          mkdir -p /opt/finwatch /run/finwatch /var/lib/finwatch/certbot
+          chmod 0750 /opt/finwatch /run/finwatch
+          cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'
+          {
+            "agent": {"metrics_collection_interval": 60},
+            "metrics": {
+              "namespace": "FinWatch/Host",
+              "append_dimensions": {"InstanceId": "${!aws:InstanceId}"},
+              "aggregation_dimensions": [["InstanceId"]],
+              "metrics_collected": {
+                "disk": {"measurement": ["used_percent"], "resources": ["/"], "drop_device": true, "ignore_file_system_types": ["sysfs", "devtmpfs", "tmpfs", "overlay"]},
+                "mem": {"measurement": ["mem_used_percent"]}
+              }
+            }
+          }
+          CWAGENT
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+            -a fetch-config -m ec2 \
+            -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
+          touch /var/log/finwatch-bootstrap-complete
+      Tags:
+        - {Key: Name, Value: !Sub '${ProjectName}-${EnvironmentName}-web'}
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+        - {Key: SsmDeployTarget, Value: 'true'}
+
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  ElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIp.AllocationId
+      InstanceId: !Ref WebInstance
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref PublicHost
+      Type: A
+      TTL: 60
+      ResourceRecords: [!Ref ElasticIp]
+
+  PublicBaseUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/APP_PUBLIC_BASE_URL'
+      Type: String
+      Value: !Sub 'https://${PublicHost}'
+  CorsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/CORS_ALLOWED_ORIGINS'
+      Type: String
+      Value: !Sub 'https://${PublicHost}'
+  FrontendBaseParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/FRONTEND_BASE_URL'
+      Type: String
+      Value: !Sub 'https://${PublicHost}'
+  KakaoRedirectParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/KAKAO_REDIRECT_URI'
+      Type: String
+      Value: !Sub 'https://${PublicHost}/api/v1/auth/kakao/callback'
+  DatabaseUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/DB_URL'
+      Type: String
+      Value: !Sub 'jdbc:postgresql://${Database.Endpoint.Address}:5432/finwatch?sslmode=require'
+  RuntimeDefaultsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectName}/${EnvironmentName}/RUNTIME_DEFAULTS'
+      Type: String
+      Value: !Sub >-
+        {"SPRING_PROFILES_ACTIVE":"portfolio","APP_VERSION":"bootstrap","DATA_MODE":"LIVE","AI_PROVIDER":"gemini","DEMO_USERS_ENABLED":"false","SESSION_COOKIE_SECURE":"true","REDIS_HOST":"redis","REDIS_PORT":"6379","AWS_REGION":"${AWS::Region}","PUBLIC_HOST":"${PublicHost}","BACKEND_LOG_GROUP":"${BackendLogGroup}","NGINX_LOG_GROUP":"${NginxLogGroup}","REDIS_LOG_GROUP":"${RedisLogGroup}","REDIS_IMAGE":"${RedisImage}","CERTBOT_IMAGE":"${CertbotImage}"}
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${EnvironmentName}-alarms'
+      Tags:
+        - {Key: Project, Value: FinWatch}
+        - {Key: Environment, Value: !Ref EnvironmentName}
+
+  AlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasBudgetEmail
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: email
+      Endpoint: !Ref BudgetEmail
+
+  InstanceCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${EnvironmentName}-ec2-cpu-high'
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions: [{Name: InstanceId, Value: !Ref WebInstance}]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: missing
+      AlarmActions: [!Ref AlarmTopic]
+
+  InstanceStatusAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${EnvironmentName}-ec2-status-failed'
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed
+      Dimensions: [{Name: InstanceId, Value: !Ref WebInstance}]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  HostMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${EnvironmentName}-memory-high'
+      Namespace: FinWatch/Host
+      MetricName: mem_used_percent
+      Dimensions: [{Name: InstanceId, Value: !Ref WebInstance}]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  HostDiskAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${EnvironmentName}-disk-high'
+      Namespace: FinWatch/Host
+      MetricName: disk_used_percent
+      Dimensions: [{Name: InstanceId, Value: !Ref WebInstance}]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  DatabaseStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${EnvironmentName}-rds-storage-low'
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions: [{Name: DBInstanceIdentifier, Value: !Ref Database}]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: missing
+      AlarmActions: [!Ref AlarmTopic]
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-${EnvironmentName}'
+      DashboardBody: !Sub |
+        {"widgets":[{"type":"metric","width":8,"height":6,"properties":{"region":"${AWS::Region}","title":"EC2 CPU and status","metrics":[["AWS/EC2","CPUUtilization","InstanceId","${WebInstance}"],[".","StatusCheckFailed",".","."]],"period":300}},{"type":"metric","width":8,"height":6,"properties":{"region":"${AWS::Region}","title":"Host memory and disk","metrics":[["FinWatch/Host","mem_used_percent","InstanceId","${WebInstance}"],[".","disk_used_percent",".","."]],"period":300}},{"type":"metric","width":8,"height":6,"properties":{"region":"${AWS::Region}","title":"RDS connections and free storage","metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${Database}"],[".","FreeStorageSpace",".","."]],"period":300}}]}
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasBudgetEmail
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-${EnvironmentName}-monthly'
+        BudgetLimit: {Amount: !Ref MonthlyBudgetUsd, Unit: USD}
+        BudgetType: COST
+        TimeUnit: MONTHLY
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - {SubscriptionType: EMAIL, Address: !Ref BudgetEmail}
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - {SubscriptionType: EMAIL, Address: !Ref BudgetEmail}
+
+Outputs:
+  InstanceId: {Value: !Ref WebInstance}
+  ElasticIp: {Value: !Ref ElasticIp}
+  PublicUrl: {Value: !Sub 'https://${PublicHost}'}
+  DatabaseIdentifier: {Value: !Ref Database}
+  DatabaseEndpoint: {Value: !GetAtt Database.Endpoint.Address}
+  DatabaseMasterSecretArn: {Value: !GetAtt Database.MasterUserSecret.SecretArn}
+  DatabaseApplicationSecretArn: {Value: !Ref DatabaseApplicationSecret}
+  ProviderSecretArn: {Value: !Ref ProviderSecret}
+  BackendRepositoryUri: {Value: !GetAtt BackendRepository.RepositoryUri}
+  FrontendRepositoryUri: {Value: !GetAtt FrontendRepository.RepositoryUri}
+  DeploymentBucketName: {Value: !Ref DeploymentBucket}
+  InstanceRoleArn: {Value: !GetAtt InstanceRole.Arn}
+  AlarmTopicArn: {Value: !Ref AlarmTopic}
+  CertificateEmail: {Value: !Ref CertificateEmail}

@@ -38,7 +38,7 @@ public class FinnhubInstrumentCatalogProvider implements InstrumentCatalogProvid
             @Value("${app.data.finnhub.base-url}") String baseUrl,
             @Value("${app.data.connect-timeout:3s}") Duration connectTimeout,
             @Value("${app.data.read-timeout:10s}") Duration readTimeout) {
-        this(apiKey, ProviderRestClientFactory.create(baseUrl, connectTimeout, readTimeout));
+        this(apiKey, ProviderRestClientFactory.createFollowingRedirects(baseUrl, connectTimeout, readTimeout));
     }
 
     FinnhubInstrumentCatalogProvider(String apiKey, RestClient restClient) {

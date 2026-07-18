@@ -10,6 +10,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.Supplier;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -29,10 +33,16 @@ public class KisMarketDataClient {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter BASIC_DATE = DateTimeFormatter.BASIC_ISO_DATE;
     private static final Duration TOKEN_EXPIRY_MARGIN = Duration.ofMinutes(5);
+    private static final int DAILY_CHUNK_DAYS = 100;
+    private static final int MAX_OVERSEAS_DAILY_PAGES = 30;
+    private static final long REQUEST_INTERVAL_MILLIS = 1_050L;
+    private static final int TRANSIENT_RETRY_ATTEMPTS = 3;
 
     private final RestClient restClient;
     private final String appKey;
     private final String appSecret;
+    private final Object requestThrottle = new Object();
+    private long nextRequestAtNanos;
     private volatile AccessToken cachedToken;
 
     public KisMarketDataClient(
@@ -72,6 +82,79 @@ public class KisMarketDataClient {
         if (from == null || to == null || from.isAfter(to)) {
             throw new ProviderException(HttpStatus.BAD_REQUEST, "KIS_DATE_RANGE_INVALID", "KIS 일봉 조회 기간이 올바르지 않습니다.");
         }
+        Map<LocalDate, Bar> barsByDate = new TreeMap<>();
+        LocalDate chunkEnd = to;
+        while (!chunkEnd.isBefore(from)) {
+            LocalDate chunkStart = chunkEnd.minusDays(DAILY_CHUNK_DAYS - 1L);
+            if (chunkStart.isBefore(from)) {
+                chunkStart = from;
+            }
+            try {
+                LocalDate requestStart = chunkStart;
+                LocalDate requestEnd = chunkEnd;
+                for (Bar bar : fetchBarsWithRetry(() -> fetchDomesticDailyBars(symbol, requestStart, requestEnd))) {
+                    if (!bar.sessionDate().isBefore(chunkStart) && !bar.sessionDate().isAfter(chunkEnd)) {
+                        barsByDate.put(bar.sessionDate(), bar);
+                    }
+                }
+            } catch (ProviderException exception) {
+                if (barsByDate.isEmpty()) {
+                    throw exception;
+                }
+                break;
+            }
+            if (chunkStart.equals(from)) {
+                break;
+            }
+            chunkEnd = chunkStart.minusDays(1);
+        }
+        return new BarSeries(symbol, "1D", "kis", Instant.now(), List.copyOf(barsByDate.values()));
+    }
+
+    public BarSeries getOverseasDailyBars(
+            String market,
+            String symbol,
+            LocalDate from,
+            LocalDate to) {
+        String exchangeCode = overseasExchangeCode(market);
+        validateOverseasSymbol(symbol);
+        if (from == null || to == null || from.isAfter(to)) {
+            throw new ProviderException(HttpStatus.BAD_REQUEST, "KIS_OVERSEAS_DATE_RANGE_INVALID", "KIS 해외 일봉 조회 기간이 올바르지 않습니다.");
+        }
+
+        Map<LocalDate, Bar> barsByDate = new TreeMap<>();
+        LocalDate pageEnd = to;
+        LocalDate previousOldest = null;
+        for (int page = 0; page < MAX_OVERSEAS_DAILY_PAGES && !pageEnd.isBefore(from); page++) {
+            List<Bar> pageItems;
+            try {
+                LocalDate requestEnd = pageEnd;
+                pageItems = fetchBarsWithRetry(() -> fetchOverseasDailyBars(exchangeCode, symbol, requestEnd));
+            } catch (ProviderException exception) {
+                if (barsByDate.isEmpty()) {
+                    throw exception;
+                }
+                break;
+            }
+            if (pageItems.isEmpty()) {
+                break;
+            }
+            LocalDate oldest = pageItems.stream().map(Bar::sessionDate).min(LocalDate::compareTo).orElse(pageEnd);
+            for (Bar bar : pageItems) {
+                if (!bar.sessionDate().isBefore(from) && !bar.sessionDate().isAfter(to)) {
+                    barsByDate.put(bar.sessionDate(), bar);
+                }
+            }
+            if (!oldest.isAfter(from) || oldest.equals(previousOldest)) {
+                break;
+            }
+            previousOldest = oldest;
+            pageEnd = oldest.minusDays(1);
+        }
+        return new BarSeries(symbol, "1D", "kis-overseas", Instant.now(), List.copyOf(barsByDate.values()));
+    }
+
+    private List<Bar> fetchDomesticDailyBars(String symbol, LocalDate from, LocalDate to) {
         Map<String, Object> response = get(
                 "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
                 "FHKST03010100",
@@ -102,11 +185,102 @@ public class KisMarketDataClient {
             }
         }
         bars.sort(java.util.Comparator.comparing(Bar::sessionDate));
-        return new BarSeries(symbol, "1D", "kis", Instant.now(), List.copyOf(bars));
+        return List.copyOf(bars);
+    }
+
+    private List<Bar> fetchOverseasDailyBars(String exchangeCode, String symbol, LocalDate to) {
+        Map<String, Object> response = get(
+                "/uapi/overseas-price/v1/quotations/dailyprice",
+                "HHDFS76240000",
+                Map.of(
+                        "AUTH", "",
+                        "EXCD", exchangeCode,
+                        "SYMB", symbol,
+                        "GUBN", "0",
+                        "BYMD", to.format(BASIC_DATE),
+                        "MODP", "1"));
+
+        List<Bar> bars = new ArrayList<>();
+        Object rawItems = response.get("output2");
+        if (rawItems instanceof List<?> items) {
+            for (Object rawItem : items) {
+                Map<String, Object> item = objectMap(rawItem);
+                String date = string(item, "xymd");
+                if (date.isBlank()) {
+                    continue;
+                }
+                bars.add(new Bar(
+                        LocalDate.parse(date, BASIC_DATE),
+                        decimal(item, "open"),
+                        decimal(item, "high"),
+                        decimal(item, "low"),
+                        decimal(item, "clos"),
+                        decimal(item, "tvol")));
+            }
+        }
+        bars.sort(java.util.Comparator.comparing(Bar::sessionDate));
+        return List.copyOf(bars);
+    }
+
+    private String overseasExchangeCode(String market) {
+        return switch (market == null ? "" : market.trim().toUpperCase(Locale.ROOT)) {
+            case "NASDAQ" -> "NAS";
+            case "NYSE" -> "NYS";
+            default -> throw new ProviderException(
+                    HttpStatus.BAD_REQUEST,
+                    "KIS_OVERSEAS_MARKET_INVALID",
+                    "KIS 해외 일봉은 NASDAQ과 NYSE를 지원합니다.");
+        };
+    }
+
+    private void validateOverseasSymbol(String symbol) {
+        if (symbol == null || !symbol.matches("[A-Za-z0-9._-]{1,30}")) {
+            throw new ProviderException(HttpStatus.BAD_REQUEST, "KIS_OVERSEAS_SYMBOL_INVALID", "KIS 해외 종목 코드 형식이 올바르지 않습니다.");
+        }
+    }
+
+    private List<Bar> fetchBarsWithRetry(Supplier<List<Bar>> request) {
+        ProviderException lastFailure = null;
+        for (int attempt = 1; attempt <= TRANSIENT_RETRY_ATTEMPTS; attempt++) {
+            try {
+                return request.get();
+            } catch (ProviderException exception) {
+                lastFailure = exception;
+                if (!isTransient(exception) || attempt == TRANSIENT_RETRY_ATTEMPTS) {
+                    throw exception;
+                }
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(REQUEST_INTERVAL_MILLIS * attempt));
+            }
+        }
+        throw lastFailure;
+    }
+
+    private boolean isTransient(ProviderException exception) {
+        String code = exception.getCode();
+        return exception.getStatus().is5xxServerError()
+                && (code.contains("HTTP_429")
+                        || code.contains("HTTP_500")
+                        || code.contains("HTTP_502")
+                        || code.contains("HTTP_503")
+                        || code.contains("HTTP_504")
+                        || code.contains("EGW00201")
+                        || code.contains("UNAVAILABLE"));
+    }
+
+    private void awaitRequestSlot() {
+        synchronized (requestThrottle) {
+            long now = System.nanoTime();
+            long waitNanos = nextRequestAtNanos - now;
+            if (waitNanos > 0) {
+                LockSupport.parkNanos(waitNanos);
+            }
+            nextRequestAtNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(REQUEST_INTERVAL_MILLIS);
+        }
     }
 
     private Map<String, Object> get(String path, String trId, Map<String, String> query) {
         requireCredentials();
+        awaitRequestSlot();
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restClient.get()

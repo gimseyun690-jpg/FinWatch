@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $results = [System.Collections.Generic.List[object]]::new()
 $adminHeaders = $null
+$webSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 
 function Invoke-SmokeStep {
     param(
@@ -58,6 +59,13 @@ function Invoke-Api {
         Uri = "$BaseUrl$Path"
         Headers = $Headers
         TimeoutSec = 30
+        WebSession = $webSession
+    }
+    if ($Method -notin @('GET', 'HEAD', 'OPTIONS')) {
+        $xsrf = $webSession.Cookies.GetCookies($BaseUrl)['XSRF-TOKEN']
+        if ($null -ne $xsrf) {
+            $params.Headers['X-XSRF-TOKEN'] = [Uri]::UnescapeDataString($xsrf.Value)
+        }
     }
     if ($null -ne $Body) {
         $params.ContentType = 'application/json; charset=utf-8'
@@ -89,8 +97,10 @@ Invoke-SmokeStep 'admin login' {
         email = $AdminEmail
         password = $AdminPassword
     }
-    if ([string]::IsNullOrWhiteSpace($response.data.accessToken)) { throw 'accessToken is missing.' }
-    $script:adminHeaders = @{ Authorization = "Bearer $($response.data.accessToken)" }
+    if (-not $response.data.authenticated) { throw 'HttpOnly session was not created.' }
+    $sessionCookie = $webSession.Cookies.GetCookies($BaseUrl)['FW_SESSION']
+    if ($null -eq $sessionCookie) { throw 'FW_SESSION cookie is missing.' }
+    $script:adminHeaders = @{}
     "role=$($response.data.user.role)"
 } | Out-Null
 
@@ -99,6 +109,31 @@ if ($null -ne $adminHeaders) {
         $response = Invoke-Api GET '/api/v1/stocks/search?q=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90&market=KRX&page=0&size=5' $null $adminHeaders
         if ($response.data.items.Count -lt 1) { throw 'Stock search returned no items.' }
         "items=$($response.data.items.Count)"
+    } | Out-Null
+
+    Invoke-SmokeStep 'searchable unlimited watchlist add/remove' {
+        $search = Invoke-Api GET '/api/v1/stocks/search?q=MSFT&market=NASDAQ&page=0&size=5' $null $adminHeaders
+        $candidate = $search.data.items | Where-Object { $_.market -eq 'NASDAQ' -and $_.symbol -eq 'MSFT' } | Select-Object -First 1
+        if ($null -eq $candidate) { throw 'MSFT was not found in the local instrument catalog.' }
+
+        $before = Invoke-Api GET '/api/v1/watchlists' $null $adminHeaders
+        $alreadyPresent = @($before.data | Where-Object { $_.market -eq 'NASDAQ' -and $_.symbol -eq 'MSFT' }).Count -gt 0
+        if ($alreadyPresent) {
+            return "already-present=true, count=$(@($before.data).Count)"
+        }
+
+        Invoke-Api POST '/api/v1/watchlists' @{ market = 'NASDAQ'; symbol = 'MSFT' } $adminHeaders | Out-Null
+        $afterAdd = Invoke-Api GET '/api/v1/watchlists' $null $adminHeaders
+        if (@($afterAdd.data | Where-Object { $_.market -eq 'NASDAQ' -and $_.symbol -eq 'MSFT' }).Count -ne 1) {
+            throw 'Canonical watchlist add was not persisted.'
+        }
+
+        Invoke-Api DELETE '/api/v1/watchlists/NASDAQ/MSFT' $null $adminHeaders | Out-Null
+        $afterDelete = Invoke-Api GET '/api/v1/watchlists' $null $adminHeaders
+        if (@($afterDelete.data | Where-Object { $_.market -eq 'NASDAQ' -and $_.symbol -eq 'MSFT' }).Count -ne 0) {
+            throw 'Canonical watchlist delete was not persisted.'
+        }
+        "countBefore=$(@($before.data).Count), countAfter=$(@($afterDelete.data).Count)"
     } | Out-Null
 
     Invoke-SmokeStep 'KIS quote' {

@@ -20,6 +20,7 @@ public class RealtimeAlertEvaluationService {
     @Transactional
     public int evaluate(LiveQuote quote) {
         var matches = alertRepository.findMatchingActiveAlerts(
+                quote.market(),
                 quote.symbol(),
                 quote.price(),
                 AlertStatus.ACTIVE,

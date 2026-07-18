@@ -1,0 +1,97 @@
+name: finwatch-portfolio
+
+services:
+  frontend:
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE must be a SHA tag or digest}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?PUBLIC_HOST is required}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/lib/finwatch/certbot:/var/www/certbot:ro
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+      start_period: 45s
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION is required}
+        awslogs-group: ${NGINX_LOG_GROUP:?NGINX_LOG_GROUP is required}
+        awslogs-stream-prefix: web
+
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be a SHA tag or digest}
+    restart: unless-stopped
+    env_file:
+      - ${FINWATCH_RUNTIME_ENV_FILE:-/run/finwatch/portfolio.env}
+    expose:
+      - "8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 40s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION is required}
+        awslogs-group: ${BACKEND_LOG_GROUP:?BACKEND_LOG_GROUP is required}
+        awslogs-stream-prefix: api
+
+  redis:
+    image: ${REDIS_IMAGE:?REDIS_IMAGE must be digest-pinned}
+    restart: unless-stopped
+    env_file:
+      - ${FINWATCH_RUNTIME_ENV_FILE:-/run/finwatch/portfolio.env}
+    command: ["/bin/sh", "-c", "exec redis-server --save '' --appendonly no --maxmemory 384mb --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    expose:
+      - "6379"
+    read_only: true
+    tmpfs:
+      - /data:size=32m,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION is required}
+        awslogs-group: ${REDIS_LOG_GROUP:?REDIS_LOG_GROUP is required}
+        awslogs-stream-prefix: redis
+
+networks:
+  default:
+    name: finwatch-portfolio

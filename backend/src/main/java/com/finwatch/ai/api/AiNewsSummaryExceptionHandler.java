@@ -8,7 +8,10 @@ import com.finwatch.common.api.ApiErrorResponse;
 import com.finwatch.ai.provider.AiProviderException;
 import com.finwatch.news.content.NewsContentException;
 
-@RestControllerAdvice(assignableTypes = AiNewsSummaryController.class)
+@RestControllerAdvice(assignableTypes = {
+        AiNewsSummaryController.class,
+        AiDisclosureSummaryController.class
+})
 public class AiNewsSummaryExceptionHandler {
 
     @ExceptionHandler(NewsContentException.class)

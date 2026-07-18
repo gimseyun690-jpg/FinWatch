@@ -4,10 +4,11 @@ export type WatchlistItem = {
   name: string
   market: string
   currency: string
-  price: number
-  change: number
-  changeRate: number
-  asOf: string
-  source: string
+  price: number | null
+  change: number | null
+  changeRate: number | null
+  asOf: string | null
+  source: string | null
+  dataAvailability: 'READY' | 'PARTIAL' | 'METADATA_ONLY' | 'UNAVAILABLE'
   addedAt: string
 }

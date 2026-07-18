@@ -46,6 +46,7 @@ public final class KisTradeMessageParser {
             BigDecimal change = signed(decimal(values[offset + 4]), signCode);
             BigDecimal changeRate = signed(decimal(values[offset + 5]), signCode);
             quotes.add(new LiveQuote(
+                    "KRX",
                     symbol,
                     price,
                     change,

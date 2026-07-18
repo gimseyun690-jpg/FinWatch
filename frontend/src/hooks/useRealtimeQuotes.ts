@@ -8,6 +8,7 @@ import type {
   RealtimeProviderStatus,
   RealtimeSnapshot,
 } from '../types/realtime'
+import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
 
 type RealtimeEvent = {
   type: 'snapshot' | 'quote' | 'status' | 'candle' | 'candles' | 'subscription'
@@ -20,6 +21,17 @@ function mergeCandle(current: IntradayCandle[], candle: IntradayCandle) {
     ? [...current, candle]
     : current.map((item, itemIndex) => itemIndex === index ? candle : item)
   return next.sort((left, right) => left.time.localeCompare(right.time)).slice(-600)
+}
+
+function sameQuote(left: LiveQuote | undefined, right: LiveQuote) {
+  return left?.market === right.market
+    && left.asOf === right.asOf
+    && left.price === right.price
+    && left.change === right.change
+    && left.changeRate === right.changeRate
+    && left.volume === right.volume
+    && left.source === right.source
+    && left.sessionStatus === right.sessionStatus
 }
 
 function websocketUrl() {
@@ -55,8 +67,46 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
 
     let socket: WebSocket | null = null
     let reconnectTimer: number | null = null
+    let realtimeFrame: number | null = null
+    let pendingQuotes: Record<string, LiveQuote> = {}
+    let pendingCandles = new Map<string, IntradayCandle>()
     let disposed = false
     let attempt = 0
+
+    const flushRealtimeUpdates = () => {
+      realtimeFrame = null
+      const quoteUpdates = pendingQuotes
+      const candleUpdates = [...pendingCandles.values()]
+      pendingQuotes = {}
+      pendingCandles = new Map()
+
+      if (Object.keys(quoteUpdates).length > 0) {
+        setQuotes((current) => {
+          let next = current
+          for (const quote of Object.values(quoteUpdates)) {
+            const key = realtimeInstrumentKey(quote.market, quote.symbol)
+            if (sameQuote(current[key], quote)) continue
+            if (next === current) next = { ...current }
+            next[key] = quote
+          }
+          return next
+        })
+      }
+      if (candleUpdates.length > 0) {
+        setIntradayCandles((current) => {
+          const next = { ...current }
+          for (const candle of candleUpdates) {
+            const key = realtimeInstrumentKey(candle.market, candle.symbol)
+            next[key] = mergeCandle(next[key] ?? [], candle)
+          }
+          return next
+        })
+      }
+    }
+
+    const scheduleRealtimeFlush = () => {
+      if (realtimeFrame == null) realtimeFrame = window.requestAnimationFrame(flushRealtimeUpdates)
+    }
 
     const connect = () => {
       if (disposed) return
@@ -78,13 +128,17 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
           const event = JSON.parse(String(message.data)) as RealtimeEvent
           if (event.type === 'snapshot') {
             const snapshot = event.data as RealtimeSnapshot
-            setQuotes(Object.fromEntries(snapshot.quotes.map((quote) => [quote.symbol, quote])))
+            setQuotes(Object.fromEntries(snapshot.quotes.map((quote) => [
+              realtimeInstrumentKey(quote.market, quote.symbol),
+              quote,
+            ])))
             setProviders(Object.fromEntries(snapshot.providers.map((status) => [status.provider, status])))
             return
           }
           if (event.type === 'quote') {
             const quote = event.data as LiveQuote
-            setQuotes((current) => ({ ...current, [quote.symbol]: quote }))
+            pendingQuotes[realtimeInstrumentKey(quote.market, quote.symbol)] = quote
+            scheduleRealtimeFlush()
             return
           }
           if (event.type === 'status') {
@@ -95,7 +149,8 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
           if (event.type === 'candles') {
             const snapshot = event.data as IntradayCandleSnapshot
             const grouped = snapshot.candles.reduce<Record<string, IntradayCandle[]>>((current, candle) => {
-              current[candle.symbol] = [...(current[candle.symbol] ?? []), candle]
+              const key = realtimeInstrumentKey(candle.market, candle.symbol)
+              current[key] = [...(current[key] ?? []), candle]
               return current
             }, {})
             setIntradayCandles(grouped)
@@ -103,10 +158,8 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
           }
           if (event.type === 'candle') {
             const candle = event.data as IntradayCandle
-            setIntradayCandles((current) => ({
-              ...current,
-              [candle.symbol]: mergeCandle(current[candle.symbol] ?? [], candle),
-            }))
+            pendingCandles.set(`${realtimeInstrumentKey(candle.market, candle.symbol)}:${candle.time}`, candle)
+            scheduleRealtimeFlush()
           }
         } catch {
           // Ignore malformed provider relay frames and keep the stream open.
@@ -129,6 +182,7 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
     return () => {
       disposed = true
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer)
+      if (realtimeFrame != null) window.cancelAnimationFrame(realtimeFrame)
       socket?.close(1000, 'page closed')
       if (socketRef.current === socket) socketRef.current = null
     }

@@ -17,6 +17,10 @@ application-secret.yml
 **/application-secret.yml
 *.pem
 *.key
+deploy/*.env
+infra/aws/*.parameters.json
+infra/aws/*.local.yml
+*.tgz
 
 # Frontend
 frontend/node_modules/

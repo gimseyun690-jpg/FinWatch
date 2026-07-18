@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -134,6 +135,12 @@ public class RealtimeSubscriptionManager {
         return currentPlan;
     }
 
+    public void requestRefresh() {
+        if (active && started.get()) {
+            scheduler.execute(this::safeReconcile);
+        }
+    }
+
     void reconcileNow() {
         if (!active) {
             return;
@@ -157,13 +164,10 @@ public class RealtimeSubscriptionManager {
                 .limit(kisLimit)
                 .map(candidate -> candidate.stock().getSymbol())
                 .toList();
-        List<String> us = ordered.stream()
-                .filter(candidate -> "NASDAQ".equalsIgnoreCase(candidate.stock().getMarket())
-                        || "NYSE".equalsIgnoreCase(candidate.stock().getMarket()))
-                .limit(finnhubLimit)
-                .map(candidate -> candidate.stock().getSymbol())
-                .toList();
+        Map<String, String> usMarkets = usInstrumentMarkets(ordered);
+        List<String> us = List.copyOf(usMarkets.keySet());
         currentPlan = new SubscriptionPlan(krx, us, now);
+        finnhubRealtimeClient.updateInstrumentMarkets(usMarkets);
         if (providerClientsStarted.compareAndSet(false, true)) {
             kisRealtimeClient.start(krx);
             finnhubRealtimeClient.start(us);
@@ -206,6 +210,22 @@ public class RealtimeSubscriptionManager {
             }
             return left;
         });
+    }
+
+    private Map<String, String> usInstrumentMarkets(List<Candidate> ordered) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Candidate candidate : ordered) {
+            String market = normalize(candidate.stock().getMarket());
+            if (!"NASDAQ".equals(market) && !"NYSE".equals(market)) {
+                continue;
+            }
+            String symbol = normalize(candidate.stock().getSymbol());
+            if (!result.containsKey(symbol) && result.size() >= finnhubLimit) {
+                continue;
+            }
+            result.merge(symbol, market, (current, incoming) -> current.equals(incoming) ? current : "UNKNOWN");
+        }
+        return java.util.Collections.unmodifiableMap(result);
     }
 
     private String canonical(Stock stock) {

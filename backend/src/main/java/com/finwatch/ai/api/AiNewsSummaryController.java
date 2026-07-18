@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.finwatch.ai.dto.AiSummaryRequest;
 import com.finwatch.ai.dto.AiSummaryResponse;
-import com.finwatch.ai.service.AiNewsSummaryService;
+import com.finwatch.ai.service.AiNewsSummaryOrchestrationService;
 import com.finwatch.ai.service.AiRequestGuard;
 import com.finwatch.common.api.ApiResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,10 +19,10 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/v1/ai/news-summaries")
 public class AiNewsSummaryController {
 
-    private final AiNewsSummaryService aiNewsSummaryService;
+    private final AiNewsSummaryOrchestrationService aiNewsSummaryService;
     private final AiRequestGuard requestGuard;
 
-    public AiNewsSummaryController(AiNewsSummaryService aiNewsSummaryService, AiRequestGuard requestGuard) {
+    public AiNewsSummaryController(AiNewsSummaryOrchestrationService aiNewsSummaryService, AiRequestGuard requestGuard) {
         this.aiNewsSummaryService = aiNewsSummaryService;
         this.requestGuard = requestGuard;
     }

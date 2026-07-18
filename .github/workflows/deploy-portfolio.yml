@@ -1,0 +1,139 @@
+name: Deploy portfolio to AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Commit, branch or tag already accepted by CI
+        required: true
+        default: main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-portfolio
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: portfolio
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      BACKEND_REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY }}
+      FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+      DEPLOYMENT_BUCKET: ${{ vars.DEPLOYMENT_BUCKET }}
+      INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      DB_INSTANCE_ID: ${{ vars.RDS_INSTANCE_ID }}
+      REDIS_IMAGE: ${{ vars.REDIS_IMAGE }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+          fetch-depth: 0
+
+      - name: Reject unverified or missing deployment variables
+        run: |
+          test -n "$AWS_REGION"
+          test -n "$AWS_ROLE_ARN"
+          test -n "$BACKEND_REPOSITORY"
+          test -n "$FRONTEND_REPOSITORY"
+          test -n "$DEPLOYMENT_BUCKET"
+          test -n "$INSTANCE_ID"
+          test -n "$DB_INSTANCE_ID"
+          test -n "$REDIS_IMAGE"
+          test -n "$PUBLIC_BASE_URL"
+          [[ "$PUBLIC_BASE_URL" == https://* ]]
+
+      - name: Configure short-lived AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: finwatch-${{ github.run_id }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve immutable release identifiers
+        id: release
+        run: |
+          release_sha="$(git rev-parse HEAD)"
+          registry="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com"
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "backend_image=$registry/$BACKEND_REPOSITORY:$release_sha" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=$registry/$FRONTEND_REPOSITORY:$release_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the accepted commit
+        run: |
+          docker buildx build --provenance=true --sbom=true --push \
+            --build-arg APP_VERSION="${{ steps.release.outputs.sha }}" \
+            --build-arg VCS_REF="${{ steps.release.outputs.sha }}" \
+            -f backend/Dockerfile -t "${{ steps.release.outputs.backend_image }}" .
+          docker buildx build --provenance=true --sbom=true --push \
+            --build-arg APP_VERSION="${{ steps.release.outputs.sha }}" \
+            --build-arg VCS_REF="${{ steps.release.outputs.sha }}" \
+            -f frontend/Dockerfile -t "${{ steps.release.outputs.frontend_image }}" .
+
+      - name: Require ECR image scan without critical findings
+        shell: bash
+        run: |
+          for repository in "$BACKEND_REPOSITORY" "$FRONTEND_REPOSITORY"; do
+            for attempt in $(seq 1 30); do
+              status="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageTag=${{ steps.release.outputs.sha }} --query imageScanStatus.status --output text 2>/dev/null || true)"
+              [[ "$status" == COMPLETE ]] && break
+              [[ "$status" == FAILED ]] && exit 1
+              sleep 10
+            done
+            critical="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageTag=${{ steps.release.outputs.sha }} --query 'imageScanFindings.findingSeverityCounts.CRITICAL || `0`' --output text)"
+            test "$critical" = 0
+          done
+
+      - name: Publish deployment bundle
+        run: |
+          tar -czf deploy.tgz deploy scripts/aws
+          aws s3 cp deploy.tgz "s3://${DEPLOYMENT_BUCKET}/releases/${{ steps.release.outputs.sha }}/deploy.tgz" --only-show-errors
+
+      - name: Create and wait for pre-migration RDS snapshot
+        id: snapshot
+        run: |
+          snapshot="finwatch-portfolio-deploy-${{ steps.release.outputs.sha }}"
+          snapshot="${snapshot:0:63}"
+          aws rds create-db-snapshot --db-instance-identifier "$DB_INSTANCE_ID" --db-snapshot-identifier "$snapshot" >/dev/null
+          aws rds wait db-snapshot-available --db-snapshot-identifier "$snapshot"
+          echo "id=$snapshot" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy through SSM Run Command
+        id: ssm
+        run: |
+          bootstrap="/tmp/finwatch-${{ steps.release.outputs.sha }}"
+          command="set -euo pipefail; rm -rf '$bootstrap'; mkdir -p '$bootstrap'; aws s3 cp 's3://${DEPLOYMENT_BUCKET}/releases/${{ steps.release.outputs.sha }}/deploy.tgz' /tmp/finwatch-deploy.tgz --region '$AWS_REGION' --only-show-errors; tar -xzf /tmp/finwatch-deploy.tgz -C '$bootstrap'; chmod +x '$bootstrap'/scripts/aws/*.sh; '$bootstrap/scripts/aws/deploy-portfolio.sh' '${{ steps.release.outputs.sha }}' '$DEPLOYMENT_BUCKET' '$AWS_REGION' '${{ steps.release.outputs.backend_image }}' '${{ steps.release.outputs.frontend_image }}' '$REDIS_IMAGE'"
+          jq -n --arg command "$command" '{commands:[$command]}' > /tmp/ssm-parameters.json
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters file:///tmp/ssm-parameters.json --comment "FinWatch ${{ steps.release.outputs.sha }}" --query Command.CommandId --output text)"
+          echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
+          aws ssm wait command-executed --command-id "$command_id" --instance-id "$INSTANCE_ID"
+          status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text)"
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query StandardOutputContent --output text
+          if [[ "$status" != Success ]]; then
+            aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query StandardErrorContent --output text >&2
+            exit 1
+          fi
+
+      - name: Verify from outside AWS
+        run: bash scripts/aws/aws-smoke.sh "$PUBLIC_BASE_URL"
+
+      - name: Record deployment evidence
+        run: |
+          {
+            echo '### FinWatch portfolio deployment'
+            echo "- Commit: ${{ steps.release.outputs.sha }}"
+            echo "- RDS snapshot: ${{ steps.snapshot.outputs.id }}"
+            echo "- SSM command: ${{ steps.ssm.outputs.command_id }}"
+            echo "- URL: $PUBLIC_BASE_URL"
+          } >> "$GITHUB_STEP_SUMMARY"

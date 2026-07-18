@@ -1,17 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { searchStocks } from '../api/stocks'
 import type { StockCatalogItem, StockRef } from '../types/stock'
+import { DataStatusBadge } from './DataStatusBadge'
+import { Icon } from './Icon'
 
 type Props = {
   selectedStock: StockRef
   onSelect: (stock: StockCatalogItem) => void
-}
-
-const availabilityLabel: Record<StockCatalogItem['dataAvailability'], string> = {
-  READY: '데이터 준비됨',
-  PARTIAL: '일부 데이터',
-  METADATA_ONLY: '선택 시 데이터 준비',
-  UNAVAILABLE: '상세 데이터 미지원',
 }
 
 export function GlobalStockSearch({ selectedStock, onSelect }: Props) {
@@ -113,7 +108,7 @@ export function GlobalStockSearch({ selectedStock, onSelect }: Props) {
     <div className="global-stock-search" ref={rootRef}>
       <label htmlFor="global-stock-query">종목 검색</label>
       <div className="global-search-input-row">
-        <span aria-hidden="true">⌕</span>
+        <span aria-hidden="true"><Icon name="search" /></span>
         <input
           id="global-stock-query"
           type="search"
@@ -159,16 +154,14 @@ export function GlobalStockSearch({ selectedStock, onSelect }: Props) {
                     >
                       <span className="search-symbol"><strong>{item.symbol}</strong><small>{item.market}</small></span>
                       <span className="search-company"><strong>{item.name}</strong><small>{item.englishName ?? item.exchange}</small></span>
-                      <span className={`availability ${item.dataAvailability.toLowerCase()}`}>
-                        {availabilityLabel[item.dataAvailability]}
-                      </span>
+                      <DataStatusBadge status={item.dataAvailability} />
                     </button>
                   </li>
                 )
               })}
             </ul>
           )}
-          <p className="global-search-scope">DEMO는 대표 4종목 상세 데이터를 제공하며, 나머지는 종목 마스터 검색 범위입니다.</p>
+          <p className="global-search-scope">전체 종목 마스터 검색 · 상세 선택 시 현재가와 관련 데이터 준비를 시작합니다.</p>
         </div>
       )}
     </div>

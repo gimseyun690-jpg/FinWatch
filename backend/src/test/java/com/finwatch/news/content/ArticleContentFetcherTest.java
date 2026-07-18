@@ -59,6 +59,44 @@ class ArticleContentFetcherTest {
     }
 
     @Test
+    void unknownPublicDomainCanBeFetchedOnDemandForAiSummary() throws Exception {
+        RecordingTransport transport = new RecordingTransport(uri -> response(
+                200,
+                Map.of("Content-Type", List.of("text/html")),
+                "<html><head><title>Market news</title></head><body><article>Revenue increased.</article></body></html>"));
+        ArticleContentFetcher fetcher = fetcher(
+                uri -> SourcePolicyDecision.metadataOnly(uri.getHost()),
+                publicResolver(),
+                transport,
+                4096);
+
+        FetchedArticleContent result = fetcher.fetchForAiSummary(
+                URI.create("https://news.example.test/story"));
+
+        assertThat(result.extractedText()).isEqualTo("Revenue increased.");
+        assertThat(result.contentSource()).isEqualTo(ContentSource.ON_DEMAND_ARTICLE);
+        assertThat(result.rightsProfile()).isEqualTo(RightsProfile.STORE_FOR_AI);
+        assertThat(transport.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void onDemandFetchStillBlocksPrivateAddressBeforeRequest() throws Exception {
+        RecordingTransport transport = new RecordingTransport(uri -> response(200, Map.of(), "unused"));
+        HostResolver privateResolver = host -> List.of(InetAddress.getByName("127.0.0.1"));
+        ArticleContentFetcher fetcher = fetcher(
+                uri -> SourcePolicyDecision.metadataOnly(uri.getHost()),
+                privateResolver,
+                transport,
+                4096);
+
+        assertThatThrownBy(() -> fetcher.fetchForAiSummary(URI.create("https://news.example.test/story")))
+                .isInstanceOf(NewsContentException.class)
+                .extracting(exception -> ((NewsContentException) exception).getCode())
+                .isEqualTo("ARTICLE_PRIVATE_ADDRESS_BLOCKED");
+        assertThat(transport.calls()).isZero();
+    }
+
+    @Test
     void privateAddressIsBlockedBeforeRequest() throws Exception {
         RecordingTransport transport = new RecordingTransport(uri -> response(200, Map.of(), "unused"));
         HostResolver privateResolver = host -> List.of(InetAddress.getByName("127.0.0.1"));
@@ -124,7 +162,8 @@ class ArticleContentFetcherTest {
                 new ArticleContentExtractor(),
                 "FinWatch Test test@example.com",
                 2,
-                maxResponseBytes);
+                maxResponseBytes,
+                0);
     }
 
     private SourcePolicyResolver allowOnly(String host) {

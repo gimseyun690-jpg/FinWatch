@@ -4,8 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import javax.sql.DataSource;
@@ -64,8 +69,24 @@ class DockerInfrastructureIntegrationTest {
         }
 
         assertThat(flyway.info().current()).isNotNull();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("17");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("18");
         assertThat(flyway.validateWithResult().validationSuccessful).isTrue();
+
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet indexes = statement.executeQuery("""
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE schemaname = current_schema()
+                        """)) {
+            java.util.Set<String> names = new java.util.HashSet<>();
+            while (indexes.next()) names.add(indexes.getString("indexname"));
+            assertThat(names).contains(
+                    "idx_news_kind_published_id",
+                    "idx_news_source_published_id",
+                    "idx_news_published_id",
+                    "idx_ai_analyses_news_feature_generated");
+        }
     }
 
     @Test
@@ -82,5 +103,67 @@ class DockerInfrastructureIntegrationTest {
         Long ttl = redisTemplate.getExpire(key, TimeUnit.SECONDS);
         assertThat(ttl).isNotNull().isPositive().isLessThanOrEqualTo(30L);
         redisTemplate.delete(key);
+    }
+
+    @Test
+    void contentFeedIndexSupportsOneHundredThousandRowsWithinTheWarmP95Target() throws Exception {
+        String contentQuery = """
+                SELECT id, title, published_at
+                FROM news_articles
+                WHERE content_kind = 'DISCLOSURE'
+                ORDER BY published_at DESC, id DESC
+                LIMIT 50
+                """;
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            statement.executeUpdate("DELETE FROM news_articles WHERE source = 'PERF'");
+            try {
+                statement.executeUpdate("""
+                        INSERT INTO news_articles (
+                            stock_id, external_id, title, publisher, url, canonical_url,
+                            published_at, source, content_kind, disclosure_type,
+                            content_source, rights_profile, created_at
+                        )
+                        SELECT
+                            (SELECT id FROM stocks WHERE market = 'KRX' AND symbol = '000660'),
+                            'content-feed-perf-' || series,
+                            'Content feed performance fixture ' || series,
+                            'FinWatch Performance Test',
+                            'https://example.com/content-feed-perf/' || series,
+                            'https://example.com/content-feed-perf/' || series,
+                            TIMESTAMPTZ '2026-07-15 12:00:00+00' - (series * INTERVAL '1 second'),
+                            'PERF',
+                            CASE WHEN MOD(series, 100) = 0 THEN 'DISCLOSURE' ELSE 'NEWS' END,
+                            CASE WHEN MOD(series, 100) = 0 THEN 'PERIODIC_REPORT' ELSE NULL END,
+                            'METADATA_ONLY',
+                            'METADATA_ONLY',
+                            CURRENT_TIMESTAMP
+                        FROM generate_series(1, 100000) AS series
+                        """);
+                statement.execute("ANALYZE news_articles");
+
+                StringBuilder plan = new StringBuilder();
+                try (ResultSet rows = statement.executeQuery("EXPLAIN (ANALYZE, BUFFERS) " + contentQuery)) {
+                    while (rows.next()) plan.append(rows.getString(1)).append('\n');
+                }
+                assertThat(plan.toString()).contains("idx_news_kind_published_id");
+
+                List<Long> elapsedMillis = new ArrayList<>();
+                for (int run = 0; run < 20; run++) {
+                    long started = System.nanoTime();
+                    int rowCount = 0;
+                    try (ResultSet rows = statement.executeQuery(contentQuery)) {
+                        while (rows.next()) rowCount++;
+                    }
+                    elapsedMillis.add(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+                    assertThat(rowCount).isEqualTo(50);
+                }
+                Collections.sort(elapsedMillis);
+                long p95Millis = elapsedMillis.get((int) Math.ceil(elapsedMillis.size() * 0.95) - 1);
+                assertThat(p95Millis).isLessThanOrEqualTo(300L);
+            } finally {
+                statement.executeUpdate("DELETE FROM news_articles WHERE source = 'PERF'");
+            }
+        }
     }
 }

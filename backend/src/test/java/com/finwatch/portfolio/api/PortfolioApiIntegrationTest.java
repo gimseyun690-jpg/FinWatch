@@ -42,6 +42,7 @@ class PortfolioApiIntegrationTest {
     void adminPortfolioSeparatesKrwAndUsdValuations() throws Exception {
         Long userId = userRepository.findByEmailIgnoreCase("admin@finwatch.local").orElseThrow().getId();
         realtimeQuoteHub.publish(new LiveQuote(
+                "KRX",
                 "000660",
                 new BigDecimal("2100000"),
                 BigDecimal.ZERO,

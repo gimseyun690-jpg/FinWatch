@@ -47,7 +47,7 @@ public final class StockResponses {
             BigDecimal atr) {
     }
 
-    public record PriceHistory(String symbol, String interval, String period, List<PricePoint> items) {
+    public record PriceHistory(String symbol, String interval, String period, String source, List<PricePoint> items) {
     }
 
     public record MovingAverages(

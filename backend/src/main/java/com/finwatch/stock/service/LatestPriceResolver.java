@@ -27,7 +27,7 @@ public class LatestPriceResolver {
     public Optional<LatestPrice> resolve(Stock stock) {
         Optional<LatestPrice> stored = marketPriceRepository.findTopByStockIdOrderByRecordedAtDesc(stock.getId())
                 .map(this::fromStoredPrice);
-        Optional<LatestPrice> realtime = realtimeQuoteHub.find(stock.getSymbol())
+        Optional<LatestPrice> realtime = realtimeQuoteHub.find(stock.getMarket(), stock.getSymbol())
                 .map(quote -> new LatestPrice(
                         quote.price(),
                         quote.asOf(),

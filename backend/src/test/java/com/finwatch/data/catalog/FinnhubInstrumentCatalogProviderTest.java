@@ -2,10 +2,15 @@ package com.finwatch.data.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+
+import com.sun.net.httpserver.HttpServer;
 
 class FinnhubInstrumentCatalogProviderTest {
 
@@ -25,6 +30,47 @@ class FinnhubInstrumentCatalogProviderTest {
         assertThat(instruments.get(1))
                 .extracting("market", "symbol", "instrumentType")
                 .containsExactly("NYSE", "SPY", "ETF");
+    }
+
+    @Test
+    void followsFinnhubSignedCatalogRedirect() throws Exception {
+        HttpServer fileServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        fileServer.createContext("/symbols.json", exchange -> {
+            byte[] body = """
+                    [{"symbol":"AAPL","mic":"XNAS","description":"Apple Inc","type":"Common Stock","figi":"BBG000B9XRY4","currency":"USD"}]
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        fileServer.start();
+
+        HttpServer apiServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        apiServer.createContext("/stock/symbol", exchange -> {
+            exchange.getResponseHeaders().set(
+                    "Location",
+                    "http://127.0.0.1:" + fileServer.getAddress().getPort() + "/symbols.json");
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
+        apiServer.start();
+
+        try {
+            FinnhubInstrumentCatalogProvider provider = new FinnhubInstrumentCatalogProvider(
+                    "fixture-key",
+                    "http://127.0.0.1:" + apiServer.getAddress().getPort(),
+                    Duration.ofSeconds(1),
+                    Duration.ofSeconds(2));
+
+            var snapshot = provider.fetchCatalog();
+
+            assertThat(snapshot.instruments()).hasSize(1);
+            assertThat(snapshot.instruments().getFirst().symbol()).isEqualTo("AAPL");
+        } finally {
+            apiServer.stop(0);
+            fileServer.stop(0);
+        }
     }
 
     private Map<String, Object> row(

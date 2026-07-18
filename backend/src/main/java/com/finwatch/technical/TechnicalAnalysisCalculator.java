@@ -11,9 +11,17 @@ import org.springframework.stereotype.Component;
 public class TechnicalAnalysisCalculator {
 
     private static final int SCALE = 4;
-    private static final int RSI_PERIOD = 14;
-    private static final int ATR_PERIOD = 14;
-    private static final int BOLLINGER_PERIOD = 20;
+    public static final int MOVING_AVERAGE_SHORT_PERIOD = 5;
+    public static final int MOVING_AVERAGE_MEDIUM_PERIOD = 20;
+    public static final int MOVING_AVERAGE_LONG_PERIOD = 60;
+    public static final int RSI_PERIOD = 14;
+    public static final int ATR_PERIOD = 14;
+    public static final int BOLLINGER_PERIOD = 20;
+    public static final int BOLLINGER_DEVIATION_MULTIPLIER = 2;
+    public static final int MACD_FAST_PERIOD = 12;
+    public static final int MACD_SLOW_PERIOD = 26;
+    public static final int MACD_SIGNAL_PERIOD = 9;
+    public static final int VOLUME_MOVING_AVERAGE_PERIOD = 20;
 
     public Result calculate(List<BigDecimal> closes) {
         return calculateMarket(closes.stream()
@@ -29,14 +37,17 @@ public class TechnicalAnalysisCalculator {
         List<BigDecimal> closes = candles.stream().map(Candle::close).toList();
         List<BigDecimal> volumes = candles.stream().map(Candle::volume).toList();
         BigDecimal latest = closes.getLast();
-        BigDecimal ma5 = simpleMovingAverage(closes, 5);
-        BigDecimal ma20 = simpleMovingAverage(closes, 20);
-        BigDecimal ma60 = simpleMovingAverage(closes, 60);
+        BigDecimal ma5 = simpleMovingAverage(closes, MOVING_AVERAGE_SHORT_PERIOD);
+        BigDecimal ma20 = simpleMovingAverage(closes, MOVING_AVERAGE_MEDIUM_PERIOD);
+        BigDecimal ma60 = simpleMovingAverage(closes, MOVING_AVERAGE_LONG_PERIOD);
         BigDecimal rsi = relativeStrengthIndex(closes, RSI_PERIOD);
         MacdComputation macd = macdComputation(closes);
-        BollingerBands bollingerBands = bollingerBands(closes, BOLLINGER_PERIOD, 2);
+        BollingerBands bollingerBands = bollingerBands(
+                closes,
+                BOLLINGER_PERIOD,
+                BOLLINGER_DEVIATION_MULTIPLIER);
         BigDecimal atr = averageTrueRange(candles, ATR_PERIOD);
-        BigDecimal volumeMa20 = simpleMovingAverage(volumes, 20);
+        BigDecimal volumeMa20 = simpleMovingAverage(volumes, VOLUME_MOVING_AVERAGE_PERIOD);
 
         Signal movingAverageSignal = movingAverageSignal(latest, ma5, ma20);
         Signal rsiSignal = rsi.compareTo(BigDecimal.valueOf(70)) >= 0
@@ -160,13 +171,13 @@ public class TechnicalAnalysisCalculator {
     }
 
     private MacdComputation macdComputation(List<BigDecimal> values) {
-        List<BigDecimal> fast = emaSeries(values, 12);
-        List<BigDecimal> slow = emaSeries(values, 26);
+        List<BigDecimal> fast = emaSeries(values, MACD_FAST_PERIOD);
+        List<BigDecimal> slow = emaSeries(values, MACD_SLOW_PERIOD);
         List<BigDecimal> macdSeries = new ArrayList<>(values.size());
         for (int index = 0; index < values.size(); index++) {
             macdSeries.add(fast.get(index).subtract(slow.get(index)));
         }
-        List<BigDecimal> signalSeries = emaSeries(macdSeries, 9);
+        List<BigDecimal> signalSeries = emaSeries(macdSeries, MACD_SIGNAL_PERIOD);
         List<BigDecimal> histogramSeries = new ArrayList<>(values.size());
         for (int index = 0; index < values.size(); index++) {
             histogramSeries.add(macdSeries.get(index).subtract(signalSeries.get(index)));

@@ -10,7 +10,6 @@ export async function explainTechnical(market: string, symbol: string, signal?: 
       market,
       symbol,
       interval: '1D',
-      promptVersion: 'technical-explanation-v1',
     }),
     signal,
   })

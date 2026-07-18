@@ -1,6 +1,6 @@
 # FinWatch DB 스키마
 
-상태: V17 마이그레이션까지 구현됨. PostgreSQL과 snake_case를 기준으로 한다.
+상태: V19 마이그레이션까지 구현됨. PostgreSQL과 snake_case를 기준으로 한다.
 
 ## 1. 관계 요약
 
@@ -13,6 +13,7 @@ stocks 1--N stock_aliases
 stocks 1--N news_articles
 news_articles 1--N ai_analyses
 users 1--N ai_usage_logs
+users 1--N auth_identities
 ai_analyses 1--N ai_usage_logs
 stocks 1--N ai_technical_explanations
 stocks 1--N ai_daily_change_briefings
@@ -33,11 +34,30 @@ stocks 1--N ai_daily_change_briefings
 | 컬럼 | 타입 | 제약/설명 |
 |---|---|---|
 | id | BIGINT | PK |
-| email | VARCHAR(255) | UNIQUE, NOT NULL |
-| password_hash | VARCHAR(255) | NOT NULL |
+| email | VARCHAR(255) | UNIQUE, nullable(소셜 전용 계정) |
+| password_hash | VARCHAR(255) | nullable(소셜 전용 계정) |
+| display_name | VARCHAR(100) | NOT NULL |
+| profile_image_url | VARCHAR(1000) | nullable |
 | role | VARCHAR(20) | USER / ADMIN |
+| status | VARCHAR(20) | ACTIVE / DISABLED / DELETED |
+| last_login_at | TIMESTAMPTZ | nullable |
 | created_at | TIMESTAMPTZ | NOT NULL |
 | updated_at | TIMESTAMPTZ | NOT NULL |
+
+### auth_identities
+
+| 컬럼 | 타입 | 제약/설명 |
+|---|---|---|
+| id | BIGINT | PK |
+| user_id | BIGINT | users FK, ON DELETE CASCADE |
+| provider | VARCHAR(20) | LOCAL / KAKAO |
+| provider_subject | VARCHAR(255) | provider의 안정 식별자 |
+| provider_email | VARCHAR(255) | 선택 claim, 계정 병합에 사용하지 않음 |
+| created_at | TIMESTAMPTZ | NOT NULL |
+| updated_at | TIMESTAMPTZ | NOT NULL |
+| last_login_at | TIMESTAMPTZ | nullable |
+
+UNIQUE `(provider, provider_subject)`, INDEX `(user_id)`.
 
 ### stocks
 
@@ -160,6 +180,8 @@ UNIQUE `(stock_id, price_interval, recorded_at)`. 인덱스 `(stock_id, recorded
 | created_at | TIMESTAMPTZ | NOT NULL |
 
 UNIQUE `(source, external_id)`, 인덱스 `(stock_id, published_at DESC)`, `(stock_id, content_kind, published_at DESC)`.
+
+전체 뉴스·공시 피드 pagination 구현 시 실제 PostgreSQL query plan을 기준으로 `(content_kind, published_at DESC, id DESC)`, `(source, published_at DESC, id DESC)`, `(published_at DESC, id DESC)` 인덱스를 추가한다. AI 분석 상태 filter와 제목 검색 인덱스의 도입 조건은 `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md` 8절을 따른다.
 
 ### source_policies
 
@@ -309,5 +331,6 @@ Flyway를 사용하며 현재 적용 파일은 다음과 같다. 파일명과 �
 15. `V15__classify_disclosure_articles.sql`: 뉴스·공시 콘텐츠 구분과 조회 인덱스
 16. `V16__create_exchange_rates.sql`: USD/KRW 환율 이력과 포트폴리오 매수 환율
 17. `V17__create_ai_daily_change_briefings.sql`: 일일 변화 브리핑 결과와 사용량 로그 FK
+18. `V18__add_content_feed_indexes.sql`: 통합 콘텐츠 피드의 종류·출처·발행시각 정렬과 AI 완료 상태 조회 인덱스
 
 `prompt_templates`, `ai_model_prices`는 현재 대회 MVP 범위가 아니다. 프롬프트 버전과 단가는 환경설정으로 고정하며, 운영 중 무중단 편집·시점별 단가 이력이 필요할 때 별도 마이그레이션으로 추가한다.

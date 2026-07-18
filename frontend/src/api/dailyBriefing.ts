@@ -13,7 +13,7 @@ async function parse(response: Response) {
 export async function createDailyBriefing(market: string, symbol: string, signal?: AbortSignal) {
   return parse(await authFetch('/api/v1/ai/daily-change-briefings', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
-    body: JSON.stringify({ market, symbol, promptVersion: 'daily-change-briefing-v1' }),
+    body: JSON.stringify({ market, symbol }),
   }))
 }
 

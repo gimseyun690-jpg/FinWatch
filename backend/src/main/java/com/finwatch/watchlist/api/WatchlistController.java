@@ -41,7 +41,18 @@ public class WatchlistController {
     public ApiResponse<WatchlistItemResponse> add(
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody WatchlistCreateRequest request) {
-        return ApiResponse.success(watchlistService.add(userId(jwt), request.symbol()), "관심종목 등록 성공");
+        return ApiResponse.success(
+                watchlistService.add(userId(jwt), request.market(), request.symbol()),
+                "관심종목 등록 성공");
+    }
+
+    @DeleteMapping("/{market}/{symbol}")
+    public ApiResponse<Void> removeCanonical(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String market,
+            @PathVariable String symbol) {
+        watchlistService.remove(userId(jwt), market, symbol);
+        return ApiResponse.success(null, "관심종목 삭제 성공");
     }
 
     @DeleteMapping("/{symbol}")

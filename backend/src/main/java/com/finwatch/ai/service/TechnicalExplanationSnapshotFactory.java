@@ -24,6 +24,7 @@ import com.finwatch.stock.dto.StockResponses.TechnicalAnalysis;
 import com.finwatch.stock.repository.MarketPriceRepository;
 import com.finwatch.stock.repository.StockRepository;
 import com.finwatch.stock.service.StockQueryService;
+import com.finwatch.technical.TechnicalAnalysisCalculator;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -139,6 +140,9 @@ public class TechnicalExplanationSnapshotFactory {
             String freshness) {
         List<TechnicalEvidence> result = new ArrayList<>();
         result.add(new TechnicalEvidence("I1", "MOVING_AVERAGE", values(
+                "shortPeriod", BigDecimal.valueOf(TechnicalAnalysisCalculator.MOVING_AVERAGE_SHORT_PERIOD),
+                "mediumPeriod", BigDecimal.valueOf(TechnicalAnalysisCalculator.MOVING_AVERAGE_MEDIUM_PERIOD),
+                "longPeriod", BigDecimal.valueOf(TechnicalAnalysisCalculator.MOVING_AVERAGE_LONG_PERIOD),
                 "price", latest.getClosePrice(),
                 "ma5", analysis.movingAverages().ma5(),
                 "ma20", analysis.movingAverages().ma20(),
@@ -154,13 +158,21 @@ public class TechnicalExplanationSnapshotFactory {
                 "upperBoundary", BigDecimal.valueOf(70)),
                 "Wilder RSI14 " + number(analysis.rsi().value()) + " · 신호 " + analysis.rsi().signal()));
         result.add(new TechnicalEvidence("I3", "MACD", values(
+                "fastPeriod", BigDecimal.valueOf(TechnicalAnalysisCalculator.MACD_FAST_PERIOD),
+                "slowPeriod", BigDecimal.valueOf(TechnicalAnalysisCalculator.MACD_SLOW_PERIOD),
+                "signalPeriod", BigDecimal.valueOf(TechnicalAnalysisCalculator.MACD_SIGNAL_PERIOD),
                 "value", analysis.macd().value(),
                 "signal", analysis.macd().signalLine(),
                 "histogram", analysis.macd().histogram()),
-                "MACD " + number(analysis.macd().value()) + " · Signal "
+                "MACD " + TechnicalAnalysisCalculator.MACD_FAST_PERIOD + "·"
+                        + TechnicalAnalysisCalculator.MACD_SLOW_PERIOD + "·"
+                        + TechnicalAnalysisCalculator.MACD_SIGNAL_PERIOD + " · "
+                        + number(analysis.macd().value()) + " · Signal "
                         + number(analysis.macd().signalLine()) + " · Histogram "
                         + number(analysis.macd().histogram()) + " · 신호 " + analysis.macd().signal()));
         result.add(new TechnicalEvidence("I4", "BOLLINGER_BANDS", values(
+                "period", BigDecimal.valueOf(TechnicalAnalysisCalculator.BOLLINGER_PERIOD),
+                "deviationMultiplier", BigDecimal.valueOf(TechnicalAnalysisCalculator.BOLLINGER_DEVIATION_MULTIPLIER),
                 "upper", analysis.bollingerBands().upper(),
                 "middle", analysis.bollingerBands().middle(),
                 "lower", analysis.bollingerBands().lower(),
@@ -179,6 +191,7 @@ public class TechnicalExplanationSnapshotFactory {
                 ? BigDecimal.ZERO
                 : latest.getVolume().divide(analysis.volumeMa20(), 4, RoundingMode.HALF_UP);
         result.add(new TechnicalEvidence("I6", "VOLUME", values(
+                "movingAveragePeriod", BigDecimal.valueOf(TechnicalAnalysisCalculator.VOLUME_MOVING_AVERAGE_PERIOD),
                 "current", latest.getVolume(),
                 "ma20", analysis.volumeMa20(),
                 "ratio", volumeRatio),

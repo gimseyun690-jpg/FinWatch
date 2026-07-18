@@ -2,17 +2,33 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { BrowserRouter } from 'react-router'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
   </StrictMode>,
 )
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // The app remains usable online when service worker registration fails.
+if ('serviceWorker' in navigator) {
+  if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {
+        // The app remains usable online when service worker registration fails.
+      })
     })
-  })
+  } else {
+    void Promise.all([
+      navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(
+        registrations
+          .filter((registration) => registration.active?.scriptURL.endsWith('/sw.js'))
+          .map((registration) => registration.unregister()),
+      )),
+      caches.keys().then((keys) => Promise.all(
+        keys.filter((key) => key.startsWith('finwatch-shell-')).map((key) => caches.delete(key)),
+      )),
+    ])
+  }
 }

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,6 +21,17 @@ public interface MarketPriceRepository extends JpaRepository<MarketPrice, Long> 
             String interval,
             java.time.Instant from,
             java.time.Instant to);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            delete from MarketPrice p
+            where p.stock.id = :stockId
+              and p.interval = :interval
+              and upper(p.source) = 'DEMO'
+            """)
+    int deleteDemoHistory(
+            @Param("stockId") Long stockId,
+            @Param("interval") String interval);
 
     boolean existsByStockId(Long stockId);
 

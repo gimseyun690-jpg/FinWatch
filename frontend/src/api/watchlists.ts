@@ -18,16 +18,16 @@ export async function getWatchlist(signal?: AbortSignal) {
   return readData<WatchlistItem[]>(await authFetch('/api/v1/watchlists', { signal }))
 }
 
-export async function addWatchlist(symbol: string) {
+export async function addWatchlist(stock: { market: string; symbol: string }) {
   return readData<WatchlistItem>(await authFetch('/api/v1/watchlists', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ symbol }),
+    body: JSON.stringify(stock),
   }))
 }
 
-export async function removeWatchlist(symbol: string) {
-  await readData<null>(await authFetch(`/api/v1/watchlists/${encodeURIComponent(symbol)}`, {
+export async function removeWatchlist(stock: { market: string; symbol: string }) {
+  await readData<null>(await authFetch(`/api/v1/watchlists/${encodeURIComponent(stock.market)}/${encodeURIComponent(stock.symbol)}`, {
     method: 'DELETE',
   }))
 }

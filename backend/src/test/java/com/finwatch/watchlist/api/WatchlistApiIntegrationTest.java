@@ -84,6 +84,40 @@ class WatchlistApiIntegrationTest {
                 .andExpect(jsonPath("$.data.length()").value(0));
     }
 
+    @Test
+    void canonicalSearchResultsCanGrowBeyondFourAndKeepMetadataOnlyStocks() throws Exception {
+        String[][] stocks = {
+                {"KRX", "005930"},
+                {"KRX", "035420"},
+                {"NASDAQ", "AAPL"},
+                {"NASDAQ", "MSFT"},
+                {"NASDAQ", "TSLA"}
+        };
+        for (String[] stock : stocks) {
+            mockMvc.perform(post("/api/v1/watchlists")
+                            .with(jwtFor(userId, "USER"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"market\":\"" + stock[0] + "\",\"symbol\":\"" + stock[1] + "\"}"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.data.market").value(stock[0]))
+                    .andExpect(jsonPath("$.data.symbol").value(stock[1]));
+        }
+
+        mockMvc.perform(get("/api/v1/watchlists").with(jwtFor(userId, "USER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(5))
+                .andExpect(jsonPath("$.data[4].symbol").value("TSLA"))
+                .andExpect(jsonPath("$.data[4].price").doesNotExist())
+                .andExpect(jsonPath("$.data[4].dataAvailability").value("METADATA_ONLY"));
+
+        mockMvc.perform(delete("/api/v1/watchlists/NASDAQ/TSLA").with(jwtFor(userId, "USER")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/watchlists").with(jwtFor(userId, "USER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(4));
+    }
+
     private AppUser user(String email) {
         return appUserRepository.findByEmailIgnoreCase(email).orElseThrow();
     }

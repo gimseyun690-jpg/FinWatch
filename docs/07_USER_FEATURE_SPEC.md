@@ -2,7 +2,7 @@
 
 상태: v1.0 MVP 구현
 기준일: 2026-07-14
-범위: 관심종목, 포트폴리오, 가격 알림, 사용자 메인 대시보드
+범위: 관심종목, 포트폴리오, 가격 알림, 사용자 메인 대시보드. Sidebar·route·뉴스/공시 목록 개편은 `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md`를 따른다.
 
 ## 1. 목적과 문서 상태
 
@@ -67,17 +67,18 @@
 |---|---|---|
 | 목록 조회 | GET /api/v1/watchlists | 200 |
 | 등록 | POST /api/v1/watchlists | 201 |
-| 삭제 | DELETE /api/v1/watchlists/{symbol} | 200 |
+| 삭제 | DELETE /api/v1/watchlists/{market}/{symbol} | 200 |
 
 등록 요청:
 
 ~~~json
 {
+  "market": "KRX",
   "symbol": "000660"
 }
 ~~~
 
-목록과 등록 응답 항목은 id, symbol, name, market, currency, price, change, changeRate, asOf, source, addedAt을 포함한다.
+목록과 등록 응답 항목은 id, symbol, name, market, currency, price, change, changeRate, asOf, source, dataAvailability, addedAt을 포함한다. 아직 상세 데이터가 없는 종목의 시세 필드는 null일 수 있다.
 
 ### 3.2 업무 규칙
 
@@ -87,9 +88,9 @@
 4. 같은 사용자가 이미 등록한 종목을 다시 등록하면 기존 항목을 반환하거나 덮어쓰지 않고 409 WATCHLIST_DUPLICATED를 반환한다.
 5. DB의 UNIQUE(user_id, stock_id)를 최종 동시성 방어선으로 사용하며, 동시 등록으로 발생한 유니크 충돌도 같은 409 코드로 변환해야 한다.
 6. 목록은 addedAt 오름차순으로 반환한다. 현재 구현도 생성 시각 오름차순이다.
-7. 목록의 가격과 등락 정보는 관심종목에 복사해 저장하지 않고 조회 시 최신 market_prices로 계산한다.
+7. 목록의 가격과 등락 정보는 관심종목에 복사해 저장하지 않고 조회 시 유효한 WebSocket 최신값, REST snapshot, 최신 market_prices 순서로 계산한다.
 8. change는 최신 종가에서 직전 1D 종가를 뺀 값이다. changeRate는 change / 직전 종가 × 100이며 직전 종가가 0이면 0이다.
-9. 삭제는 현재 로그인 사용자의 목록만 대상으로 하며 symbol 비교는 대소문자를 구분하지 않는다.
+9. 삭제는 현재 로그인 사용자의 목록만 대상으로 하며 `(market, symbol)` canonical 식별자를 사용한다. 기존 symbol-only 삭제는 호환용이다.
 10. 삭제 대상이 없으면 성공으로 간주하지 않고 404 WATCHLIST_NOT_FOUND를 반환한다.
 11. MVP에는 사용자별 관심종목 개수 제한이 없다. 운영 제한을 도입하면 서버 설정과 오류 코드 WATCHLIST_LIMIT_EXCEEDED를 먼저 명세한다.
 
@@ -98,8 +99,10 @@
 1. 목록 로드 후 현재 선택된 symbol이 목록에 없으면 첫 번째 관심종목을 선택한다.
 2. 선택 중인 종목을 삭제하면 남은 첫 번째 종목을 선택한다.
 3. 목록이 비면 종목 상세를 숨기고 첫 관심종목 등록 안내를 표시한다.
-4. 추가 선택 목록에는 활성 종목 중 아직 등록하지 않은 종목만 표시한다.
+4. 추가 영역은 고정 select가 아니라 전체 로컬 카탈로그의 심볼·한글명·영문명 검색 결과를 표시한다. 이미 등록한 결과는 `등록됨`으로 비활성화한다.
 5. 등록·삭제 중 같은 버튼의 중복 요청을 막고 실패하면 서버 메시지를 영역 내 오류로 표시한다.
+6. 한 종목을 등록해도 추가 영역을 닫지 않아 여러 종목을 연속 등록할 수 있다.
+7. 등록 직후 해당 종목의 실시간 구독 우선순위와 quote·일봉·뉴스·공시 준비 작업을 갱신한다.
 
 ### 3.4 오류
 

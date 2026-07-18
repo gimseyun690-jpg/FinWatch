@@ -40,7 +40,7 @@ public class RealtimeAlertTickListener {
 
     void accept(RealtimeEvent event) {
         if ("quote".equals(event.type()) && event.data() instanceof LiveQuote quote) {
-            pendingQuotes.put(quote.symbol(), quote);
+            pendingQuotes.put(quote.canonicalKey(), quote);
         }
     }
 

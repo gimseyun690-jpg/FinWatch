@@ -96,6 +96,7 @@ class AlertApiIntegrationTest {
         long alertId = new tools.jackson.databind.ObjectMapper().readTree(response).get("data").get("id").asLong();
 
         realtimeQuoteHub.publish(new LiveQuote(
+                "NASDAQ",
                 "AAPL",
                 new BigDecimal("450"),
                 new BigDecimal("10"),

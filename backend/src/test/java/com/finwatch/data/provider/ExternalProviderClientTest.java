@@ -25,6 +25,7 @@ class ExternalProviderClientTest {
     private HttpServer server;
     private String baseUrl;
     private final AtomicInteger tokenCalls = new AtomicInteger();
+    private final AtomicInteger dailyBarCalls = new AtomicInteger();
 
     @BeforeEach
     void setUp() throws IOException {
@@ -43,11 +44,22 @@ class ExternalProviderClientTest {
                     """);
         });
         server.createContext("/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice", exchange -> {
+            dailyBarCalls.incrementAndGet();
             assertThat(exchange.getRequestHeaders().getFirst("tr_id")).isEqualTo("FHKST03010100");
             respond(exchange, 200, """
                     {"rt_cd":"0","output2":[
                       {"stck_bsop_date":"20260712","stck_oprc":"84000","stck_hgpr":"86000","stck_lwpr":"83500","stck_clpr":"85000","acml_vol":"1000"},
                       {"stck_bsop_date":"20260711","stck_oprc":"83000","stck_hgpr":"84500","stck_lwpr":"82500","stck_clpr":"83800","acml_vol":"900"}
+                    ]}
+                    """);
+        });
+        server.createContext("/uapi/overseas-price/v1/quotations/dailyprice", exchange -> {
+            assertThat(exchange.getRequestHeaders().getFirst("tr_id")).isEqualTo("HHDFS76240000");
+            assertThat(exchange.getRequestURI().getRawQuery()).contains("EXCD=NAS", "SYMB=MSFT", "GUBN=0", "MODP=1");
+            respond(exchange, 200, """
+                    {"rt_cd":"0","output2":[
+                      {"xymd":"20260713","open":"503.20","high":"508.10","low":"501.70","clos":"506.45","tvol":"18340000"},
+                      {"xymd":"20260712","open":"499.10","high":"504.50","low":"497.20","clos":"502.80","tvol":"16900000"}
                     ]}
                     """);
         });
@@ -88,6 +100,13 @@ class ExternalProviderClientTest {
                     {"c":317.31,"d":2.4,"dp":0.7621,"h":318.0,"l":313.2,"o":314.5,"pc":314.91,"t":1784000000}
                     """);
         });
+        server.createContext("/stock/candle", exchange -> {
+            assertThat(exchange.getRequestHeaders().getFirst("X-Finnhub-Token")).isEqualTo("finnhub-key");
+            assertThat(exchange.getRequestURI().getRawQuery()).contains("symbol=AAPL", "resolution=D");
+            respond(exchange, 200, """
+                    {"c":[212.5,214.1],"h":[214.0,215.0],"l":[209.0,211.8],"o":[210.0,212.7],"s":"ok","t":[1783742400,1784001600],"v":[48120000,39800000]}
+                    """);
+        });
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -112,6 +131,33 @@ class ExternalProviderClientTest {
         assertThat(bars.items()).hasSize(2);
         assertThat(bars.items().getFirst().sessionDate()).isEqualTo(LocalDate.of(2026, 7, 11));
         assertThat(tokenCalls).hasValue(1);
+    }
+
+    @Test
+    void kisSplitsLongHistoryIntoProviderSafeDateWindows() {
+        KisMarketDataClient client = new KisMarketDataClient(
+                "app-key", "app-secret", "paper", baseUrl, baseUrl, java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
+
+        BarSeries bars = client.getDomesticDailyBars(
+                "005930", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 7, 13));
+
+        assertThat(dailyBarCalls).hasValue(2);
+        assertThat(bars.items()).hasSize(2);
+        assertThat(bars.items()).extracting(item -> item.sessionDate()).doesNotHaveDuplicates();
+        assertThat(tokenCalls).hasValue(1);
+    }
+
+    @Test
+    void kisNormalizesOverseasDailyBarsForUsFallback() {
+        KisMarketDataClient client = new KisMarketDataClient(
+                "app-key", "app-secret", "paper", baseUrl, baseUrl, java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
+
+        BarSeries bars = client.getOverseasDailyBars(
+                "NASDAQ", "MSFT", LocalDate.of(2026, 7, 12), LocalDate.of(2026, 7, 13));
+
+        assertThat(bars.items()).hasSize(2);
+        assertThat(bars.items().getLast().close()).isEqualByComparingTo("506.45");
+        assertThat(bars.providerId()).isEqualTo("kis-overseas");
     }
 
     @Test
@@ -158,6 +204,19 @@ class ExternalProviderClientTest {
         assertThat(quote.changeRate()).isEqualByComparingTo("0.7621");
         assertThat(quote.currency()).isEqualTo("USD");
         assertThat(quote.providerId()).isEqualTo("finnhub");
+    }
+
+    @Test
+    void finnhubNormalizesDailyBarsWhenPlanAllowsHistory() {
+        FinnhubMarketDataClient client = new FinnhubMarketDataClient(
+                "finnhub-key", baseUrl, java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
+
+        BarSeries bars = client.dailyBars(
+                "aapl", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 15));
+
+        assertThat(bars.items()).hasSize(2);
+        assertThat(bars.items().getFirst().close()).isEqualByComparingTo("212.5");
+        assertThat(bars.providerId()).isEqualTo("finnhub");
     }
 
     @Test

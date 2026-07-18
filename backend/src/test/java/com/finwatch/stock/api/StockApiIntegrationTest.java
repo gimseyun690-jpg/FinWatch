@@ -35,6 +35,7 @@ class StockApiIntegrationTest {
                         .queryParam("interval", "1D"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.period").value("3M"))
+                .andExpect(jsonPath("$.data.source").value("DEMO"))
                 .andExpect(jsonPath("$.data.items").isNotEmpty())
                 .andExpect(jsonPath("$.data.items[-1].indicators.ma20").isNumber())
                 .andExpect(jsonPath("$.data.items[-1].indicators.rsi").isNumber())
@@ -72,6 +73,23 @@ class StockApiIntegrationTest {
                     .andExpect(jsonPath("$.data.period").value(period))
                     .andExpect(jsonPath("$.data.items").isNotEmpty());
         }
+
+        mockMvc.perform(get("/api/v1/stocks/000660/prices")
+                        .with(jwt())
+                        .queryParam("period", "ALL")
+                        .queryParam("interval", "1W"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.interval").value("1W"))
+                .andExpect(jsonPath("$.data.items").isNotEmpty())
+                .andExpect(jsonPath("$.data.items[-1].indicators.ma5").isNumber());
+
+        mockMvc.perform(get("/api/v1/stocks/000660/prices")
+                        .with(jwt())
+                        .queryParam("period", "ALL")
+                        .queryParam("interval", "1M"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.interval").value("1M"))
+                .andExpect(jsonPath("$.data.items").isNotEmpty());
 
         mockMvc.perform(get("/api/v1/stocks/000660/prices")
                         .with(jwt())

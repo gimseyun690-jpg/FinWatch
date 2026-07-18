@@ -3,7 +3,7 @@ package com.finwatch.watchlist.dto;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-import com.finwatch.stock.dto.StockResponses.StockSummary;
+import com.finwatch.stock.dto.StockSearchResponses.CanonicalStockDetail;
 import com.finwatch.watchlist.domain.Watchlist;
 
 public record WatchlistItemResponse(
@@ -17,9 +17,10 @@ public record WatchlistItemResponse(
         BigDecimal changeRate,
         Instant asOf,
         String source,
+        String dataAvailability,
         Instant addedAt) {
 
-    public static WatchlistItemResponse from(Watchlist watchlist, StockSummary stock) {
+    public static WatchlistItemResponse from(Watchlist watchlist, CanonicalStockDetail stock) {
         return new WatchlistItemResponse(
                 watchlist.getId(),
                 stock.symbol(),
@@ -31,6 +32,7 @@ public record WatchlistItemResponse(
                 stock.changeRate(),
                 stock.asOf(),
                 stock.source(),
+                stock.dataAvailability(),
                 watchlist.getCreatedAt());
     }
 }

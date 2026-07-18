@@ -20,7 +20,7 @@ export async function summarizeNews(newsId: number, signal?: AbortSignal) {
   const response = await authFetch('/api/v1/ai/news-summaries', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ newsId, promptVersion: 'news-analysis-v2' }),
+    body: JSON.stringify({ newsId }),
     signal,
   })
   return readData<AiSummary>(response)

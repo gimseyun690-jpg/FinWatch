@@ -18,6 +18,8 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import type { PriceInterval, PricePeriod, PricePoint, TechnicalAnalysis } from '../types/stock'
+import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
+import { resolveDataStatus } from './dataStatus'
 
 type Props = {
   symbol: string
@@ -28,10 +30,13 @@ type Props = {
   interval: PriceInterval
   loading: boolean
   error: string | null
-  source: 'API' | 'DEMO' | 'LIVE'
+  source: string
+  freshness?: string | null
+  asOf?: string | null
   events?: TechnicalAnalysis['events']
   onPeriodChange: (period: PricePeriod) => void
   onIntervalChange: (interval: PriceInterval) => void
+  onRetry?: () => void
 }
 
 type ChartTool = 'pan' | 'trend' | 'horizontal'
@@ -58,6 +63,8 @@ const defaultChartSettings: ChartSettings = {
   showEvents: true,
   oscillator: 'rsi',
 }
+
+let chartInstanceSequence = 0
 
 function loadChartSettings(): ChartSettings {
   try {
@@ -119,6 +126,110 @@ type HoverData = {
   oscillatorValue?: number
 }
 
+type ChartSeriesRefs = {
+  candle: ISeriesApi<'Candlestick'> | null
+  volume: ISeriesApi<'Histogram'> | null
+  ma5: ISeriesApi<'Line'> | null
+  ma20: ISeriesApi<'Line'> | null
+  ma60: ISeriesApi<'Line'> | null
+  volumeMa20: ISeriesApi<'Line'> | null
+  bollingerUpper: ISeriesApi<'Line'> | null
+  bollingerMiddle: ISeriesApi<'Line'> | null
+  bollingerLower: ISeriesApi<'Line'> | null
+  rsi: ISeriesApi<'Line'> | null
+  rsiUpper: ISeriesApi<'Line'> | null
+  rsiLower: ISeriesApi<'Line'> | null
+  macdHistogram: ISeriesApi<'Histogram'> | null
+  macdSignal: ISeriesApi<'Line'> | null
+  atr: ISeriesApi<'Line'> | null
+}
+
+function emptySeriesRefs(): ChartSeriesRefs {
+  return {
+    candle: null,
+    volume: null,
+    ma5: null,
+    ma20: null,
+    ma60: null,
+    volumeMa20: null,
+    bollingerUpper: null,
+    bollingerMiddle: null,
+    bollingerLower: null,
+    rsi: null,
+    rsiUpper: null,
+    rsiLower: null,
+    macdHistogram: null,
+    macdSignal: null,
+    atr: null,
+  }
+}
+
+function sameCandle(
+  left: CandlestickData<Time>,
+  right: CandlestickData<Time>,
+) {
+  return String(left.time) === String(right.time)
+    && left.open === right.open
+    && left.high === right.high
+    && left.low === right.low
+    && left.close === right.close
+}
+
+function isLatestCandleUpdate(
+  previous: CandlestickData<Time>[],
+  next: CandlestickData<Time>[],
+) {
+  if (previous.length === 0 || next.length === 0) return false
+  if (next.length !== previous.length && next.length !== previous.length + 1) return false
+
+  const unchangedLength = next.length === previous.length
+    ? previous.length - 1
+    : previous.length
+  for (let index = 0; index < unchangedLength; index += 1) {
+    if (!sameCandle(previous[index], next[index])) return false
+  }
+
+  const previousTime = previous.at(-1)!.time
+  const nextTime = next.at(-1)!.time
+  if (typeof previousTime === 'number' && typeof nextTime === 'number') {
+    return nextTime >= previousTime
+  }
+  return String(nextTime) >= String(previousTime)
+}
+
+function syncCandles(
+  series: ISeriesApi<'Candlestick'> | null,
+  data: CandlestickData<Time>[],
+  incremental: boolean,
+) {
+  if (!series) return
+  const latest = data.at(-1)
+  if (incremental && latest) series.update(latest)
+  else series.setData(data)
+}
+
+function syncLine(
+  series: ISeriesApi<'Line'> | null,
+  data: LineData<Time>[],
+  incremental: boolean,
+) {
+  if (!series) return
+  const latest = data.at(-1)
+  if (incremental && latest) series.update(latest)
+  else series.setData(data)
+}
+
+function syncHistogram(
+  series: ISeriesApi<'Histogram'> | null,
+  data: HistogramData<Time>[],
+  incremental: boolean,
+) {
+  if (!series) return
+  const latest = data.at(-1)
+  if (incremental && latest) series.update(latest)
+  else series.setData(data)
+}
+
 const periods: Array<{ value: PricePeriod; label: string }> = [
   { value: '1M', label: '1개월' },
   { value: '3M', label: '3개월' },
@@ -138,11 +249,73 @@ function formatPrice(value: number, currency: string) {
 }
 
 function formatVolume(value: number) {
-  return new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+  return `${new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)}주`
+}
+
+function intervalLabel(interval: PriceInterval) {
+  return interval === '1m' ? '1분봉' : interval === '1W' ? '주봉' : interval === '1M' ? '월봉' : '일봉'
+}
+
+function sourceLabel(source: string) {
+  return source === 'DEMO'
+    ? 'DEMO · 샘플 데이터'
+    : source === 'KIS_OVERSEAS'
+      ? 'KIS 해외 · 실제 데이터'
+      : source === 'KIS'
+        ? 'KIS · 실제 데이터'
+        : source === 'FINNHUB'
+          ? 'Finnhub · 실제 데이터'
+          : source === 'LIVE'
+            ? 'WebSocket · 실시간'
+            : source === 'MIXED'
+              ? '혼합 출처'
+              : source
 }
 
 function marketTimeZone(market: string) {
   return market === 'KRX' ? 'Asia/Seoul' : 'America/New_York'
+}
+
+function formatBasisTime(value: string | null | undefined, timeZone: string) {
+  if (!value) return '확인 불가'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+function latestSeriesValue(
+  series: Array<LineData<Time> | HistogramData<Time>>,
+  latestTime: Time | undefined,
+) {
+  const point = series.at(-1)
+  if (!point || latestTime == null || normalizeTime(point.time) !== normalizeTime(latestTime)) return undefined
+  return 'value' in point && typeof point.value === 'number' && Number.isFinite(point.value)
+    ? point.value
+    : undefined
+}
+
+function resolveChartStatus(
+  source: string,
+  freshness: string | null | undefined,
+  interval: PriceInterval,
+  hasError: boolean,
+  hasData: boolean,
+): DataStatus {
+  if (hasError) return hasData ? 'STALE' : 'UNAVAILABLE'
+  if (source.toUpperCase() === 'DEMO') return 'DEMO'
+  if (source.toUpperCase() === 'LIVE' && interval === '1m') return 'LIVE'
+  if (source.toUpperCase() === 'MIXED') return 'PARTIAL'
+  if (freshness) return resolveDataStatus(freshness)
+  return 'REFERENCE'
 }
 
 function eventMarkerText(type: NonNullable<TechnicalAnalysis['events']>[number]['type']) {
@@ -312,15 +485,19 @@ export function InteractiveStockChart({
   loading,
   error,
   source,
+  freshness,
+  asOf,
   events,
   onPeriodChange,
   onIntervalChange,
+  onRetry,
 }: Props) {
   const shellRef = useRef<HTMLDivElement>(null)
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const seriesRefs = useRef<ChartSeriesRefs>(emptySeriesRefs())
   const projectionFrameRef = useRef<number | null>(null)
   const drawingsRef = useRef<Drawing[]>(emptyDrawings)
   const [hoverData, setHoverData] = useState<HoverData | null>(null)
@@ -332,6 +509,7 @@ export function InteractiveStockChart({
   const [projectedDrawings, setProjectedDrawings] = useState<ProjectedDrawing[]>([])
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fullscreenFallback, setFullscreenFallback] = useState(false)
+  const [drawingFeedback, setDrawingFeedback] = useState('')
   const initialSettings = useRef(loadChartSettings()).current
   const [showMa5, setShowMa5] = useState(initialSettings.showMa5)
   const [showMa20, setShowMa20] = useState(initialSettings.showMa20)
@@ -412,6 +590,12 @@ export function InteractiveStockChart({
       rsiLower: times.map((time) => ({ time, value: 30 })),
     }
   }, [interval, items, market])
+  const chartDataRef = useRef(chartData)
+  const renderedChartDataRef = useRef<typeof chartData | null>(null)
+
+  useEffect(() => {
+    chartDataRef.current = chartData
+  }, [chartData])
 
   const updateCurrentDrawings = useCallback((updater: (current: Drawing[]) => Drawing[]) => {
     setDrawingsBySymbol((current) => ({
@@ -460,6 +644,11 @@ export function InteractiveStockChart({
   useEffect(() => {
     const container = chartContainerRef.current
     if (!container) return
+
+    const initialData = chartDataRef.current
+    const createdSeries = emptySeriesRefs()
+    chartInstanceSequence += 1
+    container.dataset.chartInstance = String(chartInstanceSequence)
 
     const chart = createChart(container, {
       width: container.clientWidth,
@@ -512,9 +701,10 @@ export function InteractiveStockChart({
         formatter: (price: number) => formatPrice(price, currency),
       },
     })
-    candleSeries.setData(chartData.candles)
+    createdSeries.candle = candleSeries
+    candleSeries.setData(initialData.candles)
     if (interval === '1D' && showEvents && events && events.length > 0) {
-      const availableTimes = new Set(chartData.candles.map((item) => String(item.time)))
+      const availableTimes = new Set(initialData.candles.map((item) => String(item.time)))
       const markers: SeriesMarker<Time>[] = events
         .map((event) => ({ event, time: toChartTime(event.time, market, interval) }))
         .filter(({ time }) => availableTimes.has(String(time)))
@@ -532,19 +722,22 @@ export function InteractiveStockChart({
       const series = chart.addSeries(LineSeries, {
         color: '#f5bd50', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA5',
       })
-      series.setData(chartData.ma5)
+      series.setData(initialData.ma5)
+      createdSeries.ma5 = series
     }
     if (showMa20) {
       const series = chart.addSeries(LineSeries, {
         color: '#25d6c8', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA20',
       })
-      series.setData(chartData.ma20)
+      series.setData(initialData.ma20)
+      createdSeries.ma20 = series
     }
     if (showMa60) {
       const series = chart.addSeries(LineSeries, {
         color: '#ad86ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'MA60',
       })
-      series.setData(chartData.ma60)
+      series.setData(initialData.ma60)
+      createdSeries.ma60 = series
     }
     if (showBollinger) {
       const upper = chart.addSeries(LineSeries, {
@@ -556,9 +749,12 @@ export function InteractiveStockChart({
       const lower = chart.addSeries(LineSeries, {
         color: 'rgba(66, 153, 225, .75)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: 'BB Lower',
       })
-      upper.setData(chartData.bollinger.upper)
-      middle.setData(chartData.bollinger.middle)
-      lower.setData(chartData.bollinger.lower)
+      upper.setData(initialData.bollinger.upper)
+      middle.setData(initialData.bollinger.middle)
+      lower.setData(initialData.bollinger.lower)
+      createdSeries.bollingerUpper = upper
+      createdSeries.bollingerMiddle = middle
+      createdSeries.bollingerLower = lower
     }
 
     let volumeSeries: ISeriesApi<'Histogram'> | null = null
@@ -569,7 +765,8 @@ export function InteractiveStockChart({
         priceLineVisible: false,
         lastValueVisible: false,
       }, 1)
-      volumeSeries.setData(chartData.volumes)
+      volumeSeries.setData(initialData.volumes)
+      createdSeries.volume = volumeSeries
     }
     if (showVolumeMa20) {
       const volumeAverageSeries = chart.addSeries(LineSeries, {
@@ -580,7 +777,8 @@ export function InteractiveStockChart({
         lastValueVisible: false,
         title: 'Volume MA20',
       }, 1)
-      volumeAverageSeries.setData(chartData.volumeMa20)
+      volumeAverageSeries.setData(initialData.volumeMa20)
+      createdSeries.volumeMa20 = volumeAverageSeries
     }
 
     const oscillatorPane = hasVolumePane ? 2 : 1
@@ -594,9 +792,12 @@ export function InteractiveStockChart({
       const lower = chart.addSeries(LineSeries, {
         color: 'rgba(75, 227, 154, .38)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
       }, oscillatorPane)
-      rsiSeries.setData(chartData.rsi)
-      upper.setData(chartData.rsiUpper)
-      lower.setData(chartData.rsiLower)
+      rsiSeries.setData(initialData.rsi)
+      upper.setData(initialData.rsiUpper)
+      lower.setData(initialData.rsiLower)
+      createdSeries.rsi = rsiSeries
+      createdSeries.rsiUpper = upper
+      createdSeries.rsiLower = lower
     } else if (oscillator === 'macd') {
       const histogram = chart.addSeries(HistogramSeries, {
         priceLineVisible: false, lastValueVisible: false, title: 'MACD',
@@ -604,13 +805,16 @@ export function InteractiveStockChart({
       const signal = chart.addSeries(LineSeries, {
         color: '#f5bd50', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, title: 'Signal',
       }, oscillatorPane)
-      histogram.setData(chartData.macd.histogram)
-      signal.setData(chartData.macd.signal)
+      histogram.setData(initialData.macd.histogram)
+      signal.setData(initialData.macd.signal)
+      createdSeries.macdHistogram = histogram
+      createdSeries.macdSignal = signal
     } else if (oscillator === 'atr') {
       const atrSeries = chart.addSeries(LineSeries, {
         color: '#ad86ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'ATR14',
       }, oscillatorPane)
-      atrSeries.setData(chartData.atr)
+      atrSeries.setData(initialData.atr)
+      createdSeries.atr = atrSeries
     }
 
     chart.panes().forEach((pane, index) => pane.setStretchFactor(index === 0 ? 4 : 1))
@@ -627,6 +831,7 @@ export function InteractiveStockChart({
         return
       }
       const normalizedTime = normalizeTime(param.time)
+      const currentData = chartDataRef.current
       setHoverData({
         time: displayChartTime(param.time, market, interval),
         open: candle.open,
@@ -634,18 +839,18 @@ export function InteractiveStockChart({
         low: candle.low,
         close: candle.close,
         volume: volume && 'value' in volume && typeof volume.value === 'number' ? volume.value : 0,
-        ma5: valueAtTime(chartData.ma5, normalizedTime),
-        ma20: valueAtTime(chartData.ma20, normalizedTime),
-        ma60: valueAtTime(chartData.ma60, normalizedTime),
-        volumeMa20: valueAtTime(chartData.volumeMa20, normalizedTime),
-        bollingerUpper: valueAtTime(chartData.bollinger.upper, normalizedTime),
-        bollingerLower: valueAtTime(chartData.bollinger.lower, normalizedTime),
+        ma5: valueAtTime(currentData.ma5, normalizedTime),
+        ma20: valueAtTime(currentData.ma20, normalizedTime),
+        ma60: valueAtTime(currentData.ma60, normalizedTime),
+        volumeMa20: valueAtTime(currentData.volumeMa20, normalizedTime),
+        bollingerUpper: valueAtTime(currentData.bollinger.upper, normalizedTime),
+        bollingerLower: valueAtTime(currentData.bollinger.lower, normalizedTime),
         oscillatorValue: oscillator === 'rsi'
-          ? valueAtTime(chartData.rsi, normalizedTime)
+          ? valueAtTime(currentData.rsi, normalizedTime)
           : oscillator === 'atr'
-            ? valueAtTime(chartData.atr, normalizedTime)
+            ? valueAtTime(currentData.atr, normalizedTime)
             : oscillator === 'macd'
-              ? valueAtTime(chartData.macd.histogram, normalizedTime)
+              ? valueAtTime(currentData.macd.histogram, normalizedTime)
               : undefined,
       })
       queueProjection()
@@ -656,6 +861,8 @@ export function InteractiveStockChart({
     chart.timeScale().fitContent()
     chartRef.current = chart
     candleSeriesRef.current = candleSeries
+    seriesRefs.current = createdSeries
+    renderedChartDataRef.current = initialData
 
     const resizeObserver = new ResizeObserver(() => {
       chart.resize(container.clientWidth, container.clientHeight)
@@ -675,10 +882,11 @@ export function InteractiveStockChart({
       chart.remove()
       chartRef.current = null
       candleSeriesRef.current = null
+      seriesRefs.current = emptySeriesRefs()
+      renderedChartDataRef.current = null
       setHoverData(null)
     }
   }, [
-    chartData,
     currency,
     events,
     interval,
@@ -693,6 +901,35 @@ export function InteractiveStockChart({
     showVolume,
     showVolumeMa20,
   ])
+
+  useEffect(() => {
+    if (!chartRef.current || !seriesRefs.current.candle) return
+
+    const previousData = renderedChartDataRef.current
+    if (previousData === chartData) return
+    const incremental = previousData != null
+      && isLatestCandleUpdate(previousData.candles, chartData.candles)
+    const series = seriesRefs.current
+
+    syncCandles(series.candle, chartData.candles, incremental)
+    syncHistogram(series.volume, chartData.volumes, incremental)
+    syncLine(series.ma5, chartData.ma5, incremental)
+    syncLine(series.ma20, chartData.ma20, incremental)
+    syncLine(series.ma60, chartData.ma60, incremental)
+    syncLine(series.volumeMa20, chartData.volumeMa20, incremental)
+    syncLine(series.bollingerUpper, chartData.bollinger.upper, incremental)
+    syncLine(series.bollingerMiddle, chartData.bollinger.middle, incremental)
+    syncLine(series.bollingerLower, chartData.bollinger.lower, incremental)
+    syncLine(series.rsi, chartData.rsi, incremental)
+    syncLine(series.rsiUpper, chartData.rsiUpper, incremental)
+    syncLine(series.rsiLower, chartData.rsiLower, incremental)
+    syncHistogram(series.macdHistogram, chartData.macd.histogram, incremental)
+    syncLine(series.macdSignal, chartData.macd.signal, incremental)
+    syncLine(series.atr, chartData.atr, incremental)
+
+    renderedChartDataRef.current = chartData
+    queueProjection()
+  }, [chartData, queueProjection])
 
   const pointerToAnchor = useCallback((clientX: number, clientY: number): DrawingAnchor | null => {
     const chart = chartRef.current
@@ -717,7 +954,10 @@ export function InteractiveStockChart({
     setSelectedDrawingId(null)
 
     if (tool === 'horizontal') {
-      updateCurrentDrawings((current) => [...current, { id: drawingId(), type: 'horizontal', anchor }])
+      const id = drawingId()
+      updateCurrentDrawings((current) => [...current, { id, type: 'horizontal', anchor }])
+      setSelectedDrawingId(id)
+      setDrawingFeedback(`수평선을 ${formatPrice(anchor.price, currency)}에 추가했습니다.`)
       setTool('pan')
       return
     }
@@ -727,10 +967,13 @@ export function InteractiveStockChart({
       return
     }
 
+    const id = drawingId()
     updateCurrentDrawings((current) => [
       ...current,
-      { id: drawingId(), type: 'trend', anchors: [pendingAnchor, anchor] },
+      { id, type: 'trend', anchors: [pendingAnchor, anchor] },
     ])
+    setSelectedDrawingId(id)
+    setDrawingFeedback('추세선을 추가했습니다.')
     setPendingAnchor(null)
     setTool('pan')
   }
@@ -777,6 +1020,7 @@ export function InteractiveStockChart({
     if (!selectedDrawingId) return
     updateCurrentDrawings((current) => current.filter((drawing) => drawing.id !== selectedDrawingId))
     setSelectedDrawingId(null)
+    setDrawingFeedback('선택한 선을 삭제했습니다.')
   }, [selectedDrawingId, updateCurrentDrawings])
 
   useEffect(() => {
@@ -799,6 +1043,7 @@ export function InteractiveStockChart({
     updateCurrentDrawings(() => [])
     setSelectedDrawingId(null)
     setPendingAnchor(null)
+    setDrawingFeedback('현재 종목의 모든 그리기를 삭제했습니다.')
   }
 
   function activateTool(nextTool: ChartTool) {
@@ -882,6 +1127,105 @@ export function InteractiveStockChart({
   }
 
   const latest = items.at(-1)
+  const latestChartTime = chartData.candles.at(-1)?.time
+  const latestMa5 = latestSeriesValue(chartData.ma5, latestChartTime)
+  const latestMa20 = latestSeriesValue(chartData.ma20, latestChartTime)
+  const latestMa60 = latestSeriesValue(chartData.ma60, latestChartTime)
+  const latestVolumeMa20 = latestSeriesValue(chartData.volumeMa20, latestChartTime)
+  const latestBollingerUpper = latestSeriesValue(chartData.bollinger.upper, latestChartTime)
+  const latestBollingerMiddle = latestSeriesValue(chartData.bollinger.middle, latestChartTime)
+  const latestBollingerLower = latestSeriesValue(chartData.bollinger.lower, latestChartTime)
+  const latestRsi = latestSeriesValue(chartData.rsi, latestChartTime)
+  const latestMacdHistogram = latestSeriesValue(chartData.macd.histogram, latestChartTime)
+  const latestMacdSignal = latestSeriesValue(chartData.macd.signal, latestChartTime)
+  const latestAtr = latestSeriesValue(chartData.atr, latestChartTime)
+  const selectedDrawing = drawings.find((drawing) => drawing.id === selectedDrawingId)
+  const timeZone = marketTimeZone(market)
+  const basisTime = latest?.time ?? asOf
+  const dataStatus = resolveChartStatus(source, freshness, interval, error != null, items.length > 0)
+  const indicatorValue = (
+    value: number | undefined,
+    requiredItems: number,
+    formatter: (current: number) => string,
+  ) => value == null || items.length < requiredItems
+    ? `데이터 부족 (${items.length}/${requiredItems})`
+    : formatter(value)
+
+  function drawingAnchor(item: PricePoint): DrawingAnchor {
+    return {
+      time: normalizeTime(toChartTime(item.time, market, interval)),
+      price: item.close,
+    }
+  }
+
+  function addKeyboardTrend() {
+    if (items.length < 2) {
+      setDrawingFeedback('추세선을 만들려면 가격 데이터가 두 개 이상 필요합니다.')
+      return
+    }
+    const endIndex = items.length - 1
+    const startIndex = Math.max(0, endIndex - 19)
+    const id = drawingId()
+    updateCurrentDrawings((current) => [...current, {
+      id,
+      type: 'trend',
+      anchors: [drawingAnchor(items[startIndex]), drawingAnchor(items[endIndex])],
+    }])
+    setSelectedDrawingId(id)
+    setDrawingFeedback(`최근 ${endIndex - startIndex + 1}개 봉의 종가를 잇는 추세선을 추가했습니다.`)
+  }
+
+  function addKeyboardHorizontal() {
+    if (!latest) {
+      setDrawingFeedback('수평선을 만들 현재가 데이터가 없습니다.')
+      return
+    }
+    const id = drawingId()
+    updateCurrentDrawings((current) => [...current, {
+      id,
+      type: 'horizontal',
+      anchor: drawingAnchor(latest),
+    }])
+    setSelectedDrawingId(id)
+    setDrawingFeedback(`최근 종가 ${formatPrice(latest.close, currency)}에 수평선을 추가했습니다.`)
+  }
+
+  function moveSelectedPrice(direction: -1 | 1) {
+    if (!selectedDrawing) return
+    const basis = latest?.close ?? (selectedDrawing.type === 'horizontal'
+      ? selectedDrawing.anchor.price
+      : selectedDrawing.anchors[1].price)
+    const step = Math.max(currency === 'KRW' ? 1 : 0.01, Math.abs(basis) * 0.005)
+    updateCurrentDrawings((current) => current.map((drawing) => {
+      if (drawing.id !== selectedDrawing.id) return drawing
+      if (drawing.type === 'horizontal') {
+        return { ...drawing, anchor: { ...drawing.anchor, price: drawing.anchor.price + step * direction } }
+      }
+      return {
+        ...drawing,
+        anchors: drawing.anchors.map((anchor) => ({
+          ...anchor,
+          price: anchor.price + step * direction,
+        })) as [DrawingAnchor, DrawingAnchor],
+      }
+    }))
+    setDrawingFeedback(`선택한 선을 가격 기준 ${direction > 0 ? '위' : '아래'}로 0.5% 이동했습니다.`)
+  }
+
+  function moveSelectedTime(direction: -1 | 1) {
+    if (!selectedDrawing || selectedDrawing.type !== 'trend' || items.length < 2) return
+    const times = items.map((item) => normalizeTime(toChartTime(item.time, market, interval)))
+    const shift = (anchor: DrawingAnchor): DrawingAnchor => {
+      const currentIndex = times.findIndex((time) => String(time) === String(anchor.time))
+      const targetIndex = Math.min(times.length - 1, Math.max(0, (currentIndex < 0 ? times.length - 1 : currentIndex) + direction))
+      return { ...anchor, time: times[targetIndex] }
+    }
+    updateCurrentDrawings((current) => current.map((drawing) => drawing.id === selectedDrawing.id && drawing.type === 'trend'
+      ? { ...drawing, anchors: drawing.anchors.map(shift) as [DrawingAnchor, DrawingAnchor] }
+      : drawing))
+    setDrawingFeedback(`선택한 추세선을 ${direction > 0 ? '다음' : '이전'} 봉으로 이동했습니다.`)
+  }
+
   const statusText = tool === 'trend'
     ? pendingAnchor ? '추세선의 두 번째 지점을 선택하세요.' : '추세선의 시작 지점을 선택하세요.'
     : tool === 'horizontal'
@@ -895,14 +1239,16 @@ export function InteractiveStockChart({
       ref={shellRef}
       className={`interactive-chart-shell${fullscreenFallback ? ' fullscreen-fallback' : ''}`}
     >
-      <div className="chart-toolbar" aria-label="상세 차트 도구 모음">
-        <div className="chart-range-controls">
-          <div className="chart-intervals" aria-label="봉 간격">
+      <div className="chart-toolbar" role="toolbar" aria-label="상세 차트 도구 모음">
+        <div className="chart-range-controls chart-tool-group" role="group" aria-label="시간 설정">
+          <div className="chart-intervals" role="group" aria-label="봉 간격">
             <button type="button" aria-pressed={interval === '1D'} onClick={() => onIntervalChange('1D')}>일봉</button>
+            <button type="button" aria-pressed={interval === '1W'} onClick={() => onIntervalChange('1W')}>주봉</button>
+            <button type="button" aria-pressed={interval === '1M'} onClick={() => onIntervalChange('1M')}>월봉</button>
             <button type="button" aria-pressed={interval === '1m'} onClick={() => onIntervalChange('1m')}>1분봉</button>
           </div>
-          {interval === '1D' ? (
-            <div className="chart-periods" aria-label="조회 기간">
+          {interval !== '1m' ? (
+            <div className="chart-periods" role="group" aria-label="조회 기간">
               {periods.map((option) => (
                 <button
                   key={option.value}
@@ -910,6 +1256,7 @@ export function InteractiveStockChart({
                   aria-pressed={period === option.value}
                   onClick={() => onPeriodChange(option.value)}
                   disabled={loading}
+                  title={loading ? '가격 데이터를 갱신하는 동안 조회 기간을 변경할 수 없습니다.' : undefined}
                 >
                   {option.label}
                 </button>
@@ -918,25 +1265,79 @@ export function InteractiveStockChart({
           ) : <span className="intraday-session-label"><i />현재 서버 세션 · 최대 390봉</span>}
         </div>
         <div className="chart-tools">
-          <button type="button" onClick={resetVisibleRange}>범위 초기화</button>
-          <button type="button" aria-pressed={tool === 'pan'} onClick={() => activateTool('pan')}>이동</button>
-          <button type="button" aria-pressed={tool === 'trend'} onClick={() => activateTool('trend')}>추세선</button>
-          <button type="button" aria-pressed={tool === 'horizontal'} onClick={() => activateTool('horizontal')}>수평선</button>
-          <button type="button" onClick={deleteSelectedDrawing} disabled={!selectedDrawingId}>선 삭제</button>
-          <button type="button" onClick={clearDrawings} disabled={drawings.length === 0}>전체 삭제</button>
-          <button
-            ref={fullscreenButtonRef}
-            type="button"
-            aria-pressed={isFullscreen}
-            onClick={() => void toggleFullscreen()}
-          >
-            {isFullscreen ? '전체화면 종료' : '전체화면'}
-          </button>
+          <div className="chart-tool-group chart-view-tools" role="group" aria-label="보기 설정">
+            <button type="button" onClick={resetVisibleRange}>범위 초기화</button>
+          </div>
+          <div className="chart-tool-group chart-drawing-tools" role="group" aria-label="그리기 도구">
+            <button type="button" aria-pressed={tool === 'pan'} onClick={() => activateTool('pan')}>이동</button>
+            <button type="button" aria-pressed={tool === 'trend'} onClick={() => activateTool('trend')}>추세선</button>
+            <button type="button" aria-pressed={tool === 'horizontal'} onClick={() => activateTool('horizontal')}>수평선</button>
+            <button type="button" onClick={deleteSelectedDrawing} disabled={!selectedDrawingId} title={!selectedDrawingId ? '먼저 삭제할 선을 선택해 주세요.' : undefined}>선 삭제</button>
+            <button type="button" onClick={clearDrawings} disabled={drawings.length === 0} title={drawings.length === 0 ? '삭제할 그리기가 없습니다.' : undefined}>그리기 전체 삭제</button>
+          </div>
+          <div className="chart-tool-group chart-screen-tools" role="group" aria-label="화면 설정">
+            <button
+              ref={fullscreenButtonRef}
+              type="button"
+              aria-pressed={isFullscreen}
+              onClick={() => void toggleFullscreen()}
+            >
+              {isFullscreen ? '전체화면 종료' : '전체화면'}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="chart-indicators" aria-label="보조 지표 선택">
-        <div>
+      <details className="chart-keyboard-drawing">
+        <summary>키보드 그리기</summary>
+        <p>최근 봉을 기준으로 선을 만든 뒤 아래 버튼만으로 선택·이동·삭제할 수 있습니다.</p>
+        <div className="keyboard-drawing-create" role="group" aria-label="키보드로 선 추가">
+          <button
+            type="button"
+            onClick={addKeyboardTrend}
+            disabled={items.length < 2}
+            title={items.length < 2 ? '추세선을 만들려면 가격 데이터가 두 개 이상 필요합니다.' : undefined}
+          >
+            최근 추세선 추가
+          </button>
+          <button
+            type="button"
+            onClick={addKeyboardHorizontal}
+            disabled={!latest}
+            title={!latest ? '수평선을 만들 현재가 데이터가 없습니다.' : undefined}
+          >
+            현재가 수평선 추가
+          </button>
+        </div>
+        {drawings.length > 0 && (
+          <div className="keyboard-drawing-list" role="group" aria-label="그리기 선택">
+            {drawings.map((drawing, index) => (
+              <button
+                type="button"
+                key={drawing.id}
+                aria-pressed={drawing.id === selectedDrawingId}
+                onClick={() => {
+                  setSelectedDrawingId(drawing.id)
+                  setDrawingFeedback(`${drawing.type === 'trend' ? '추세선' : '수평선'} ${index + 1}을 선택했습니다.`)
+                }}
+              >
+                {drawing.type === 'trend' ? '추세선' : '수평선'} {index + 1}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="keyboard-drawing-move" role="group" aria-label="선택한 그리기 이동과 삭제">
+          <button type="button" onClick={() => moveSelectedPrice(1)} disabled={!selectedDrawing} title={!selectedDrawing ? '먼저 이동할 선을 선택해 주세요.' : undefined}>가격 위로</button>
+          <button type="button" onClick={() => moveSelectedPrice(-1)} disabled={!selectedDrawing} title={!selectedDrawing ? '먼저 이동할 선을 선택해 주세요.' : undefined}>가격 아래로</button>
+          <button type="button" onClick={() => moveSelectedTime(-1)} disabled={selectedDrawing?.type !== 'trend'} title={selectedDrawing?.type !== 'trend' ? '시간 이동은 추세선을 선택한 경우에 사용할 수 있습니다.' : undefined}>이전 봉으로</button>
+          <button type="button" onClick={() => moveSelectedTime(1)} disabled={selectedDrawing?.type !== 'trend'} title={selectedDrawing?.type !== 'trend' ? '시간 이동은 추세선을 선택한 경우에 사용할 수 있습니다.' : undefined}>다음 봉으로</button>
+          <button type="button" onClick={deleteSelectedDrawing} disabled={!selectedDrawing} title={!selectedDrawing ? '먼저 삭제할 선을 선택해 주세요.' : undefined}>선택 선 삭제</button>
+        </div>
+        <p className="keyboard-drawing-feedback" role="status" aria-live="polite">{drawingFeedback || '키보드 그리기 조작 결과가 여기에 안내됩니다.'}</p>
+      </details>
+
+      <div className="chart-indicators" role="group" aria-label="보기 지표 설정">
+        <div role="group" aria-label="가격 오버레이 지표">
           <span>오버레이</span>
           <button type="button" aria-pressed={showMa5} onClick={() => setShowMa5((value) => !value)}>MA5</button>
           <button type="button" aria-pressed={showMa20} onClick={() => setShowMa20((value) => !value)}>MA20</button>
@@ -946,7 +1347,7 @@ export function InteractiveStockChart({
           <button type="button" aria-pressed={showVolume} onClick={() => setShowVolume((value) => !value)}>거래량</button>
           <button type="button" aria-pressed={showVolumeMa20} onClick={() => setShowVolumeMa20((value) => !value)}>거래량 MA20</button>
         </div>
-        <div>
+        <div role="group" aria-label="하단 보조지표 패널">
           <span>하단 패널</span>
           {(['rsi', 'macd', 'atr', 'none'] as const).map((panel) => (
             <button
@@ -963,17 +1364,62 @@ export function InteractiveStockChart({
       </div>
 
       <div className="chart-legend" aria-label="차트 범례">
-        <span><i className="candle-up" />상승</span>
-        <span><i className="candle-down" />하락</span>
-        {showMa5 && <span><i className="ma5" />MA5</span>}
-        {showMa20 && <span><i className="ma20" />MA20</span>}
-        {showMa60 && <span><i className="ma60" />MA60</span>}
-        {showBollinger && <span><i className="bollinger" />BB(20,2)</span>}
-        {showEvents && <span>교차 이벤트</span>}
-        {showVolume && <span>거래량</span>}
-        {showVolumeMa20 && <span>거래량 MA20</span>}
-        {oscillator !== 'none' && <span>패널 {oscillator.toUpperCase()}</span>}
-        <strong>{source}</strong>
+        <div className="chart-legend-group overlay" role="group" aria-label="가격 및 오버레이 범례">
+          <span><i className="legend-swatch candle-up" />상승</span>
+          <span><i className="legend-swatch candle-down" />하락</span>
+          {showMa5 && (
+            <span><i className="legend-swatch ma5" />MA(5) {indicatorValue(latestMa5, 5, (value) => formatPrice(value, currency))}</span>
+          )}
+          {showMa20 && (
+            <span><i className="legend-swatch ma20" />MA(20) {indicatorValue(latestMa20, 20, (value) => formatPrice(value, currency))}</span>
+          )}
+          {showMa60 && (
+            <span><i className="legend-swatch ma60" />MA(60) {indicatorValue(latestMa60, 60, (value) => formatPrice(value, currency))}</span>
+          )}
+          {showBollinger && (
+            <span>
+              <i className="legend-swatch bollinger" />
+              BB(20,2) {latestBollingerMiddle == null || latestBollingerUpper == null || latestBollingerLower == null || items.length < 20
+                ? `데이터 부족 (${items.length}/20)`
+                : `중앙 ${formatPrice(latestBollingerMiddle, currency)} · ${formatPrice(latestBollingerLower, currency)}–${formatPrice(latestBollingerUpper, currency)}`}
+            </span>
+          )}
+          {showEvents && <span><i className="legend-swatch events" />교차 이벤트</span>}
+          {showVolume && <span><i className="legend-swatch volume" />거래량 {latest ? formatVolume(latest.volume) : '데이터 부족 (0/1)'}</span>}
+          {showVolumeMa20 && (
+            <span><i className="legend-swatch volume-ma20" />거래량 MA(20) {indicatorValue(latestVolumeMa20, 20, formatVolume)}</span>
+          )}
+        </div>
+        <div className="chart-legend-group panel" role="group" aria-label="하단 보조지표 범례">
+          {oscillator === 'rsi' && (
+            <span><i className="legend-swatch rsi" />RSI(14) {indicatorValue(latestRsi, 15, (value) => value.toFixed(2))}</span>
+          )}
+          {oscillator === 'macd' && (
+            <span>
+              <i className="legend-swatch macd" />
+              MACD(12,26,9) {latestMacdHistogram == null || latestMacdSignal == null || items.length < 35
+                ? `데이터 부족 (${items.length}/35)`
+                : `${latestMacdHistogram.toFixed(2)} · 시그널 ${latestMacdSignal.toFixed(2)}`}
+            </span>
+          )}
+          {oscillator === 'atr' && (
+            <span><i className="legend-swatch atr" />ATR(14) {indicatorValue(latestAtr, 15, (value) => formatPrice(value, currency))}</span>
+          )}
+          {oscillator === 'none' && <span className="chart-legend-muted">하단 패널 숨김</span>}
+        </div>
+      </div>
+
+      <div className="chart-data-meta" aria-label="차트 데이터 기준">
+        <DataStatusBadge
+          status={dataStatus}
+          detail={loading && items.length > 0 ? '백그라운드 갱신 중' : undefined}
+        />
+        <span><b>시장</b> {market}</span>
+        <span><b>통화</b> {currency}</span>
+        <span><b>출처</b> {sourceLabel(source)}</span>
+        <span><b>시간대</b> {timeZone}</span>
+        <span><b>간격</b> {intervalLabel(interval)}</span>
+        <span><b>기준시각</b> {formatBasisTime(basisTime, timeZone)}</span>
       </div>
 
       <div className="chart-canvas-wrap">
@@ -981,7 +1427,7 @@ export function InteractiveStockChart({
           ref={chartContainerRef}
           className="interactive-chart-canvas"
           role="img"
-          aria-label={`${symbol} ${interval === '1m' ? '실시간 1분봉' : `${period} 일봉`} 캔들 및 거래량 차트`}
+          aria-label={`${symbol} ${interval === '1m' ? '실시간 1분봉' : `${period} ${intervalLabel(interval)}`} 캔들 및 거래량(주) 차트`}
         />
 
         <svg
@@ -1052,9 +1498,16 @@ export function InteractiveStockChart({
           </div>
         )}
 
-        {(loading || error || items.length === 0) && (
-          <div className={`chart-state${error ? ' error' : ''}`} role="status">
-            {loading ? '선택한 기간의 가격 데이터를 불러오는 중입니다.' : error ?? '표시할 가격 데이터가 없습니다.'}
+        {items.length === 0 && (loading || error || items.length === 0) && (
+          <div className={`chart-state${error ? ' error' : ''}`} role={error ? 'alert' : 'status'}>
+            <span>{loading ? '선택한 기간의 가격 데이터를 불러오는 중입니다.' : error ?? '표시할 가격 데이터가 없습니다.'}</span>
+            {error && onRetry && <button type="button" className="button-ghost" onClick={onRetry}>다시 시도</button>}
+          </div>
+        )}
+        {items.length > 0 && (loading || error) && (
+          <div className={`chart-background-refresh${error ? ' error' : ''}`} role={error ? 'alert' : 'status'} aria-live="polite">
+            <span>{error ? '갱신에 실패해 이전 차트를 유지합니다.' : '기존 차트를 유지하며 새 데이터를 갱신 중입니다.'}</span>
+            {error && onRetry && <button type="button" className="button-ghost" onClick={onRetry}>다시 시도</button>}
           </div>
         )}
       </div>
@@ -1066,7 +1519,7 @@ export function InteractiveStockChart({
 
       {latest && (
         <p className="chart-a11y-summary">
-          최신 {interval === '1m' ? '1분봉' : '일봉'} {new Date(latest.time).toLocaleString('ko-KR')}: 시가 {formatPrice(latest.open, currency)},
+          최신 {intervalLabel(interval)} {new Date(latest.time).toLocaleString('ko-KR')}: 시가 {formatPrice(latest.open, currency)},
           고가 {formatPrice(latest.high, currency)}, 저가 {formatPrice(latest.low, currency)},
           종가 {formatPrice(latest.close, currency)}, 거래량 {formatVolume(latest.volume)}.
         </p>

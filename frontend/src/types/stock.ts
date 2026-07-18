@@ -37,6 +37,10 @@ export type StockSearchPage = {
 export type CanonicalStockDetail = StockCatalogItem & {
   catalogSource: string
   catalogUpdatedAt: string
+  historyAvailable: boolean
+  historyPoints: number
+  historyAsOf: string | null
+  historySource: string | null
   price: number | null
   change: number | null
   changeRate: number | null
@@ -85,12 +89,13 @@ export type PriceHistory = {
   symbol: string
   interval: string
   period: string
+  source: string
   items: PricePoint[]
 }
 
 export type PricePeriod = '1M' | '3M' | '6M' | '1Y' | 'ALL'
 
-export type PriceInterval = '1D' | '1m'
+export type PriceInterval = '1D' | '1W' | '1M' | '1m'
 
 export type TechnicalAnalysis = {
   symbol: string

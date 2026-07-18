@@ -30,11 +30,13 @@ public interface PriceAlertRepository extends JpaRepository<PriceAlert, Long> {
     @Query("""
             select a from PriceAlert a join fetch a.stock s
             where a.status = :status
+              and upper(s.market) = upper(:market)
               and s.symbol = :symbol
               and ((a.condition = :above and a.targetPrice <= :price)
                 or (a.condition = :below and a.targetPrice >= :price))
             """)
     List<PriceAlert> findMatchingActiveAlerts(
+            @Param("market") String market,
             @Param("symbol") String symbol,
             @Param("price") BigDecimal price,
             @Param("status") AlertStatus status,

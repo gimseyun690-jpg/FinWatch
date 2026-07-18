@@ -1,7 +1,7 @@
 # FinWatch 보안·배포·운영 명세
 
-- 문서 상태: 초안 v0.1
-- 기준일: 2026-07-13
+- 문서 상태: 구현 반영 v0.2
+- 기준일: 2026-07-18
 - 적용 범위: FinWatch MVP의 로컬·테스트·스테이징·운영 환경
 - 관련 문서: `01_REQUIREMENTS.md`, `02_ARCHITECTURE.md`, `03_API_SPEC.md`, `04_DB_SCHEMA.md`, `05_TASKS.md`, `06_DATA_PROVIDER_SPEC.md`, `07_USER_FEATURE_SPEC.md`, `08_AI_OPERATION_SPEC.md`
 
@@ -13,7 +13,7 @@
 
 - **필수(MUST)**: 위반 시 운영 배포를 중단한다.
 - **권장(SHOULD)**: 특별한 사유가 없으면 적용한다. 미적용 사유를 배포 기록에 남긴다.
-- **현재**: 2026-07-13 저장소에서 확인한 구현 상태다.
+- **현재**: 2026-07-18 저장소에서 확인한 구현 상태다.
 - **목표**: MVP 운영 배포 전에 구현·검증해야 하는 상태다.
 - **TBD**: 아직 확정되지 않은 값이다. `배포 전 게이트`로 표시된 TBD는 값과 책임자를 정하기 전에는 운영 배포할 수 없다.
 
@@ -21,16 +21,16 @@
 
 | 영역 | 현재 | MVP 운영 목표 |
 |---|---|---|
-| 애플리케이션 실행 | Spring Boot와 Vite를 호스트에서 직접 실행 | 검증된 불변 이미지 또는 산출물로 배포 |
-| Docker | `compose.yaml`이 로컬 PostgreSQL 17·Redis 8만 실행 | 운영에서는 백엔드와 Nginx를 배포 단위로 만들고 DB·Redis는 AWS 관리형 서비스 사용 |
-| 환경 | 기본 설정, `demo`, 필수 공급자 키 fail-fast가 적용된 로컬 `live` 프로필 | `local`, `test`, `staging`, `prod`의 값·데이터·Secret 분리 |
-| 인증 | HS256 JWT, 1시간 Access Token, USER/ADMIN, 데모 계정 | 강한 운영 Secret, 데모 계정 비활성화, 계정 공급 절차와 로그인 제한 확정 |
-| 브라우저 토큰 | `localStorage`에 세션 저장 | 공개 운영 전 영속 브라우저 저장 제거 또는 HttpOnly 쿠키 방식으로 재설계 |
+| 애플리케이션 실행 | host 개발 실행과 multi-stage backend·frontend image 구현 | 검증된 SHA image/digest로 배포 |
+| Docker | 로컬 DB Compose와 production-like·portfolio Compose 구현 | 운영 Nginx·backend·Redis image, private RDS 사용 |
+| 환경 | `demo`, 로컬 `live`, fail-fast `portfolio` profile 구현 | 실제 AWS Secret과 canonical HTTPS 값으로 portfolio 검증 |
+| 인증 | Redis opaque session, HttpOnly cookie, CSRF, USER/ADMIN, 선택적 Kakao 로그인 | 강한 운영 Secret, 데모 계정 비활성화, 관리자 공급 절차 확정 |
+| 브라우저 토큰 | 영속 token 저장 제거, HttpOnly session cookie 사용 | Secure/SameSite cookie와 CSRF 검증 유지 |
 | CORS | localhost 두 Origin 기본 허용 | 실제 HTTPS Origin만 정확히 허용; 와일드카드 금지 |
 | DB 변경 | Flyway V1~V17을 실행하며 Testcontainers PostgreSQL 17에서 검증 | 운영 백업·호환성 검증 후 단일 마이그레이션 수행, 실패 시 트래픽 차단 |
 | 상태 확인 | liveness와 DB·Redis readiness 분리, 로컬 LIVE smoke 구현 | 운영 네트워크에서 Actuator 접근 제한 |
-| 로그·모니터링 | 기본 Spring 로그, AI 사용량 DB 기록 | 구조화 로그, 요청 ID, CloudWatch 대시보드·경보·보존 정책 |
-| CI/CD | 저장소에 워크플로 없음 | PR 품질 게이트, 버전 이미지 생성·스캔, 승인형 운영 배포·롤백 |
+| 로그·모니터링 | ECS 구조 로그·요청 ID·AI 사용량과 CloudWatch IaC 구현 | 실제 CloudWatch 대시보드·경보·보존 정책 검증 |
+| CI/CD | CI와 GitHub OIDC 승인형 portfolio workflow 구현 | 실제 Environment 승인·OIDC AssumeRole·배포 검증 |
 | 백업·복구 | 로컬 Docker volume 외 명세 없음 | RDS 자동 백업, 배포 전 스냅샷, 복구 훈련과 RPO/RTO 확정 |
 
 ## 3. 환경 분리
@@ -52,7 +52,7 @@
 4. `prod` 시작 시 로컬 기본값 사용 여부를 검사하고, 기본 DB 비밀번호·기본 JWT Secret·localhost CORS·데모 계정이 발견되면 시작에 실패해야 한다.
 5. `SPRING_PROFILES_ACTIVE`와 애플리케이션 버전을 배포 기록과 로그에 남긴다.
 
-현재 `application-live.yml`은 로컬 LIVE 공급자 키를 fail-fast로 검증한다. 운영 전용 `prod` 프로필은 DB·JWT·CORS·데모 계정까지 더 엄격하게 검증해야 하므로 구현 완료 전 공개 운영 배포를 금지한다.
+현재 로컬 LIVE 공급자 키 검증과 운영용 `portfolio` profile의 DB TLS·JWT·CORS·secure cookie·Redis·데모 계정·AI provider fail-fast가 구현되어 있다. 실제 AWS Secret 주입과 공개 smoke를 완료하기 전에는 공개 운영 배포 완료로 인정하지 않는다.
 
 ### 3.2 환경별 미확정 항목
 
@@ -105,20 +105,20 @@ JWT Secret을 바꾸면 기존 토큰이 즉시 무효화된다. 이 동작을 �
 - JWT Secret은 코드상 UTF-8 32바이트 미만이면 시작에 실패한다.
 - 기본 TTL은 1시간이며 Refresh Token, 서버측 blacklist, 계정 잠금은 없다.
 - `/api/v1/admin/**`는 `ADMIN`, 나머지 `/api/v1/**`는 인증된 사용자만 접근한다. 로그인과 health만 공개한다.
-- 현재 프런트엔드는 토큰을 `localStorage`에 저장하며 로그아웃은 브라우저 저장 값만 삭제한다.
+- 프런트엔드는 token을 저장하지 않고 Redis opaque session을 가리키는 `FW_SESSION` HttpOnly cookie를 사용한다. 로그아웃 시 서버 session과 cookie를 함께 폐기한다.
 
 ### 5.2 운영 필수 규칙
 
 1. `JWT_SECRET`은 최소 256비트 난수로 생성하고 기본값을 금지한다. `JWT_ISSUER`는 환경별 고정값으로 검증한다.
 2. `DEMO_USERS_ENABLED=false`를 운영 시작 조건으로 강제한다. 문서에 있는 데모 비밀번호로 운영 계정을 만들지 않는다.
 3. 현재 회원가입 기능이 없으므로 초기 USER/ADMIN을 만드는 일회성 보안 절차가 필요하다. 생성 명령, 실행자, 비밀번호 전달·변경 방법은 TBD이며 **배포 전 게이트**다.
-4. 브라우저 `localStorage`의 JWT는 XSS 시 탈취될 수 있다. MVP 운영은 Access Token을 메모리에만 보관하고 새로고침 시 재로그인하는 방식을 기본 목표로 한다. HttpOnly/Secure/SameSite 쿠키를 택한다면 CSRF 보호까지 함께 설계·테스트해야 한다. 최종 방식은 **배포 전 게이트**다.
-5. Bearer header 방식인 동안 서버는 stateless이고 CSRF 비활성화를 유지할 수 있다. 인증을 쿠키로 바꾸면서 CSRF 비활성 상태를 유지해서는 안 된다.
+4. 공개 환경은 HttpOnly·Secure·SameSite cookie와 double-submit CSRF token을 함께 사용한다. session ID와 CSRF token은 로그·URL에 남기지 않는다.
+5. Bearer JWT는 기존 자동화 호환용이며 공개 브라우저에서 저장하거나 기본 인증 수단으로 사용하지 않는다.
 6. 로그인과 AI 생성 API에는 IP·계정 기준 호출 제한을 둔다. 한도와 차단 시간은 TBD이며 **배포 전 게이트**다. 429 응답은 공통 오류 형식을 사용한다.
 7. 비밀번호·Bearer Token·전체 JWT claim·Gemini 요청 본문은 로그에 남기지 않는다.
 8. ADMIN 계정은 개인별로 분리하는 것이 원칙이다. 공용 관리자 계정이 불가피한 포트폴리오 MVP라면 사용 기간과 접근자를 기록하고 시연 종료 후 폐기한다.
 
-Refresh Token과 강제 로그아웃은 MVP 밖이다. 따라서 토큰 탈취 시 최대 TTL 동안 유효할 수 있다는 잔여 위험을 배포 승인 기록에 남긴다.
+Redis session은 idle 1시간·absolute 8시간 기본 TTL과 서버 강제 삭제를 지원한다. 단일 EC2 Redis 유실 시 사용자가 재로그인해야 한다는 잔여 위험을 배포 승인 기록에 남긴다.
 
 ## 6. CORS, HTTPS와 네트워크 경계
 
@@ -172,7 +172,7 @@ MVP는 단일 EC2를 허용하므로 인스턴스 장애 중 무중단을 보장
 ### 7.2 이미지와 런타임 규칙
 
 1. 로컬 `compose.yaml`의 PostgreSQL·Redis는 개발 전용이다. 운영 DB와 Redis를 EC2 Docker volume에 두지 않는다.
-2. 백엔드 Dockerfile과 운영 실행 정의는 아직 없다. 운영 전 multi-stage build 또는 CI 산출 JAR 기반의 작은 JRE 21 이미지를 만든다.
+2. 백엔드·프런트 multi-stage Dockerfile과 운영 Compose를 사용한다. CI가 검증한 SHA image만 배포한다.
 3. 이미지는 non-root 사용자로 실행하고 Secret, 소스 저장소, Gradle cache를 포함하지 않는다.
 4. 이미지 tag는 `latest`만 사용하지 않고 Git commit SHA와 release version을 기록한다. 배포 기록에는 가능하면 image digest를 남긴다.
 5. 컨테이너 로그는 stdout/stderr로 보내고 로컬 파일에만 보존하지 않는다.
@@ -184,7 +184,7 @@ MVP는 단일 EC2를 허용하므로 인스턴스 장애 중 무중단을 보장
 
 ### 8.1 현재 상태
 
-`.github/workflows`와 동등한 CI/CD 정의가 없고, 백엔드 Dockerfile도 없다. 아래 단계가 자동화되기 전에는 수동 실행 결과와 실행자를 배포 증적으로 남겨야 한다.
+`.github/workflows/ci.yml`과 `deploy-portfolio.yml`이 품질 게이트, SHA image, ECR scan, snapshot, SSM 배포와 smoke를 정의한다. 실제 GitHub Environment 승인과 AWS OIDC 실행 증거는 첫 배포 전 게이트다.
 
 ### 8.2 목표 파이프라인
 
@@ -248,7 +248,7 @@ RPO와 RTO는 서비스 중요도와 비용에 따라 TBD이며 모두 **배포 
 | dependency 진단 | PostgreSQL·Redis·외부 공급자 상태 | 인증된 운영자만 세부 상태 확인 |
 | `/api/v1/health` | 단순 공개 상태 | 민감한 endpoint·오류 stack·자격 정보 노출 금지 |
 
-현재 `/api/v1/health`는 의존성을 확인하지 않고 항상 `UP`을 반환한다. Actuator health group과 배포 health check를 구성하기 전에는 readiness 증적으로 사용할 수 없다. Redis는 AI cache 의존성이므로 Redis 장애 시 전체 readiness를 내릴지 AI만 degraded로 둘지는 TBD이며 `08_AI_OPERATION_SPEC.md`의 fallback 정책과 함께 **배포 전 게이트**로 확정한다.
+`/api/v1/health`는 외부 공개용 최소 상태만 반환한다. 내부 컨테이너 readiness는 Actuator `readinessState,db,redis` group을 사용하며 Nginx는 public `/actuator/**`를 404로 차단한다. 실제 AWS private network에서 DB·Redis readiness 실패와 복구를 검증하는 작업은 배포 전 게이트다.
 
 ### 10.2 구조화 로그
 

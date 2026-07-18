@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
-import { getStock, getStockIntraday, getStockPrices, getTechnicalAnalysis } from '../api/stocks'
-import { demoPriceHistory, demoStock, demoTechnical } from '../mocks/stockDetail'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  getStock,
+  getStockDataLoadJob,
+  getStockIntraday,
+  getStockPrices,
+  getTechnicalAnalysis,
+  startStockDataLoad,
+} from '../api/stocks'
 import type {
   CanonicalStockDetail,
   PriceHistory,
@@ -11,6 +17,7 @@ import type {
   TechnicalAnalysis,
 } from '../types/stock'
 import type { IntradayCandle, LiveQuote } from '../types/realtime'
+import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { InteractiveStockChart } from './InteractiveStockChart'
 
 type DetailState = {
@@ -31,6 +38,7 @@ type Props = {
   stockRef: StockRef
   liveQuote?: LiveQuote
   liveCandles?: IntradayCandle[]
+  headingLabel?: string
 }
 
 const signalLabels: Record<Signal, string> = {
@@ -39,12 +47,7 @@ const signalLabels: Record<Signal, string> = {
   SELL: '매도',
 }
 
-const periodDays: Partial<Record<PricePeriod, number>> = {
-  '1M': 31,
-  '3M': 93,
-  '6M': 186,
-  '1Y': 366,
-}
+const DATA_LOAD_POLL_ATTEMPTS = 80
 
 const eventLabels: Record<NonNullable<TechnicalAnalysis['events']>[number]['type'], string> = {
   MA_GOLDEN_CROSS: 'MA 골든크로스',
@@ -67,34 +70,6 @@ function formatMoney(value: number, currency: string) {
 
 function signalClass(signal: Signal) {
   return signal === 'BUY' ? 'buy' : signal === 'SELL' ? 'sell' : 'neutral'
-}
-
-function demoPricesFor(period: PricePeriod): PriceHistory {
-  const days = periodDays[period]
-  if (days == null) return { ...demoPriceHistory, period }
-  const latest = new Date(demoPriceHistory.items.at(-1)?.time ?? Date.now()).getTime()
-  const from = latest - days * 86_400_000
-  return {
-    ...demoPriceHistory,
-    period,
-    items: demoPriceHistory.items.filter((item) => new Date(item.time).getTime() >= from),
-  }
-}
-
-function demoCanonicalStock(): CanonicalStockDetail {
-  return {
-    ...demoStock,
-    stockId: 0,
-    exchange: demoStock.market,
-    englishName: 'SK hynix',
-    instrumentType: 'STOCK',
-    active: true,
-    tradable: true,
-    status: 'DEMO_ONLY',
-    dataAvailability: 'READY',
-    catalogSource: 'DEMO',
-    catalogUpdatedAt: demoStock.asOf,
-  }
 }
 
 function mergeLiveCandle(prices: PriceHistory | null, liveQuote?: LiveQuote): PriceHistory | null {
@@ -126,13 +101,20 @@ function mergeIntradayCandles(prices: PriceHistory | null, liveCandles: Intraday
     ...prices,
     interval: '1m',
     period: 'SESSION',
+    source: 'LIVE',
     items: [...byTime.values()]
       .sort((left, right) => left.time.localeCompare(right.time))
       .slice(-390),
   }
 }
 
-export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
+export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: Props) {
+  const { market: stockMarket, symbol: stockSymbol, stockId } = stockRef
+  const requestStock = useMemo<StockRef>(() => ({
+    market: stockMarket,
+    symbol: stockSymbol,
+    stockId,
+  }), [stockId, stockMarket, stockSymbol])
   const [detail, setDetail] = useState<DetailState | null>(null)
   const [detailError, setDetailError] = useState('')
   const [prices, setPrices] = useState<PriceHistory | null>(null)
@@ -140,33 +122,68 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
   const [interval, setInterval] = useState<PriceInterval>('1D')
   const [detailLoading, setDetailLoading] = useState(true)
   const [pricesLoading, setPricesLoading] = useState(true)
-  const [priceSource, setPriceSource] = useState<'API' | 'DEMO'>('API')
+  const [priceSource, setPriceSource] = useState('API')
   const [pricesError, setPricesError] = useState<string | null>(null)
+  const [dataLoadMessage, setDataLoadMessage] = useState('')
+  const [technicalError, setTechnicalError] = useState('')
+  const [detailAttempt, setDetailAttempt] = useState(0)
+  const [priceAttempt, setPriceAttempt] = useState(0)
+  const [priceDataKey, setPriceDataKey] = useState('')
+  const priceRequestKey = `${stockMarket}:${stockSymbol}:${interval}:${interval === '1m' ? 'SESSION' : period}`
 
   useEffect(() => {
     const controller = new AbortController()
     setDetail(null)
     setDetailLoading(true)
     setDetailError('')
+    setDataLoadMessage('')
+    setTechnicalError('')
 
-    getStock(stockRef, controller.signal)
-      .then(async (stock) => {
+    getStock(requestStock, controller.signal)
+      .then(async (initialStock) => {
         if (controller.signal.aborted) return
-        if (stock.dataAvailability !== 'READY') {
-          setDetail({ stock, technical: null, source: 'API' })
-          return
+        let stock = initialStock
+        const needsVisiblePreparation = !stock.historyAvailable || stock.historySource === 'DEMO'
+        if (needsVisiblePreparation) {
+          setDataLoadMessage('실제 현재가와 가격 이력을 공급자에서 준비하고 있습니다.')
         }
-        const technical = await getTechnicalAnalysis(stockRef, controller.signal)
+        try {
+          const resources: Array<'QUOTE' | 'DAILY_PRICES'> = stock.price == null
+            ? ['QUOTE', 'DAILY_PRICES']
+            : ['DAILY_PRICES']
+          let job = await startStockDataLoad(requestStock, resources, controller.signal)
+          for (let attempt = 0; job.status === 'SYNCING' && attempt < DATA_LOAD_POLL_ATTEMPTS; attempt += 1) {
+            await new Promise((resolve) => window.setTimeout(resolve, 500))
+            if (controller.signal.aborted) return
+            job = await getStockDataLoadJob(requestStock, job.jobId, controller.signal)
+          }
+          stock = await getStock(requestStock, controller.signal)
+          const failed = job.resources.filter((resource) => resource.status === 'FAILED')
+          if (needsVisiblePreparation) {
+            setDataLoadMessage(failed.length > 0
+              ? '일부 공급자 데이터를 준비하지 못했습니다. 저장된 실제 데이터와 실시간 시세를 우선 표시합니다.'
+              : `실제 가격 이력 ${stock.historyPoints.toLocaleString('ko-KR')}개를 준비했습니다.`)
+          }
+        } catch {
+          if (needsVisiblePreparation) {
+            setDataLoadMessage('가격 공급자 응답을 기다리는 중입니다. 기존 실제 데이터가 있으면 계속 표시합니다.')
+          }
+        }
+        let technical: TechnicalAnalysis | null = null
+        if (stock.historyAvailable) {
+          try {
+            technical = await getTechnicalAnalysis(requestStock, controller.signal)
+          } catch {
+            technical = null
+            setTechnicalError('기술지표 계산 요청에 실패했습니다. 가격 이력 부족과 구분해 표시합니다.')
+          }
+        }
         if (!controller.signal.aborted) setDetail({ stock, technical, source: 'API' })
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
         if (!controller.signal.aborted) {
-          if (stockRef.market === demoStock.market && stockRef.symbol === demoStock.symbol) {
-            setDetail({ stock: demoCanonicalStock(), technical: demoTechnical, source: 'DEMO' })
-          } else {
-            setDetailError('종목 상세 정보를 불러오지 못했습니다. 검색 결과의 시장과 심볼을 확인해 주세요.')
-          }
+          setDetailError('종목 상세 정보를 불러오지 못했습니다. 저장된 값이나 DEMO 값으로 조용히 대체하지 않았습니다.')
         }
       })
       .finally(() => {
@@ -174,11 +191,10 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
       })
 
     return () => controller.abort()
-  }, [stockRef])
+  }, [detailAttempt, requestStock])
 
   useEffect(() => {
     const controller = new AbortController()
-    setPrices(null)
     setPricesLoading(true)
     setPricesError(null)
 
@@ -188,30 +204,22 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
     }
 
     const request = interval === '1m'
-      ? getStockIntraday(stockRef, controller.signal)
-      : getStockPrices(stockRef, period, controller.signal)
+      ? getStockIntraday(requestStock, controller.signal)
+      : getStockPrices(requestStock, period, interval, controller.signal)
     request
       .then((response) => {
         if (!controller.signal.aborted) {
           setPrices(response)
-          setPriceSource('API')
+          setPriceSource(response.source)
+          setPriceDataKey(priceRequestKey)
         }
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
         if (!controller.signal.aborted) {
-          if (interval === '1m') {
-            setPrices({ symbol: stockRef.symbol, interval: '1m', period: 'SESSION', items: [] })
-            setPriceSource('API')
-            setPricesError('실시간 1분 봉을 불러오지 못했습니다.')
-          } else if (stockRef.market === demoStock.market && stockRef.symbol === demoStock.symbol) {
-            setPrices(demoPricesFor(period))
-            setPriceSource('DEMO')
-          } else {
-            setPrices(null)
-            setPriceSource('API')
-            setPricesError('가격 이력을 불러오지 못했습니다.')
-          }
+          setPricesError(interval === '1m'
+            ? '실시간 1분 봉 갱신에 실패했습니다. LIVE 빈 데이터로 대체하지 않습니다.'
+            : '가격 이력 갱신에 실패했습니다. 같은 조건의 마지막 성공 차트가 있으면 유지합니다.')
         }
       })
       .finally(() => {
@@ -219,19 +227,31 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
       })
 
     return () => controller.abort()
-  }, [detail?.stock.dataAvailability, interval, period, stockRef])
+  }, [detail?.stock.dataAvailability, interval, period, priceAttempt, priceRequestKey, requestStock])
 
   if (detailLoading) {
-    return <section className="card detail-loading" aria-live="polite">종목 상세 정보를 불러오는 중입니다.</section>
+    return (
+      <section className="card detail-loading detail-skeleton" aria-live="polite" aria-busy="true">
+        <span className="skeleton-line" aria-hidden="true" />
+        <strong>종목 상세 정보를 불러오는 중입니다.</strong>
+        <span>종목 정보와 실제 가격 이력을 확인하고 있습니다.</span>
+      </section>
+    )
   }
 
   if (!detail) {
-    return <section className="card detail-loading detail-error" id="stock-detail" role="alert">{detailError || '종목 상세 정보가 없습니다.'}</section>
+    return (
+      <section className="card detail-loading detail-error" id="stock-detail" role="alert">
+        <strong>{detailError || '종목 상세 정보가 없습니다.'}</strong>
+        <span>네트워크 연결과 시장·심볼을 확인해 주세요.</span>
+        <button type="button" onClick={() => setDetailAttempt((value) => value + 1)}>다시 시도</button>
+      </section>
+    )
   }
 
   const catalogStock = detail.stock
   if (
-    detail.technical == null
+    !catalogStock.historyAvailable
     || catalogStock.price == null
     || catalogStock.change == null
     || catalogStock.changeRate == null
@@ -243,14 +263,19 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
         <div className="detail-title-row">
           <div>
             <p className="eyebrow">STOCK CATALOG · {catalogStock.catalogSource}</p>
-            <h2 id="stock-detail-title">{catalogStock.name}</h2>
+            <h2 id="stock-detail-title">{catalogStock.name}{headingLabel ? ` ${headingLabel}` : ''}</h2>
             <p>{catalogStock.symbol} · {catalogStock.market} · {catalogStock.currency} · {catalogStock.instrumentType}</p>
           </div>
-          <span className="availability-badge">{catalogStock.dataAvailability}</span>
+          <DataStatusBadge status={availabilityStatus(catalogStock.dataAvailability)} detail={catalogStock.catalogSource} />
         </div>
         <article className="card metadata-only-card">
-          <strong>종목 메타데이터를 찾았습니다.</strong>
-          <p>이 종목은 아직 시세·일봉이 준비되지 않았습니다. 임의의 데모 가격으로 대체하지 않습니다.</p>
+          <strong>{catalogStock.price == null ? '종목 메타데이터를 찾았습니다.' : `${formatMoney(catalogStock.price, catalogStock.currency)} · 최근 시세`}</strong>
+          <p>{dataLoadMessage || '이 종목은 아직 시세·일봉이 준비되지 않았습니다. 임의의 데모 가격으로 대체하지 않습니다.'}</p>
+          {catalogStock.changeRate != null && (
+            <p className={catalogStock.changeRate >= 0 ? 'up' : 'down'}>
+              전일 대비 {catalogStock.changeRate >= 0 ? '+' : ''}{catalogStock.changeRate.toFixed(2)}%
+            </p>
+          )}
           <small>{catalogStock.englishName ?? catalogStock.exchange} · {catalogStock.tradable ? '거래 가능' : '거래 지원 확인 필요'}</small>
         </article>
       </section>
@@ -259,7 +284,13 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
 
   const technical = detail.technical
   const readyStock = catalogStock as ReadyStock
-  const effectiveLiveQuote = liveQuote != null && new Date(liveQuote.asOf) >= new Date(readyStock.asOf)
+  const quoteMatchesInstrument = liveQuote?.market.toUpperCase() === readyStock.market.toUpperCase()
+    && liveQuote.symbol.toUpperCase() === readyStock.symbol.toUpperCase()
+  const matchingLiveCandles = (liveCandles ?? []).filter((candle) => (
+    candle.market.toUpperCase() === readyStock.market.toUpperCase()
+    && candle.symbol.toUpperCase() === readyStock.symbol.toUpperCase()
+  ))
+  const effectiveLiveQuote = quoteMatchesInstrument && liveQuote != null && new Date(liveQuote.asOf) >= new Date(readyStock.asOf)
     ? liveQuote
     : undefined
   const stock: ReadyStock = effectiveLiveQuote == null ? readyStock : {
@@ -272,23 +303,40 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
     source: effectiveLiveQuote.source,
   }
   const chartPrices = interval === '1m'
-    ? mergeIntradayCandles(prices, liveCandles)
-    : mergeLiveCandle(prices, effectiveLiveQuote)
+    ? mergeIntradayCandles(priceDataKey === priceRequestKey ? prices : null, matchingLiveCandles)
+    : mergeLiveCandle(priceDataKey === priceRequestKey ? prices : null, effectiveLiveQuote)
   const hasIntradayCandles = (chartPrices?.items.length ?? 0) > 0
   const changeClass = stock.changeRate >= 0 ? 'up' : 'down'
   const streaming = effectiveLiveQuote?.sessionStatus === 'LIVE'
+  const dataStatus: DataStatus = detail.source === 'DEMO' || stock.status === 'DEMO_ONLY'
+    ? 'DEMO'
+    : streaming
+      ? 'LIVE'
+      : effectiveLiveQuote
+        ? 'DELAYED'
+        : 'REFERENCE'
+  const dataSource = effectiveLiveQuote?.source ?? stock.source ?? catalogStock.historySource ?? detail.source
+  const chartFreshness: DataStatus = interval === '1m' && hasIntradayCandles
+    ? 'LIVE'
+    : priceSource.toUpperCase() === 'DEMO'
+      ? 'DEMO'
+      : 'REFERENCE'
 
   return (
     <section className="stock-detail" id="stock-detail" aria-labelledby="stock-detail-title">
       <div className="detail-title-row">
         <div>
-          <p className="eyebrow">STOCK DETAIL · {effectiveLiveQuote?.source ?? detail.source}</p>
-          <h2 id="stock-detail-title">{stock.name} 기술적 분석</h2>
-          <p>{stock.symbol} · {stock.market} · {new Date(stock.asOf).toLocaleString('ko-KR')}</p>
+          <p className="eyebrow">STOCK DETAIL · {dataSource}</p>
+          <h2 id="stock-detail-title">{stock.name} {headingLabel ?? (technical == null ? '실제 시세 차트' : '기술적 분석')}</h2>
+          <p className="stock-trust-meta"><span>{stock.symbol}</span><span>{stock.market}</span><span>{stock.currency}</span><span>{dataSource}</span><time dateTime={stock.asOf}>기준 {new Date(stock.asOf).toLocaleString('ko-KR')}</time><DataStatusBadge status={dataStatus} /></p>
         </div>
-        <span className={`signal-badge ${signalClass(technical.summarySignal)}`}>
-          종합 {signalLabels[technical.summarySignal]}
-        </span>
+        {technical == null
+          ? <span className="availability-badge">실제 이력 {catalogStock.historyPoints.toLocaleString('ko-KR')}개</span>
+          : (
+            <span className={`signal-badge ${signalClass(technical.summarySignal)}`}>
+              종합 {signalLabels[technical.summarySignal]}
+            </span>
+          )}
       </div>
 
       <div className="detail-layout">
@@ -314,13 +362,25 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
             loading={pricesLoading}
             error={interval === '1m' && hasIntradayCandles ? null : pricesError}
             source={interval === '1m' && hasIntradayCandles ? 'LIVE' : priceSource}
-            events={interval === '1D' ? technical.events : undefined}
+            freshness={chartFreshness}
+            asOf={stock.asOf}
+            events={interval === '1D' ? technical?.events : undefined}
             onPeriodChange={setPeriod}
             onIntervalChange={setInterval}
+            onRetry={() => setPriceAttempt((value) => value + 1)}
           />
         </article>
 
-        <div className="technical-grid">
+        {technical == null ? (
+          <div className="technical-grid">
+            <article className="card technical-card summary-card">
+              <span>실제 가격 이력</span>
+              <strong>{catalogStock.historySource ?? '공급자 확인 중'}</strong>
+              <p>{technicalError || '기술지표는 일봉 60개 이상이 준비되면 자동 계산됩니다.'}</p>
+              {technicalError && <button type="button" className="button-ghost" onClick={() => setDetailAttempt((value) => value + 1)}>기술지표 다시 계산</button>}
+            </article>
+          </div>
+        ) : <div className="technical-grid">
           <article className="card technical-card summary-card">
             <span>기술적 분석 요약</span>
             <strong className={signalClass(technical.summarySignal)}>{signalLabels[technical.summarySignal]}</strong>
@@ -387,10 +447,19 @@ export function StockDetail({ stockRef, liveQuote, liveCandles }: Props) {
               </ul>
             </article>
           )}
-        </div>
+        </div>}
       </div>
 
-      <p className="detail-disclaimer">{technical.disclaimer}</p>
+      <p className="detail-disclaimer">
+        {technical?.disclaimer ?? '차트는 공급자에서 수집한 실제 가격 이력이며 투자 권유가 아닙니다.'}
+      </p>
     </section>
   )
+}
+
+function availabilityStatus(value: CanonicalStockDetail['dataAvailability']): DataStatus {
+  if (value === 'READY') return 'READY'
+  if (value === 'METADATA_ONLY') return 'METADATA_ONLY'
+  if (value === 'UNAVAILABLE') return 'UNAVAILABLE'
+  return 'PARTIAL'
 }

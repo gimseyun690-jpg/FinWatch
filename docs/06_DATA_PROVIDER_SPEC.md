@@ -20,11 +20,11 @@ FinWatch는 거래 체결용 시세 시스템이 아니다. 화면에 표시하�
 
 ### 현재 구현
 
-- `DATA_MODE=DEMO`에서는 Flyway 데모 데이터만 사용하고 `LIVE`에서는 KIS 국내 일봉과 NAVER API HUB·Finnhub 뉴스를 수동 동기화한다.
+- `DATA_MODE=DEMO`에서는 Flyway 데모 데이터만 사용하고 `LIVE`에서는 KIS 국내·해외 일봉과 NAVER API HUB·Finnhub 뉴스를 온디맨드 동기화한다.
 - KIS REST 현재가와 `H0STCNT0` 국내 체결, Finnhub Quote와 trade WebSocket을 서버에서 구독한다.
 - 실시간 틱은 별도 DB 행을 계속 만들지 않고 인메모리 허브의 종목별 최신 값만 교체한다. 종목·관심종목 REST 응답도 유효한 허브 값을 우선한다.
 - 브라우저는 `/ws/quotes`에서 연결 직후 snapshot과 이후 quote/status 이벤트를 받고 자동 재연결한다.
-- 가격 이력은 DB의 `1D`를 사용하고 선택 종목의 최신 캔들 close/high/low를 수신 틱으로 보정한다.
+- 가격 이력은 DB의 실제 `1D`를 사용하고 `1W`·`1M`은 거래소 현지 주·월 경계로 서버에서 집계한다. 선택 종목의 최신 캔들 close/high/low는 수신 틱으로 보정한다.
 - 뉴스 한 건은 `news_articles.stock_id`로 종목 하나에 연결되며, AI 요약은 저장·분석 권한이 있는 content에만 실행한다.
 - 전체 KRX·미국 종목 마스터의 로컬 검색과 선택 종목 온디맨드 수집은 구현됐으며 상세 계약은 `14_STOCK_DISCOVERY_SPEC.md`를 따른다.
 - USD/KRW 환율은 Finnhub를 우선 호출하고 무료 계정의 Forex 권한이 없으면 Frankfurter 일일 기준환율을 `REFERENCE`로 fallback한다. rate 방향·표시·포트폴리오 환산은 `15_FX_RATE_SPEC.md`를 따른다.
@@ -94,9 +94,9 @@ DG-0부터 DG-4까지 통과하기 전에는 운영 환경에서 `LIVE` 모드�
 
 | 내부 ID | 공급자 | 확정 용도 | 사용하지 않는 용도 |
 |---|---|---|---|
-| `kis` | 한국투자증권 KIS Open API | KRX 현재가, 일봉 OHLCV, `H0STCNT0` 실시간 체결 | 미국 시세, 뉴스, 주문·자동매매 |
+| `kis` | 한국투자증권 KIS Open API | KRX 현재가·일봉 OHLCV·`H0STCNT0` 실시간 체결, 미국 일봉 OHLCV fallback | 미국 실시간 체결, 뉴스, 주문·자동매매 |
 | `naver-api-hub` | NAVER API HUB 뉴스 검색 | 국내 종목 뉴스 발견, 제목·description·원문 URL·발행 시각 | 언론사 본문 전문 제공 |
-| `finnhub` | Finnhub Quote / WebSocket / Company News | 미국 현재가·실시간 체결과 미국 종목 뉴스 발견 | KRX 시세, 언론사 본문 전문 제공 |
+| `finnhub` | Finnhub Quote / Stock Candles / WebSocket / Company News | 미국 현재가·계정 권한 범위의 일봉·실시간 체결과 미국 종목 뉴스 발견 | KRX 시세, 언론사 본문 전문 제공 |
 | `opendart` | 금융감독원 Open DART | 국내 기업 공시 목록·원문과 구조화 재무·주요공시 | 일반 언론 뉴스 |
 | `sec-edgar` | 미국 SEC EDGAR | 미국 기업 제출 문서·공시 원문 | 일반 언론 뉴스 |
 | `official-web` | 승인된 기업 IR·뉴스룸·RSS | 기업 공식 보도자료·IR 본문 | 승인되지 않은 언론사·전체 웹 탐색 |
@@ -105,7 +105,7 @@ AI 공급자는 `GeminiAiProvider`, 개발·테스트 대역은 `MockAiProvider`
 
 선정 이유:
 
-1. KIS는 국내 체결과 일봉, Finnhub는 무료 등급에서 확인 가능한 미국 Quote·trade 스트림을 담당하도록 시장별로 분리한다.
+1. KIS는 국내 체결과 일봉을 담당하며, 미국 일봉은 Finnhub Stock Candles를 우선 사용하되 무료 키의 권한 오류 시 KIS 해외 일봉으로 fallback한다. Finnhub는 미국 Quote·trade 스트림을 계속 담당한다.
 2. NAVER API HUB는 국내 뉴스 검색, Finnhub는 미국 회사 뉴스 발견에도 사용하여 검색 품질과 종목 연관성을 확보한다.
 3. 검색 API가 제공하지 않는 전문은 Open DART·SEC EDGAR·기업 공식 출처부터 확보하여 Gemini의 실제 본문 분석 의미를 유지한다.
 4. 언론사 전체 웹 크롤링과 주문 API는 포트폴리오 MVP 범위에서 제외해 법적·보안·운영 위험을 줄인다.
@@ -122,9 +122,12 @@ KIS H0STCNT0 WebSocket + Finnhub trade WebSocket
 KIS REST + Finnhub Quote
   -> 시작 시 현재가 snapshot
 
-KIS REST daily bars
-  -> 일봉 OHLCV 정규화
+KIS REST domestic daily bars (기간 분할, 최대 약 5년)
+Finnhub Stock Candles (계정 권한이 있을 때)
+  -> 403/빈 응답이면 KIS overseas dailyprice fallback
+  -> 실제 일봉 OHLCV 정규화
   -> PostgreSQL
+  -> 거래소 현지 기준 주봉·월봉 집계
   -> 기술적 분석·기간 차트
 ```
 
@@ -228,7 +231,7 @@ getArticle(externalId) -> ProviderNewsArticle
 | `STORE_FOR_AI` | 계약상 보관 기간 내 저장 | 허용 | 본문은 노출하지 않고 요약·링크만 표시 |
 | `STORE_AND_DISPLAY` | 계약상 보관 기간 내 저장 | 허용 여부를 별도 확인 | 허용된 분량의 본문과 출처 표시 |
 
-현재 AI 흐름은 DB의 `news_articles.content`를 읽으므로 `TRANSIENT_AI`는 지원하지 않는다. 이 프로필을 선택하려면 원문을 저장하지 않는 동기 처리 흐름과 캐시·감사 정책을 먼저 구현해야 한다. `METADATA_ONLY` 기사에 요약을 요청하면 `422 NEWS_CONTENT_UNAVAILABLE`을 반환한다.
+현재 AI 흐름은 DB의 `news_articles.content`를 읽으므로 `TRANSIENT_AI`는 지원하지 않는다. 저장 본문이 없는 일반 뉴스는 사용자의 명시적인 요약 요청 시 원문을 on-demand로 수집하고 `STORE_FOR_AI`/`ON_DEMAND_ARTICLE`로 전환한 뒤 분석한다. 안전한 원문을 확보하지 못한 경우에만 `422 NEWS_CONTENT_UNAVAILABLE` 또는 더 구체적인 수집 오류를 반환한다.
 
 ### 허용 출처 본문 수집기
 
@@ -255,7 +258,7 @@ NewsProvider
 - 명시적으로 자동 수집과 분석을 허용한 RSS/Atom 또는 웹사이트
 - 별도 계약으로 본문 이용 권한을 확보한 뉴스 API
 
-네이버·Finnhub 등 검색 결과에 URL이 있다는 사실만으로 해당 언론사 본문 수집을 허용하지 않는다. 도메인별 `source_policy`가 없으면 기본값은 `METADATA_ONLY`다.
+네이버·Finnhub 검색 결과는 최초 저장 시 기본값이 `METADATA_ONLY`다. 다만 사용자가 해당 기사의 Gemini 요약을 직접 요청하면 명시적 `BLOCKED` 정책이 없는 안전한 HTTPS 원문에 한해 on-demand 수집을 시도한다. 목록 동기화만으로 원문을 자동 수집하지 않는다.
 
 목표 인터페이스:
 
@@ -458,7 +461,7 @@ source_policies
   terms_url, robots_url, reviewed_at, active
 ```
 
-`access_mode`는 `METADATA_ONLY`, `API_CONTENT`, `ALLOWLIST_FETCH`, `BLOCKED` 중 하나다. 새 도메인은 코드 배포나 관리자 승인 없이 자동으로 `ALLOWLIST_FETCH`가 되지 않는다.
+`access_mode`는 `METADATA_ONLY`, `API_CONTENT`, `ALLOWLIST_FETCH`, `BLOCKED` 중 하나다. 새 도메인은 목록 동기화만으로 자동 수집되지 않지만, 사용자 on-demand 뉴스 요약 경로에서는 `BLOCKED`가 아닌 공개 원문을 제한적으로 가져올 수 있다.
 
 공급자별로 약관 버전, 확인일, `rightsProfile`, 본문·메타데이터 보관 기간, 삭제 연락처를 운영 문서에 기록한다. 약관이 변경되면 자동으로 기존 권리가 유지된다고 가정하지 않고 재검토한다.
 
@@ -493,7 +496,7 @@ source_policies
 
 ## 14. 설정과 비밀정보
 
-아래 장기 목표 설정 중 현재 구현은 `DATA_MODE=DEMO|LIVE`와 KIS·NAVER API HUB·Finnhub 전용 namespace다. `MIXED`, 스케줄러, 공급자별 쿼터와 circuit breaker는 아직 구현하지 않았다.
+아래 장기 목표 설정 중 현재 구현은 `DATA_MODE=DEMO|LIVE`와 KIS·NAVER API HUB·Finnhub 전용 namespace다. LIVE 종목 마스터 자동 동기화 스케줄러는 구현됐고, `MIXED`, 공급자별 쿼터와 circuit breaker는 아직 구현하지 않았다.
 
 ```yaml
 app:
@@ -525,6 +528,10 @@ app:
       connect-timeout: ${DATA_CONNECT_TIMEOUT:2s}
       read-timeout: ${DATA_READ_TIMEOUT:5s}
       max-attempts: ${DATA_MAX_ATTEMPTS:3}
+    catalog:
+      auto-sync-enabled: ${CATALOG_AUTO_SYNC_ENABLED:true}
+      auto-sync-initial-delay: ${CATALOG_AUTO_SYNC_INITIAL_DELAY:30s}
+      auto-sync-interval: ${CATALOG_AUTO_SYNC_INTERVAL:24h}
 ```
 
 확정 공급자별 목표 환경변수:
@@ -624,11 +631,11 @@ API 키, Authorization header, 뉴스 본문과 전체 공급자 응답은 기�
 
 ### 권리와 보안
 
-- [ ] `METADATA_ONLY` 기사의 `content`는 `null`이고 AI 요청은 `422 NEWS_CONTENT_UNAVAILABLE`이다.
+- [ ] `METADATA_ONLY` 기사는 평상시 `content=null`을 유지하며, 사용자 요약 요청 시에만 원문 수집을 시도하고 성공하면 `ON_DEMAND_ARTICLE`로 전환한다.
 - [ ] 본문 만료·삭제 시 원문과 관련 캐시가 정책대로 제거된다.
 - [ ] 화면에 언론사, 원문 링크, 발행 시각과 공급자 출처가 표시된다.
 - [ ] API 키, 뉴스 본문과 Authorization header가 Git, 프런트 번들, 이미지와 로그에 없다.
-- [ ] 승인되지 않은 도메인은 기본 `METADATA_ONLY`이며 본문 요청이 발생하지 않는다.
+- [ ] 승인되지 않은 도메인은 기본 `METADATA_ONLY`이며 자동 동기화 중에는 본문 요청이 발생하지 않는다. 사용자 on-demand 요청은 별도로 감사 가능해야 한다.
 - [ ] 허용 출처는 약관·robots 검토 근거와 검토 일자를 가진다.
 - [ ] paywall·로그인·CAPTCHA를 우회하지 않고 사설 IP·metadata endpoint·비허용 redirect를 차단한다.
 - [ ] 도메인별 간격·동시성·429 정책과 조건부 요청을 자동 테스트했다.

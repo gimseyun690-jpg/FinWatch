@@ -11,7 +11,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +23,13 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RequestMatcher;
+
+import com.finwatch.auth.session.SessionAuthenticationFilter;
+
+import jakarta.servlet.http.Cookie;
 
 @Configuration
 public class SecurityConfig {
@@ -32,15 +38,54 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter,
-            SecurityErrorWriter errorWriter) throws Exception {
+            SecurityErrorWriter errorWriter,
+            SessionAuthenticationFilter sessionAuthenticationFilter,
+            @Value("${app.auth.session.cookie-name}") String sessionCookieName,
+            @Value("${app.auth.session.cookie-secure}") boolean cookieSecure,
+            @Value("${app.auth.session.cookie-same-site}") String cookieSameSite) throws Exception {
+        CookieCsrfTokenRepository csrfRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        csrfRepository.setCookieName("XSRF-TOKEN");
+        csrfRepository.setHeaderName("X-XSRF-TOKEN");
+        csrfRepository.setCookieCustomizer(cookie -> cookie
+                .path("/")
+                .secure(cookieSecure)
+                .sameSite(cookieSameSite));
+        RequestMatcher cookieSessionUnsafeRequest = request -> {
+            String method = request.getMethod();
+            if ("GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method) || "TRACE".equals(method)) {
+                return false;
+            }
+            Cookie[] cookies = request.getCookies();
+            if (cookies == null) {
+                return false;
+            }
+            for (Cookie cookie : cookies) {
+                if (sessionCookieName.equals(cookie.getName()) && !cookie.getValue().isBlank()) {
+                    return true;
+                }
+            }
+            return false;
+        };
         http
-                .csrf(AbstractHttpConfigurer::disable)
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(csrfRepository)
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
+                        .requireCsrfProtectionMatcher(cookieSessionUnsafeRequest)
+                        .ignoringRequestMatchers(
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/kakao/authorize",
+                                "/api/v1/auth/kakao/callback"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/v1/health", "/api/v1/auth/login", "/actuator/health", "/actuator/health/**").permitAll()
-                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers(
+                                "/api/v1/health",
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/kakao/**",
+                                "/actuator/health",
+                                "/actuator/health/**").permitAll()
+                        .requestMatchers("/ws/**").authenticated()
                         .requestMatchers("/api/v1/providers/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/**").authenticated()
@@ -51,6 +96,7 @@ public class SecurityConfig {
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> errorWriter.unauthorized(response))
                         .accessDeniedHandler((request, response, exception) -> errorWriter.forbidden(response)));
+        http.addFilterBefore(sessionAuthenticationFilter, BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

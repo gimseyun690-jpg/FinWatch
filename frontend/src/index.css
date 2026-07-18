@@ -1,24 +1,59 @@
 :root {
   font-family: Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #eef4f5;
-  background: #070c12;
+  color: var(--text-primary);
+  background: var(--bg-app);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --bg: #070c12;
-  --panel: #111a24;
+  --bg-app: #070c12;
+  --bg-surface: #111a24;
+  --bg-elevated: #17222e;
+  --bg-input: #0a121a;
+  --bg-control: #0d1720;
+  --bg-shell: #071019;
+  --bg-popover: #09111a;
+  --bg-accent-glow: #102a31;
+  --border-subtle: #23303d;
+  --border-focus: #25d6c8;
+  --text-primary: #f2f7f7;
+  --text-secondary: #a4b0bb;
+  --text-tertiary: #788795;
+  --text-disabled: #66727d;
+  --text-on-accent: #031315;
+  --brand-wordmark: #dce7ee;
+  --brand-accent: #27b88b;
+  --text-navigation-group: #91a3b2;
+  --text-navigation-icon: #78909c;
+  --accent-primary: #25d6c8;
+  --state-positive: #4be39a;
+  --state-negative: #ff6f7d;
+  --state-warning: #f5bd50;
+  --state-info: #6eb9ff;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --control-height: 40px;
+  --control-height-mobile: 44px;
+  --bg: var(--bg-app);
+  --panel: var(--bg-surface);
   --panel-deep: #0c141d;
-  --panel-soft: #17222e;
-  --border: #23303d;
-  --text-strong: #f2f7f7;
-  --text-muted: #8d9aa7;
-  --cyan: #25d6c8;
-  --green: #4be39a;
-  --red: #ff6f7d;
-  --amber: #f5bd50;
+  --panel-soft: var(--bg-elevated);
+  --border: var(--border-subtle);
+  --text-strong: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --cyan: var(--accent-primary);
+  --green: var(--state-positive);
+  --red: var(--state-negative);
+  --amber: var(--state-warning);
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 50% -10%, #102a31 0, var(--bg) 38%); }
-button, input { font: inherit; }
+body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: hidden; background: radial-gradient(circle at 50% -10%, var(--bg-accent-glow) 0, var(--bg) 38%); }
+button, input, select, textarea { font: inherit; }

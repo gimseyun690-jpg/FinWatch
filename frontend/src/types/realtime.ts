@@ -1,4 +1,5 @@
 export type LiveQuote = {
+  market: string
   symbol: string
   price: number
   change: number
@@ -25,6 +26,7 @@ export type RealtimeSnapshot = {
 }
 
 export type IntradayCandle = {
+  market: string
   symbol: string
   time: string
   open: number

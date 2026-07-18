@@ -94,7 +94,7 @@ NewsTextPreprocessor는 다음 순서로 처리한다.
 
 ### 3.2 입력 규칙
 
-1. AI에는 DB에 저장된 news_articles.content만 전달한다. 클라이언트가 원문을 직접 보내지 않는다.
+1. AI에는 서버가 확보한 `news_articles.content`만 전달한다. 저장된 본문이 없는 일반 뉴스는 요약 요청 시 서버가 원문 링크를 on-demand로 수집·검증·저장하며, 클라이언트가 임의 본문을 직접 보내지는 않는다.
 2. 전처리 결과가 비면 공급자를 호출하지 않고 422 NEWS_CONTENT_UNAVAILABLE을 반환한다.
 3. 제목은 현재 별도 전처리나 길이 제한 없이 공급자에 전달된다. 운영 전에는 제어문자 제거와 500자 상한을 적용해야 한다.
 4. 현재 HTML 제거는 정규식 기반이라 script/style 내용과 HTML entity를 안전하게 해석하지 못한다. 실제 외부 뉴스 수집 전에는 검증된 HTML parser로 본문 텍스트를 추출해야 한다.
@@ -103,16 +103,17 @@ NewsTextPreprocessor는 다음 순서로 처리한다.
 
 ### 3.3 허용 출처 본문 분석
 
-본문 수집은 `06_DATA_PROVIDER_SPEC.md`의 `SourcePolicyRegistry`에서 AI 분석이 허용된 기사만 대상으로 한다. 입력 출처를 다음처럼 구분한다.
+본문 수집은 등록된 출처 정책을 우선한다. 일반 뉴스의 저장 본문이 없으면 사용자가 누른 요약 요청에 한해 안전한 원문 링크를 on-demand로 수집한다. 명시적으로 `BLOCKED`된 출처는 이 경로에서도 우회하지 않는다.
 
 | 입력 출처 | AI 사용 | 화면 표시 |
 |---|---|---|
 | `PROVIDER_SUMMARY` | 공급자가 제공한 설명·요약만 분석 | `제공 요약 기반` 표시 |
 | `ALLOWLIST_ARTICLE` | 허용 목록에서 추출한 기사 본문 분석 | 출처·원문 링크·수집 시각 표시 |
+| `ON_DEMAND_ARTICLE` | 사용자의 요약 요청 시 원문 링크에서 수집한 본문 분석 | `요청 시 원문 수집`과 원문 링크 표시 |
 | `OFFICIAL_DISCLOSURE` | Open DART·SEC EDGAR·기업 IR 문서 분석 | `공식 공시/보도자료 기반` 표시 |
-| `METADATA_ONLY` | 제목 분류 외 전문 분석 금지 | 원문 링크만 제공 |
+| `METADATA_ONLY` | 저장 본문 없음; 안전한 원문 URL이 있으면 on-demand 수집 시도 | 원문 링크와 `요청 시 원문 수집` 표시 |
 
-검색 API의 짧은 `description`을 기사 전문이라고 표시하거나, 허용되지 않은 웹페이지를 Gemini 입력으로 보내서는 안 된다. 각 분석은 `contentSource`, `contentHash`, `sourceUrl`, `fetchedAt`, `extractorVersion`을 추적할 수 있어야 한다.
+검색 API의 짧은 `description`을 기사 전문이라고 표시하지 않는다. 각 분석은 실제로 수집·전처리한 본문과 `contentSource`, `contentHash`, `sourceUrl`, `fetchedAt`, `extractorVersion`을 추적할 수 있어야 한다.
 
 현재 6,000자 단일 입력을 유지하는 동안에는 잘린 입력으로 분석했다는 사실과 `processedCharacters/originalCharacters`를 응답 메타데이터에 표시하는 것을 목표로 한다. 전문 전체 분석이 필요하면 다음 청크 파이프라인을 별도 프롬프트 버전으로 구현한다.
 
@@ -522,7 +523,7 @@ estimatedCost = inputCost + outputCost
 - API 키, Authorization, 기사 본문과 전체 프롬프트가 애플리케이션·사용량 로그에 나타나지 않는다.
 - 프롬프트 인젝션 형태의 기사 문장이 있어도 출력 스키마를 벗어나지 않으며, 기사 안의 지시를 시스템 지시보다 우선하지 않는다.
 - 관리자 지표는 성공·실패 수와 실제 모델 호출 수를 구분해 설명할 수 있다.
-- 허용 목록 기사·공식 공시만 전문 분석되고 `METADATA_ONLY` URL은 본문 fetch와 Gemini 전송이 발생하지 않는다.
+- 저장 본문이 없는 일반 뉴스는 사용자 요청 시에만 원문 fetch가 발생하고, 안전 검증과 본문 추출을 통과한 경우에만 Gemini로 전달된다.
 - 화면에서 제공 요약·부분 본문·전체 본문·공식 공시 중 어떤 범위를 분석했는지 구분한다.
 - 본문이 수정되어 contentHash가 바뀌면 새 분석을 생성하고 이전 캐시를 최신 결과로 반환하지 않는다.
 - 프롬프트 인젝션 문장이 포함된 기사에서도 내부 지시·Secret을 출력하지 않고 허용된 JSON 계약만 반환한다.

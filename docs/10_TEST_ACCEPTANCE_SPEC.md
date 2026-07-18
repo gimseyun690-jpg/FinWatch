@@ -31,9 +31,9 @@
 | 관심종목 통합 | 사용자별 CRUD 격리, 중복·없는 삭제 1개 |
 | 실시간 시세 단위 | KIS 46필드 체결 파싱·부호, Finnhub trade 파싱, 오래된 틱 폐기 |
 | 실시간 1분 봉 | KIS 누적 거래량 delta, Finnhub 체결량 합산, REST snapshot 제외, OHLC와 limit 검증 |
-| 실시간 화면 E2E | snapshot·candles 수신, 공급자 2/2 상태, KIS 실시간 배지·TICK·현재가, 일봉/1분봉 전환 반영 |
+| 실시간 화면 E2E | snapshot·candles 수신, 공급자 2/2 상태, KIS 실시간 배지·TICK·현재가, 일봉/주봉/월봉/1분봉 전환 반영 |
 
-통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS·NAVER API HUB·Finnhub·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·WebSocket snapshot·candles·실시간 가격 표시·일봉/1분봉 전환·상세 차트·지표 설정 유지·390px 모바일 overflow와 터치 크기를 검증한다. Testcontainers 테스트는 PostgreSQL 17의 Flyway V1~V17/JPA context와 Redis 8의 실제 직렬화·TTL을 검증한다. 2026-07-15 로컬 LIVE smoke는 readiness, 로그인, KIS 현재가·일봉, NAVER·Finnhub 뉴스, Open DART 공시, Frankfurter 환율 fallback과 Gemini 뉴스 요약을 통과했다. 실제 KIS WebSocket 연속 틱, 부하 테스트와 CI workflow는 별도 게이트로 남아 있다.
+통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS 국내·해외 일봉, NAVER API HUB·Finnhub·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·WebSocket snapshot·candles·실시간 가격 표시·일봉/주봉/월봉/1분봉 전환·상세 차트·지표 설정 유지·전체 카탈로그 관심종목 검색·무제한 등록 계약·390px 모바일 overflow와 터치 크기를 검증한다. Testcontainers 테스트는 PostgreSQL 17의 Flyway V1~V17/JPA context와 Redis 8의 실제 직렬화·TTL을 검증한다. 로컬 LIVE smoke는 readiness, 로그인, 관심종목 canonical 등록·삭제, KIS 현재가·국내외 일봉, 주봉·월봉 집계, NAVER·Finnhub 뉴스, Open DART 공시, Frankfurter 환율 fallback과 Gemini 뉴스 요약을 점검한다. 실제 KIS WebSocket 연속 틱, 부하 테스트와 CI workflow는 별도 게이트로 남아 있다.
 
 따라서 현재 자동 테스트의 통과는 핵심 Vertical Slice의 회귀 신호이지만 AWS 운영 준비 완료를 의미하지 않는다.
 
@@ -335,7 +335,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 1. 종목을 선택해 현재가, 등락, 거래량, source와 asOf를 확인한다.
 2. 기간별 가격 목록과 MA, RSI, MACD, 종합 신호를 고정 fixture의 기대값과 비교한다.
 3. 데이터 부족·stale fixture에서는 임의 신호 대신 명세된 상태와 면책문구를 표시한다.
-4. 1M·3M·6M·1Y·ALL 기간을 바꾸면 해당 일봉 캔들이 표시되고, 늦은 이전 응답이 현재 기간을 덮어쓰지 않는다.
+4. 일봉·주봉·월봉과 1M·3M·6M·1Y·ALL 기간을 바꾸면 실제 일봉 또는 집계 캔들이 표시되고, 늦은 이전 응답이 현재 선택을 덮어쓰지 않는다.
 5. 확대·이동과 십자선 툴팁에서 선택 캔들의 날짜·OHLC·거래량이 원본 fixture와 일치한다.
 6. 전체화면 진입·종료와 리사이즈 후 차트가 정상이며 키보드 포커스가 복귀한다.
 7. 추세선과 수평선을 생성·수정·삭제하고 확대·이동·전체화면 후에도 앵커의 시간·가격이 유지된다.
@@ -394,7 +394,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 2. 수집·정규화·종목 연결·중복 제거·재시도가 `06_DATA_PROVIDER_SPEC.md`와 일치한다.
 3. 사용자 화면에 source와 최신 시각, stale/degraded 상태가 표시된다.
 
-판정: 공급자 계약과 저장 권한이 확정되고, 장애가 기존 정상 데이터를 오염시키지 않아야 한다. KIS·Naver API Hub·Finnhub·Open DART·SEC 어댑터와 장애 fallback은 구현됐다. 2026-07-15 제한 키 LIVE smoke는 KIS·Naver·Finnhub·Open DART를 통과했으며 제출 직전 호출 한도와 장 상태를 다시 확인한다.
+판정: 공급자 계약과 저장 권한이 확정되고, 장애가 기존 정상 데이터를 오염시키지 않아야 한다. KIS 국내·해외 일봉·Naver API Hub·Finnhub·Open DART·SEC 어댑터와 장애 fallback은 구현됐다. 2026-07-15 제한 키 LIVE 검증에서 국내 KIS 실제 일봉과 미국 KIS 해외 일봉 fallback, 일봉·주봉·월봉 집계를 확인했으며 제출 직전 호출 한도와 장 상태를 다시 확인한다.
 
 ### AC-09 PWA와 모바일
 
@@ -452,6 +452,18 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 판정: `15_FX_RATE_SPEC.md`의 인수 조건을 모두 만족해야 한다. USD/KRW 방향·DB·캐시·포트폴리오 환산·DEMO 통합 경로와 Finnhub 우선·Frankfurter `REFERENCE` fallback을 구현했으며 2026-07-15 LIVE smoke에서 fallback 응답을 확인했다.
 
+### AC-15 Sidebar 내비게이션과 뉴스·공시 서버 페이징
+
+1. 데스크톱 Sidebar와 모바일 Bottom Navigation·More Drawer에서 권한에 맞는 모든 주요 route에 접근하고 active 상태·focus가 정확하다.
+2. 직접 URL·새로고침·뒤로가기·PWA standalone에서 route와 허용된 query 상태가 복원되며 USER의 관리자 route·API 접근은 거부된다.
+3. 뉴스·공시 목록의 page·size·sort·시장·종목·기간·출처·AI 상태 filter가 서버 결과와 URL에 일치하고 기존 종목 뉴스 endpoint는 회귀하지 않는다.
+4. 필터 변경·빠른 페이지 이동에서 이전 요청이 현재 결과를 덮어쓰지 않으며 loading·empty·partial·error·offline 상태가 독립적으로 표시된다.
+5. 종목 상세 네 탭이 같은 `(market, symbol)`을 사용하고 데스크톱·390px·키보드·screen reader에서 기존 차트·AI·사용자 기능 손실이 없다.
+
+판정: `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md`의 인수 조건을 모두 만족해야 한다. Phase A~C와 Phase D 핵심 자동화는 구현됐다. route shell·권한·URL filter/page 복원·390px drawer·기존 기능 회귀 Playwright 13개와 production Service Worker offline 직접 route 1개가 통과한다. 다만 Docker Desktop이 가능한 환경의 100,000건 PostgreSQL 성능 실행과 실제 설치형 standalone·수동 screen reader 확인 전까지 AC-15 최종 판정은 진행 중이다.
+
+자동 검증 상태(2026-07-15): `/api/v1/content-feed`의 인증, filter, 기간, page/size, sort whitelist, 안정적 tie-breaker, AI 상태, 기존 종목 뉴스 API 회귀를 자동화했다. H2 기반 전체 백엔드 132개 테스트는 `AI_PROVIDER=mock`에서 통과했다. 프런트는 production build·lint, 기존 기능 포함 Playwright 13개와 production PWA offline 1개를 자동화했다. PostgreSQL 17/Redis 8 컨테이너 테스트에는 V18 인덱스 존재 여부와 100,000건 warm p95 300ms 목표 검증을 추가했으며 Docker 엔진이 가능한 환경에서 실행한다.
+
 ## 14. 결함 심각도와 인수 판정
 
 | 등급 | 예 | 인수 처리 |
@@ -463,7 +475,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 MVP 합격 조건:
 
-1. AC-00~AC-14 중 MVP scope에 포함된 모든 시나리오가 통과한다.
+1. AC-00~AC-15 중 MVP scope에 포함된 모든 시나리오가 통과한다.
 2. Blocker·Critical·미승인 Major가 0건이다.
 3. PR/release 품질 게이트와 운영 체크리스트가 통과한다.
 4. 모든 배포 전 게이트 TBD가 값·책임자·검증 증적을 갖는다.

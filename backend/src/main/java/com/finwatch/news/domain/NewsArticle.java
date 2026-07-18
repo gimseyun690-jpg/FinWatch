@@ -1,5 +1,6 @@
 package com.finwatch.news.domain;
 
+import java.net.URI;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -205,6 +206,37 @@ public class NewsArticle {
                 && contentSource != ContentSource.METADATA_ONLY
                 && content != null
                 && !content.isBlank();
+    }
+
+    /**
+     * Indicates whether the client may request an AI summary now. Regular news can
+     * become analyzable on demand by fetching its public source URL; disclosures
+     * keep their explicit source-policy flow.
+     */
+    public boolean isAiSummaryRequestAllowed() {
+        if (isAiAnalysisAllowed()) {
+            return true;
+        }
+        if (!"NEWS".equals(contentKind)) {
+            return false;
+        }
+        try {
+            URI candidate = URI.create(getCanonicalUrl());
+            String scheme = candidate.getScheme();
+            int port = candidate.getPort();
+            boolean supportedScheme = "https".equalsIgnoreCase(scheme)
+                    || "http".equalsIgnoreCase(scheme);
+            boolean defaultPort = port == -1
+                    || ("https".equalsIgnoreCase(scheme) && port == 443)
+                    || ("http".equalsIgnoreCase(scheme) && port == 80);
+            return supportedScheme
+                    && defaultPort
+                    && candidate.getHost() != null
+                    && !candidate.getHost().isBlank()
+                    && candidate.getUserInfo() == null;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     public boolean applyFetchedContent(FetchedArticleContent fetchedContent) {
