@@ -1,0 +1,11 @@
+[Unit]
+Description=Check FinWatch TLS certificate renewal twice daily
+
+[Timer]
+OnCalendar=*-*-* 03,15:17:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=finwatch-cert-renew.service
+
+[Install]
+WantedBy=timers.target

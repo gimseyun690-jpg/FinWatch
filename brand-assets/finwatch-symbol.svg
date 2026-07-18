@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">FinWatch symbol</title>
+  <desc id="desc">An eye-shaped market chart with three bars and one rising arrow.</desc>
+  <defs>
+    <linearGradient id="green" x1="0" y1="1" x2="1" y2="0">
+      <stop stop-color="#0E9F78"/>
+      <stop offset="1" stop-color="#35D29E"/>
+    </linearGradient>
+  </defs>
+  <path d="M82 290C137 195 194 150 258 150c43 0 80 18 111 54" fill="none" stroke="#12324A" stroke-width="18" stroke-linecap="round"/>
+  <rect x="178" y="267" width="30" height="76" rx="5" fill="url(#green)"/>
+  <rect x="222" y="218" width="30" height="132" rx="5" fill="url(#green)"/>
+  <rect x="266" y="237" width="30" height="101" rx="5" fill="url(#green)"/>
+  <path d="M149 326C191 354 231 365 267 350c19-8 35-20 50-38l25-29 29 27 75-103" fill="none" stroke="url(#green)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M429 207l30-11-3 32z" fill="#35D29E"/>
+</svg>

@@ -1,0 +1,41 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+application-local.yml
+application-secret.yml
+**/application-local.yml
+**/application-secret.yml
+*.pem
+*.key
+deploy/*.env
+infra/aws/*.parameters.json
+infra/aws/*.local.yml
+*.tgz
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+
+# Backend
+backend/.gradle/
+backend/build/
+backend/out/
+backend/logs/
+
+# Temporary files
+tmp/
+*.log

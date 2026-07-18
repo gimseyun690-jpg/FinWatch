@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">FinWatch app icon</title>
+  <desc id="desc">FinWatch eye and rising market chart on a navy rounded square.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#1A4058"/>
+      <stop offset="1" stop-color="#0A2233"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="1" x2="1" y2="0">
+      <stop stop-color="#14A77E"/>
+      <stop offset="1" stop-color="#43D8A4"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="496" height="496" rx="116" fill="url(#bg)"/>
+  <rect x="14" y="14" width="484" height="484" rx="110" fill="none" stroke="#6C8FA4" stroke-opacity=".5" stroke-width="3"/>
+  <path d="M82 290C137 195 194 150 258 150c43 0 80 18 111 54" fill="none" stroke="#F3F7F8" stroke-width="18" stroke-linecap="round"/>
+  <rect x="178" y="267" width="30" height="76" rx="5" fill="url(#green)"/>
+  <rect x="222" y="218" width="30" height="132" rx="5" fill="url(#green)"/>
+  <rect x="266" y="237" width="30" height="101" rx="5" fill="url(#green)"/>
+  <path d="M149 326C191 354 231 365 267 350c19-8 35-20 50-38l25-29 29 27 75-103" fill="none" stroke="#F3F7F8" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M429 207l30-11-3 32z" fill="#F3F7F8"/>
+</svg>

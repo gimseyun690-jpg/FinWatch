@@ -1,0 +1,170 @@
+spring:
+  application:
+    name: finwatch-api
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/finwatch}
+    username: ${DB_USERNAME:finwatch}
+    password: ${DB_PASSWORD:finwatch-local}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      repositories:
+        enabled: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration,classpath:db/postgresql-migration
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState,ping
+        readiness:
+          include: readinessState,db,redis
+
+app:
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:5173}
+  data:
+    mode: ${DATA_MODE:DEMO}
+    connect-timeout: ${DATA_CONNECT_TIMEOUT:3s}
+    read-timeout: ${DATA_READ_TIMEOUT:10s}
+    catalog:
+      minimum-received: ${CATALOG_MINIMUM_RECEIVED:100}
+      minimum-retention-ratio: ${CATALOG_MINIMUM_RETENTION_RATIO:0.50}
+      auto-sync-enabled: ${CATALOG_AUTO_SYNC_ENABLED:true}
+      auto-sync-initial-delay: ${CATALOG_AUTO_SYNC_INITIAL_DELAY:30s}
+      auto-sync-interval: ${CATALOG_AUTO_SYNC_INTERVAL:24h}
+    load:
+      quote-freshness: ${DATA_LOAD_QUOTE_FRESHNESS:15s}
+      daily-price-freshness: ${DATA_LOAD_DAILY_PRICE_FRESHNESS:12h}
+      news-freshness: ${DATA_LOAD_NEWS_FRESHNESS:15m}
+    disclosures:
+      lookback-days: ${DISCLOSURE_LOOKBACK_DAYS:365}
+      identifier-cache-ttl: ${DISCLOSURE_IDENTIFIER_CACHE_TTL:24h}
+    fx:
+      finnhub-exchange: ${FX_FINNHUB_EXCHANGE:OANDA}
+      frankfurter-base-url: ${FRANKFURTER_BASE_URL:https://api.frankfurter.dev}
+      cache-ttl: ${FX_CACHE_TTL:60s}
+      fresh-within: ${FX_FRESH_WITHIN:15m}
+      delayed-within: ${FX_DELAYED_WITHIN:36h}
+    kis:
+      app-key: ${KIS_APP_KEY:}
+      app-secret: ${KIS_APP_SECRET:}
+      hts-id: ${KIS_HTS_ID:}
+      environment: ${KIS_ENV:paper}
+      prod-base-url: ${KIS_PROD_BASE_URL:https://openapi.koreainvestment.com:9443}
+      paper-base-url: ${KIS_PAPER_BASE_URL:https://openapivts.koreainvestment.com:29443}
+      prod-websocket-url: ${KIS_PROD_WEBSOCKET_URL:ws://ops.koreainvestment.com:21000}
+      paper-websocket-url: ${KIS_PAPER_WEBSOCKET_URL:ws://ops.koreainvestment.com:31000}
+      catalog:
+        kospi-url: ${KIS_KOSPI_MASTER_URL:https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip}
+        kosdaq-url: ${KIS_KOSDAQ_MASTER_URL:https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip}
+    naver:
+      client-id: ${NAVER_API_HUB_CLIENT_ID:}
+      client-secret: ${NAVER_API_HUB_CLIENT_SECRET:}
+      base-url: ${NAVER_API_HUB_BASE_URL:https://naverapihub.apigw.ntruss.com}
+    finnhub:
+      api-key: ${FINNHUB_API_KEY:}
+      base-url: ${FINNHUB_BASE_URL:https://finnhub.io/api/v1}
+      websocket-url: ${FINNHUB_WEBSOCKET_URL:wss://ws.finnhub.io}
+    opendart:
+      base-url: ${OPENDART_BASE_URL:https://opendart.fss.or.kr/api}
+      user-agent: ${OPENDART_USER_AGENT:Mozilla/5.0 FinWatch/1.0}
+    sec-edgar:
+      user-agent: ${SEC_EDGAR_USER_AGENT:${ARTICLE_USER_AGENT:}}
+      data-base-url: ${SEC_EDGAR_DATA_BASE_URL:https://data.sec.gov}
+      web-base-url: ${SEC_EDGAR_WEB_BASE_URL:https://www.sec.gov}
+  realtime:
+    enabled: ${REALTIME_ENABLED:true}
+    reconnect-max-delay: ${REALTIME_RECONNECT_MAX_DELAY:30s}
+    kis-max-subscriptions: ${REALTIME_KIS_MAX_SUBSCRIPTIONS:40}
+    finnhub-max-subscriptions: ${REALTIME_FINNHUB_MAX_SUBSCRIPTIONS:50}
+    selection-grace: ${REALTIME_SELECTION_GRACE:30s}
+    subscription-refresh: ${REALTIME_SUBSCRIPTION_REFRESH:15s}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+  auth:
+    jwt-secret: ${JWT_SECRET:finwatch-local-jwt-secret-change-before-production-2026}
+    issuer: ${JWT_ISSUER:finwatch-api}
+    access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:1h}
+    frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+    demo-users-enabled: ${DEMO_USERS_ENABLED:true}
+    demo-user-password: ${DEMO_USER_PASSWORD:FinWatch123!}
+    demo-admin-password: ${DEMO_ADMIN_PASSWORD:FinWatchAdmin123!}
+    session:
+      cookie-name: ${SESSION_COOKIE_NAME:FW_SESSION}
+      idle-ttl: ${SESSION_IDLE_TTL:1h}
+      absolute-ttl: ${SESSION_ABSOLUTE_TTL:8h}
+      cookie-secure: ${SESSION_COOKIE_SECURE:false}
+      cookie-same-site: ${SESSION_COOKIE_SAME_SITE:Lax}
+      cookie-domain: ${SESSION_COOKIE_DOMAIN:}
+    kakao:
+      enabled: ${KAKAO_LOGIN_ENABLED:false}
+      client-id: ${KAKAO_REST_API_KEY:}
+      client-secret: ${KAKAO_CLIENT_SECRET:}
+      issuer: ${KAKAO_ISSUER:https://kauth.kakao.com}
+      authorization-uri: ${KAKAO_AUTHORIZATION_URI:https://kauth.kakao.com/oauth/authorize}
+      token-uri: ${KAKAO_TOKEN_URI:https://kauth.kakao.com/oauth/token}
+      jwk-set-uri: ${KAKAO_JWK_SET_URI:https://kauth.kakao.com/.well-known/jwks.json}
+      redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/v1/auth/kakao/callback}
+      attempt-ttl: ${KAKAO_OAUTH_ATTEMPT_TTL:5m}
+      correlation-cookie-name: ${KAKAO_CORRELATION_COOKIE_NAME:FW_KAKAO_CORRELATION}
+      requests-per-minute: ${KAKAO_REQUESTS_PER_MINUTE:10}
+      connect-timeout: ${KAKAO_CONNECT_TIMEOUT:3s}
+      read-timeout: ${KAKAO_READ_TIMEOUT:10s}
+  ai:
+    provider: ${AI_PROVIDER:mock}
+    prompt-version: ${AI_PROMPT_VERSION:news-analysis-v2}
+    allowed-prompt-versions: ${AI_ALLOWED_PROMPT_VERSIONS:}
+    cache-ttl: ${AI_CACHE_TTL:24h}
+    technical-prompt-version: ${AI_TECHNICAL_PROMPT_VERSION:technical-explanation-v1}
+    technical-allowed-prompt-versions: ${AI_TECHNICAL_ALLOWED_PROMPT_VERSIONS:}
+    technical-cache-ttl: ${AI_TECHNICAL_CACHE_TTL:24h}
+    daily-briefing-prompt-version: ${AI_DAILY_BRIEFING_PROMPT_VERSION:daily-change-briefing-v1}
+    daily-briefing-allowed-prompt-versions: ${AI_DAILY_BRIEFING_ALLOWED_PROMPT_VERSIONS:}
+    daily-briefing-cache-ttl: ${AI_DAILY_BRIEFING_CACHE_TTL:24h}
+    requests-per-minute: ${AI_REQUESTS_PER_MINUTE:20}
+    daily-budget-usd: ${AI_DAILY_BUDGET_USD:2.00}
+    budget-zone: ${AI_BUDGET_ZONE:Asia/Seoul}
+    max-segment-characters: ${AI_MAX_SEGMENT_CHARACTERS:1800}
+    max-segments: ${AI_MAX_SEGMENTS:4}
+    input-price-per-million: ${AI_INPUT_PRICE_PER_MILLION:0.25}
+    output-price-per-million: ${AI_OUTPUT_PRICE_PER_MILLION:1.50}
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      model: ${GEMINI_MODEL:gemini-3.1-flash-lite}
+      base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+      connect-timeout: ${GEMINI_CONNECT_TIMEOUT:3s}
+      read-timeout: ${GEMINI_READ_TIMEOUT:15s}
+  news-content:
+    user-agent: ${ARTICLE_USER_AGENT:}
+    connect-timeout: ${ARTICLE_CONNECT_TIMEOUT:2s}
+    read-timeout: ${ARTICLE_READ_TIMEOUT:5s}
+    max-response-bytes: ${ARTICLE_MAX_RESPONSE_BYTES:1048576}
+    max-redirects: ${ARTICLE_MAX_REDIRECTS:3}
+    on-demand-min-interval-ms: ${ARTICLE_ON_DEMAND_MIN_INTERVAL_MS:1000}
+    opendart-api-key: ${OPENDART_API_KEY:}
+    opendart-max-archive-entries: ${OPENDART_MAX_ARCHIVE_ENTRIES:50}
+    opendart-max-uncompressed-bytes: ${OPENDART_MAX_UNCOMPRESSED_BYTES:4194304}
+    configured-policies: []
