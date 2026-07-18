@@ -1,6 +1,6 @@
 # 20번 AWS 배포 구현 보고서
 
-기준일: 2026-07-18
+기준일: 2026-07-19
 
 판정: **배포 준비 코드 완료 / 실제 AWS 배포 전**
 
@@ -33,17 +33,25 @@
 | 생성 JAR demo 기동과 `/api/v1/health`·`X-Request-ID` | PASS |
 | frontend lint | PASS |
 | frontend TypeScript·Vite production build | PASS |
-| Playwright 기존 흐름 | 22 PASS, 1 worker 순차 실행 1분 36초 |
-| production PWA offline route | 1 PASS |
+| backend 전체 + PostgreSQL 17·Redis 8 Testcontainers | 173 PASS, 최종 캐시 실행 1분 38초 |
+| PostgreSQL 100,000건 콘텐츠 피드 성능 검사 | PASS |
+| Playwright 기존 흐름·Kakao 오류 계약 | 23 PASS, 1 worker 순차 실행 1분 24초 |
+| production PWA offline·390px Kakao 흐름 | 2 PASS |
+| production-like backend·frontend image build/export | PASS, D: Docker 저장소 |
+| production-like 3개 컨테이너 health·외부 포트 경계 | PASS |
+| `/`, 직접 route, health, manifest, Service Worker smoke | 모두 HTTP 200 |
+| public `/actuator/health` 차단 | HTTP 404 |
+| backend/frontend non-root·health metadata | `10001:10001` / `101:101`, PASS |
 | repository·frontend bundle 고신뢰 Secret scan | PASS |
+| 로컬 LIVE 공급자·DB·Redis 통합 smoke | 13 PASS, warning 0 |
 
-## 환경 차단 항목
+## 로컬 디스크 차단 해소와 재검증
 
-최종 image export와 production-like 컨테이너 기동 smoke는 로컬 디스크 부족으로 완료하지 못했다. 최초 확인 당시 C: 여유 공간은 약 29MiB였고, 2026-07-18 최종 재확인 시에도 0.89GiB로 안전 기준에 미달했다. Docker WSL 커널에는 containerd 가상 디스크의 EXT4 journal abort, write I/O error와 potential data loss가 기록됐다. backend image 내부 Gradle build 자체는 56초 만에 성공했지만 `/var/lib/desktop-containerd` image export에서 I/O error가 발생했다. 컨테이너·image·volume 삭제나 Docker factory reset은 수행하지 않았다.
+2026-07-18에는 C: 공간 부족과 Docker WSL 가상 디스크 I/O 오류 때문에 최종 image export와 production-like 기동을 중단했다. Docker container·image·volume 삭제나 factory reset은 수행하지 않았다.
 
-추가 Docker 쓰기를 중단하고 C:에서 최소 10GiB, 권장 20GiB 이상을 확보한 뒤 Docker Desktop을 재시작해야 한다. I/O error가 계속되면 volume을 먼저 백업하고 Docker Desktop 데이터 복구를 별도로 진행한다. `Clean / Purge data`나 factory reset은 volume을 삭제할 수 있으므로 백업·명시적 승인 없이 실행하지 않는다.
+2026-07-19에 Docker Dashboard의 공식 `Disk image location` 설정으로 가상 디스크를 `D:\DockerDesktopData`로 이동했다. Gradle·TEMP·Temurin 21·Playwright 브라우저도 `D:\FinWatchTest`에 분리했다. 이후 image build/export, PostgreSQL 17·Redis 8 Testcontainers, 100,000건 성능 검사, production-like 3개 컨테이너 기동과 HTTP smoke가 모두 통과해 로컬 디스크 차단은 해소됐다.
 
-로컬 디스크 확장이 어려운 현재 환경에서는 추가 Docker image build를 중단한다. 동일 품질 게이트는 GitHub Actions의 격리 runner에서 image build와 test를 수행하고, 실제 AWS 임시 배포 환경에서 HTTPS·API·WebSocket·PWA smoke를 수행하는 방식으로 대체한다. 향후 로컬 공간이 확보된 경우에만 다음 명령으로 production-like 검증을 재실행한다.
+재검증 명령은 다음과 같다.
 
 ```powershell
 docker compose -f deploy/compose.production-like.yml build
@@ -53,7 +61,11 @@ docker compose -f deploy/compose.production-like.yml ps
 docker compose -f deploy/compose.production-like.yml down
 ```
 
-전체 backend 통합 테스트는 Redis를 요구한다. Docker 엔진이 중단된 동안 오래된 Docker backend가 `6379`만 점유해 연결이 대기한 원인을 thread dump로 확인했고, 해당 프로세스를 정리했다. Docker 복구 후 `scripts/test-backend-windows.ps1 -IncludeDocker`로 PostgreSQL·Redis Testcontainers까지 다시 실행한다.
+전체 backend 통합 테스트는 localhost Redis를 요구한다. `docker compose up -d --wait redis` 후 `scripts/test-backend-windows.ps1 -IncludeDocker -WorkRoot D:\FinWatchTest`로 실행하며, 종료 시 `docker compose down`으로 컨테이너를 정리하고 데이터 volume과 image는 보존한다.
+
+2026-07-19에 로컬 Windows 사용자 환경변수로 Gemini·KIS·NAVER API HUB·Finnhub·Open DART·Kakao 설정과 수집 User-Agent를 등록했다. `DATA_MODE=LIVE`, `AI_PROVIDER=gemini`로 로컬 서버를 재기동한 뒤 PostgreSQL·Redis readiness, 세션 로그인, KIS 현재가·일봉, NAVER 뉴스, Finnhub 회사 뉴스, Open DART 공시, USD/KRW와 Gemini 뉴스 요약까지 `scripts/smoke-live.ps1` 13개 검사가 모두 통과했다. Gemini 응답 모델은 `gemini-3.1-flash-lite`였고, Secret 값은 로그·증적에 기록하지 않았다.
+
+이 결과는 로컬 LIVE 공급자 계약 검증이며 AWS 운영 Secret 주입이나 공개 HTTPS 검증을 대신하지 않는다. Kakao Developers에서 Kakao Login·OpenID Connect·카카오 로그인 Client Secret을 활성화하고 REST API 키에 로컬 callback URI를 등록했다. 실제 카카오계정 동의, authorization code·PKCE token 교환, ID Token 검증, 신규 USER provisioning, HttpOnly session과 `/dashboard` 이동까지 로컬 LIVE 브라우저에서 통과했다. 운영 HTTPS redirect 등록과 공개 PWA 실계정 smoke는 아직 남아 있다.
 
 ## 실제 AWS에서 남은 인수
 

@@ -1,12 +1,14 @@
 # FinWatch 카카오 로그인 명세
 
-상태: Implementation v0.2 — Phase A·B 코드와 자동 검증 완료, Kakao Console 설정·실계정 smoke 대기
+상태: Implementation v0.4 — Phase A·B 코드·자동 검증과 로컬 실계정 smoke 완료, 공개 HTTPS smoke 대기
 
-기준일: 2026-07-17
+기준일: 2026-07-19
 
 대상: Kakao Login(OAuth 2.0/OIDC), Spring Boot 인증, React PWA 세션
 
 구현 기록(2026-07-17): V19 사용자·identity migration, Redis OAuth attempt·불투명 웹 세션, Secure 설정 가능한 HttpOnly cookie, SPA 원본 헤더와 BREACH 보호를 함께 처리하는 쿠키 인증 CSRF, 비밀번호 로그인 세션 이관, session·logout·account delete API, Kakao authorize/callback, state·nonce·PKCE S256, RS256/JWKS·issuer·audience·시간·nonce·sub 검증, USER provisioning, 이메일 자동 병합 차단과 프런트 session bootstrap·카카오 버튼·개인정보 안내를 구현했다. 로컬 개발은 HTTP이므로 `SESSION_COOKIE_SECURE=false`, 운영은 반드시 `true`다. Kakao Developers의 앱 활성화·redirect 등록과 실제 HTTPS 계정 smoke는 외부 설정 전이므로 미완료 상태다. PostgreSQL V19 적용과 실제 브라우저 비밀번호 로그인·로그아웃, 쿠키/CSRF 스모크까지 로컬 LIVE 환경에서 검증했다.
+
+보강 기록(2026-07-19): token/JWKS의 429·5xx·timeout을 공급자 일시 장애로 분리하고, 취소·만료·재사용·모바일·PWA 오류 흐름을 자동 검증했다. Kakao Developers의 FinWatch 앱에서 Kakao Login·OpenID Connect·카카오 로그인 Client Secret을 활성화하고, REST API 키에 로컬 callback URI를 등록했다. 실제 카카오계정 동의, authorization code·PKCE token 교환, RS256 ID Token 검증, 신규 USER provisioning, HttpOnly session 생성과 `/dashboard` 이동까지 로컬 LIVE 브라우저에서 통과했다. 화면에는 `KAKAO 로그인`과 `USER` 권한이 표시됐으며 token과 인가 코드는 증적·로그에 기록하지 않았다.
 
 ## 1. 목적
 
@@ -438,6 +440,8 @@ SESSION_COOKIE_DOMAIN=
 
 CI에서는 Kakao endpoint를 stub하고 실제 Secret을 사용하지 않는다.
 
+구현 기록(2026-07-19): OAuth 취소·TTL 만료·1회 소비와 replay 차단, token endpoint 4xx·5xx·read timeout, JWKS 5xx·read timeout을 자동 검증했다. 공급자 429·5xx·timeout은 재시도 가능한 `kakao_unavailable`, 거부된 인가 코드는 `kakao_failed`로 분리한다. 데스크톱·390px 개발 셸과 production PWA 셸에서 오류 안내·내부 `returnTo`·브라우저 token 미저장·가로 overflow 방지를 검증했다. 실제 HTTPS authorize/callback 성공은 Kakao Console 설정과 운영 키 등록 후의 수동 smoke로 남긴다.
+
 ### 16.3 E2E·수동 smoke
 
 - 카카오 버튼 접근성
@@ -476,8 +480,9 @@ CI에서는 Kakao endpoint를 stub하고 실제 Secret을 사용하지 않는다
 
 ## 18. 인수 조건
 
-- [ ] Kakao Login, Client secret과 OIDC가 활성화된다. — Kakao Console 작업 대기
-- [ ] redirect URI가 환경별로 정확히 등록된다. — Kakao Console 작업 대기
+- [x] 로컬 FinWatch 앱의 Kakao Login, 카카오 로그인 Client Secret과 OIDC가 활성화된다.
+- [x] 로컬 `http://localhost:8080/api/v1/auth/kakao/callback` redirect URI가 REST API 키에 등록된다.
+- [ ] 공개 HTTPS 환경의 redirect URI가 운영 도메인 확정 후 별도로 등록된다.
 - [x] state, nonce, PKCE S256이 적용된다.
 - [x] OAuth attempt가 짧은 TTL과 1회 사용을 보장한다.
 - [x] ID Token의 RS256, iss, aud, exp, iat, nonce, sub를 검증한다.
@@ -490,8 +495,10 @@ CI에서는 Kakao endpoint를 stub하고 실제 Secret을 사용하지 않는다
 - [x] localStorage에 Access Token이 남지 않는다.
 - [x] 비밀번호·Kakao 로그인이 동일 권한 계약을 사용한다.
 - [x] logout이 서버 session을 폐기한다.
-- [ ] 취소·만료·재사용·공급자 장애 상태가 검증된다.
-- [ ] desktop·390px·PWA 로그인 흐름이 통과한다.
+- [x] 취소·만료·재사용·공급자 장애 상태가 검증된다.
+- [x] desktop 로컬 LIVE에서 실제 카카오계정 로그인과 USER session 생성이 통과한다.
+- [x] 390px·production PWA 로그인 이동과 오류 계약이 자동 테스트를 통과한다.
+- [ ] 공개 HTTPS PWA에서 실제 카카오계정 callback이 통과한다.
 - [x] 개인정보 처리 안내와 재인증 기반 계정 삭제·익명화 정책이 준비된다.
 
 미완료 항목이 남아 있으면 “카카오 로그인 완료”로 표시하지 않는다.

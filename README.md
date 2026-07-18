@@ -56,11 +56,22 @@ cd backend
 
 일반 프로필의 AI 요약 캐시는 Redis를 사용하고, `demo` 프로필은 동일한 캐시 계약을 메모리에서 실행합니다.
 
-발급한 공급자 키를 사용자 또는 현재 프로세스 환경변수에 저장한 뒤 로컬 LIVE 프로필은 다음 스크립트로 실행합니다. 스크립트는 키 값을 출력하지 않으며 필수 키가 빠지면 시작 전에 실패합니다.
+발급한 공급자 키는 대화형 스크립트로 하나씩 Windows 사용자 환경변수에 저장할 수 있습니다. 입력한 Secret은 화면과 명령 기록에 표시되지 않으며 상태 표에는 값 대신 설정 여부만 나옵니다. `-Group`에는 `Live`, `Kakao`, `UserAgent`, `All`을 사용할 수 있고, `-MissingOnly`는 미설정 항목만, `-Names`는 지정한 항목만 다시 입력한다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-local-api-keys.ps1 -Group All
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\configure-local-api-keys.ps1 -Group All -StatusOnly
+& .\scripts\configure-local-api-keys.ps1 -Group All -MissingOnly
+& .\scripts\configure-local-api-keys.ps1 -Names NAVER_API_HUB_CLIENT_ID,NAVER_API_HUB_CLIENT_SECRET
+```
+
+Windows 사용자 환경변수는 애플리케이션 입력 형식이며 암호화된 비밀 저장소는 아닙니다. 공동 PC에서는 사용하지 않고, 토큰을 채팅·Git·명령행 인자로 전달하지 않습니다. 설정 후 로컬 LIVE 프로필은 다음 스크립트로 실행합니다. 스크립트는 키 값을 출력하지 않으며 필수 키가 빠지면 시작 전에 실패합니다.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local-live.ps1 -Build
 ```
+
+Windows에서 D: 드라이브를 사용할 수 있으면 LIVE 실행 스크립트도 기본 작업 경로를 `D:\FinWatchTest`로 잡아 Gradle cache, 임시 파일과 portable Temurin 21을 사용한다. 다른 위치가 필요하면 `-WorkRoot`로 지정한다.
 
 실행 후 PostgreSQL·Redis readiness, 로그인, KIS 현재가·일봉, NAVER·Finnhub 뉴스, Open DART 공시, USD/KRW와 Gemini 뉴스 요약을 한 번에 점검할 수 있습니다.
 
@@ -127,17 +138,16 @@ pnpm build
 pnpm test:pwa
 ```
 
-현재 개발 PC처럼 사용자 경로에 한글이 있으면 일부 Gradle 버전의 테스트 런처 classpath가 깨질 수 있습니다. 컴파일 캐시는 영문 경로로 분리할 수 있고, 전체 테스트는 저장소 자체도 영문 경로(예: `C:\Dev\FinWatch`)에서 실행하는 것이 가장 안정적입니다.
+현재 개발 PC처럼 사용자 경로에 한글이 있으면 일부 Gradle 버전의 테스트 런처 classpath가 깨질 수 있습니다. Windows 테스트 스크립트는 저장소를 임시 영문 드라이브 문자로 연결하고, D:가 있으면 Gradle 캐시와 TEMP를 기본적으로 `D:\FinWatchTest`에 둡니다. 다른 작업 드라이브는 `-WorkRoot`로 지정할 수 있습니다.
 
 ```powershell
-$env:GRADLE_USER_HOME="C:\FinWatchGradle"
-cd backend
-.\gradlew.bat test --no-daemon --max-workers=1
+.\scripts\test-backend-windows.ps1 -WorkRoot D:\FinWatchTest
+.\scripts\test-backend-windows.ps1 -IncludeDocker -WorkRoot D:\FinWatchTest
 ```
 
-이 설정은 Gradle 실행 경로만 우회하며 프로젝트 소스와 Git에는 영향을 주지 않습니다.
+이 설정은 Gradle 실행 경로만 우회하며 프로젝트 소스와 Git에는 영향을 주지 않습니다. Docker Desktop의 Linux 이미지·컨테이너 가상 디스크는 별도 저장소이므로 C: 공간이 부족하면 Docker Dashboard의 `Settings > Resources > Advanced > Disk image location`에서 D:의 빈 폴더로 이동한 뒤 Docker 테스트를 실행합니다. VHDX 파일을 Explorer로 직접 옮기지 않습니다.
 
-Docker가 실행 중이면 전체 백엔드 테스트에 Testcontainers PostgreSQL 17·Redis 8 검증이 포함됩니다. 2026-07-17 기준 H2·Mock AI 기반 백엔드 전체 156개 테스트와 프런트 route·기존 기능 Playwright 21개, production Service Worker offline route 1개를 검증합니다. 100,000건 PostgreSQL 성능 검사는 Docker 엔진이 가능한 환경에서 별도로 실행합니다.
+Docker가 실행 중이면 전체 백엔드 테스트에 Testcontainers PostgreSQL 17·Redis 8 검증이 포함됩니다. 2026-07-19 기준 백엔드 전체 173개, 프런트 Playwright 23개, production Service Worker·390px PWA 2개가 통과합니다. PostgreSQL 100,000건 콘텐츠 피드 성능 검사도 D:의 Docker 저장소에서 함께 통과했습니다.
 
 ## AWS 공개 배포 준비
 

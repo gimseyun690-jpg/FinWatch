@@ -32,6 +32,8 @@ class KakaoIdTokenValidatorTest {
     private HttpServer server;
     private RSAKey signingKey;
     private KakaoIdTokenValidator validator;
+    private volatile int jwkStatus;
+    private volatile long jwkDelayMillis;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -43,11 +45,20 @@ class KakaoIdTokenValidatorTest {
                 .keyID("test-key")
                 .algorithm(JWSAlgorithm.RS256)
                 .build();
+        jwkStatus = 200;
+        jwkDelayMillis = 0;
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/jwks", exchange -> {
+            if (jwkDelayMillis > 0) {
+                try {
+                    Thread.sleep(jwkDelayMillis);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             byte[] body = new JWKSet(signingKey.toPublicJWK()).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
+            exchange.sendResponseHeaders(jwkStatus, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
         });
@@ -64,7 +75,7 @@ class KakaoIdTokenValidatorTest {
                 "http://localhost:5173",
                 Duration.ofMinutes(5),
                 Duration.ofSeconds(1),
-                Duration.ofSeconds(1));
+                Duration.ofMillis(100));
         validator = new KakaoIdTokenValidator(properties);
     }
 
@@ -96,6 +107,30 @@ class KakaoIdTokenValidatorTest {
                 AuthHashing.sha256("expected")))
                 .isInstanceOf(KakaoLoginException.class)
                 .hasMessageContaining("nonce");
+    }
+
+    @Test
+    void rejectsTokenWhenJwkEndpointReturnsServerError() throws Exception {
+        jwkStatus = 503;
+
+        assertThatThrownBy(() -> validator.validate(
+                token("test-client", "nonce"),
+                AuthHashing.sha256("nonce")))
+                .isInstanceOf(KakaoLoginException.class)
+                .satisfies(error -> assertThat(((KakaoLoginException) error).getCode())
+                        .isEqualTo("KAKAO_TOKEN_UNAVAILABLE"));
+    }
+
+    @Test
+    void rejectsTokenWhenJwkEndpointTimesOut() throws Exception {
+        jwkDelayMillis = 500;
+
+        assertThatThrownBy(() -> validator.validate(
+                token("test-client", "nonce"),
+                AuthHashing.sha256("nonce")))
+                .isInstanceOf(KakaoLoginException.class)
+                .satisfies(error -> assertThat(((KakaoLoginException) error).getCode())
+                        .isEqualTo("KAKAO_TOKEN_UNAVAILABLE"));
     }
 
     private String token(String audience, String nonce) throws Exception {
