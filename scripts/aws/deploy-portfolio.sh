@@ -37,6 +37,7 @@ for certificate_file in \
   "/etc/letsencrypt/live/${PUBLIC_HOST}/privkey.pem"; do
   [[ -s "$certificate_file" ]] || { echo "Missing TLS file: $certificate_file" >&2; exit 1; }
 done
+"$release_root/scripts/aws/prepare-tls-permissions.sh" "$PUBLIC_HOST"
 
 compose_env="$release_root/compose.env"
 cat >"$compose_env" <<EOF
