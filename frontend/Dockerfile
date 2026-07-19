@@ -11,7 +11,7 @@ COPY frontend/ ./
 ENV VITE_APP_VERSION=$APP_VERSION
 RUN pnpm build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.1-alpine3.23@sha256:cc300bd2e8776708a8c2c8686a74f06eadf221c5ce01e85d0e821955d7a730ab AS runtime
 ARG APP_VERSION=dev
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="FinWatch Web" \
