@@ -1,6 +1,8 @@
 package com.finwatch.auth.kakao;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,7 +20,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import jakarta.servlet.http.Cookie;
@@ -46,6 +50,9 @@ class KakaoAuthorizationIntegrationTest {
 
     @Autowired
     private AppUserRepository userRepository;
+
+    @MockitoBean
+    private KakaoOidcClient oidcClient;
 
     @Test
     void authorizeUsesStateNoncePkceAndHttpOnlyCorrelation() throws Exception {
@@ -93,6 +100,53 @@ class KakaoAuthorizationIntegrationTest {
     }
 
     @Test
+    void cancellationConsumesAttemptAndReplayIsRejected() throws Exception {
+        AuthorizationAttempt attempt = authorize("/news");
+
+        var cancelled = mockMvc.perform(get("/api/v1/auth/kakao/callback")
+                        .cookie(attempt.correlation())
+                        .param("state", attempt.state())
+                        .param("error", "access_denied"))
+                .andExpect(status().isSeeOther())
+                .andExpect(header().string(HttpHeaders.LOCATION,
+                        "http://localhost:5173/login?error=kakao_cancelled"))
+                .andReturn();
+
+        Cookie cleared = cancelled.getResponse().getCookie("FW_KAKAO_CORRELATION");
+        assertThat(cleared).isNotNull();
+        assertThat(cleared.getMaxAge()).isZero();
+
+        mockMvc.perform(get("/api/v1/auth/kakao/callback")
+                        .cookie(attempt.correlation())
+                        .param("state", attempt.state())
+                        .param("error", "access_denied"))
+                .andExpect(status().isSeeOther())
+                .andExpect(header().string(HttpHeaders.LOCATION,
+                        "http://localhost:5173/login?error=kakao_request_invalid"));
+    }
+
+    @Test
+    void providerOutageReturnsRetryableLoginErrorWithoutCreatingSession() throws Exception {
+        AuthorizationAttempt attempt = authorize("/dashboard");
+        when(oidcClient.exchange(anyString(), anyString(), anyString()))
+                .thenThrow(new KakaoLoginException(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "KAKAO_TOKEN_UNAVAILABLE",
+                        "카카오 인증 서버에 연결할 수 없습니다."));
+
+        mockMvc.perform(get("/api/v1/auth/kakao/callback")
+                        .cookie(attempt.correlation())
+                        .param("state", attempt.state())
+                        .param("code", "provider-outage"))
+                .andExpect(status().isSeeOther())
+                .andExpect(header().string(HttpHeaders.LOCATION,
+                        "http://localhost:5173/login?error=kakao_unavailable"));
+
+        mockMvc.perform(get("/api/v1/auth/session").cookie(new Cookie("FW_SESSION", "not-created")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void exposesDisabledStatusContractWithoutSecrets() throws Exception {
         mockMvc.perform(get("/api/v1/auth/kakao/status"))
                 .andExpect(status().isOk())
@@ -118,6 +172,16 @@ class KakaoAuthorizationIntegrationTest {
         assertThat(created.getRole()).isEqualTo(UserRole.USER);
     }
 
+    private AuthorizationAttempt authorize(String returnTo) throws Exception {
+        var result = mockMvc.perform(get("/api/v1/auth/kakao/authorize").param("returnTo", returnTo))
+                .andExpect(status().isFound())
+                .andReturn();
+        URI location = URI.create(result.getResponse().getHeader(HttpHeaders.LOCATION));
+        return new AuthorizationAttempt(
+                result.getResponse().getCookie("FW_KAKAO_CORRELATION"),
+                query(location.getRawQuery()).get("state"));
+    }
+
     private Map<String, String> query(String rawQuery) {
         return Arrays.stream(rawQuery.split("&"))
                 .map(part -> part.split("=", 2))
@@ -128,5 +192,8 @@ class KakaoAuthorizationIntegrationTest {
 
     private String decode(String value) {
         return URLDecoder.decode(value, StandardCharsets.UTF_8);
+    }
+
+    private record AuthorizationAttempt(Cookie correlation, String state) {
     }
 }

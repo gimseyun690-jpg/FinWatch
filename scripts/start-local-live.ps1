@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [int]$Port = 8080,
-    [switch]$Build
+    [switch]$Build,
+    [string]$WorkRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,7 +10,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $backendRoot = Join-Path $repoRoot 'backend'
 $jarPath = Join-Path $backendRoot 'build\libs\finwatch-api.jar'
 
-function Import-RequiredEnvironmentVariable([string]$Name) {
+function Import-EnvironmentVariable([string]$Name, [bool]$Required) {
     $value = [Environment]::GetEnvironmentVariable($Name, 'Process')
     if ([string]::IsNullOrWhiteSpace($value)) {
         $value = [Environment]::GetEnvironmentVariable($Name, 'User')
@@ -18,7 +19,10 @@ function Import-RequiredEnvironmentVariable([string]$Name) {
         $value = [Environment]::GetEnvironmentVariable($Name, 'Machine')
     }
     if ([string]::IsNullOrWhiteSpace($value)) {
-        throw "Required environment variable $Name is missing."
+        if ($Required) {
+            throw "Required environment variable $Name is missing."
+        }
+        return
     }
     [Environment]::SetEnvironmentVariable($Name, $value, 'Process')
 }
@@ -33,7 +37,44 @@ $required = @(
     'OPENDART_API_KEY',
     'FINNHUB_API_KEY'
 )
-$required | ForEach-Object { Import-RequiredEnvironmentVariable $_ }
+$required | ForEach-Object { Import-EnvironmentVariable $_ $true }
+
+$optional = @(
+    'ARTICLE_USER_AGENT',
+    'SEC_EDGAR_USER_AGENT',
+    'KAKAO_REST_API_KEY',
+    'KAKAO_CLIENT_SECRET',
+    'KAKAO_REDIRECT_URI',
+    'KAKAO_LOGIN_ENABLED'
+)
+$optional | ForEach-Object { Import-EnvironmentVariable $_ $false }
+
+if ([string]::IsNullOrWhiteSpace($WorkRoot)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:FINWATCH_TEST_WORK_ROOT)) {
+        $WorkRoot = $env:FINWATCH_TEST_WORK_ROOT
+    }
+    elseif (Test-Path -LiteralPath 'D:\') {
+        $WorkRoot = 'D:\FinWatchTest'
+    }
+    else {
+        $WorkRoot = Join-Path $env:LOCALAPPDATA 'FinWatchTest'
+    }
+}
+$workRootPath = [System.IO.Path]::GetFullPath($WorkRoot)
+$gradleHome = Join-Path $workRootPath 'gradle'
+$asciiTemp = Join-Path $workRootPath 'temp'
+New-Item -ItemType Directory -Force -Path $gradleHome, $asciiTemp | Out-Null
+$env:GRADLE_USER_HOME = $gradleHome
+$env:TEMP = $asciiTemp
+$env:TMP = $asciiTemp
+
+$portableJdk = Get-ChildItem (Join-Path $workRootPath 'tools\temurin21') -Directory -Filter 'jdk-21*' -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending |
+    Select-Object -First 1
+if ($portableJdk) {
+    $env:JAVA_HOME = $portableJdk.FullName
+    $env:PATH = "$($portableJdk.FullName)\bin;$env:PATH"
+}
 
 $env:SPRING_PROFILES_ACTIVE = 'live'
 $env:DATA_MODE = 'LIVE'

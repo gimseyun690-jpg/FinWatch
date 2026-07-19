@@ -57,6 +57,14 @@ public class KakaoOidcClient {
                     : response.get("id_token").toString();
             return idTokenValidator.validate(idToken, expectedNonceHash);
         } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().is5xxServerError()
+                    || exception.getStatusCode().value() == 429) {
+                throw new KakaoLoginException(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "KAKAO_TOKEN_UNAVAILABLE",
+                        "카카오 인증 서버를 일시적으로 사용할 수 없습니다.",
+                        exception);
+            }
             throw new KakaoLoginException(
                     HttpStatus.BAD_GATEWAY,
                     "KAKAO_TOKEN_REJECTED",
