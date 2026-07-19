@@ -17,6 +17,14 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
 
     List<Stock> findAllByActiveTrueOrderByMarketAscNameAsc();
 
+    @Query("""
+            select s from Stock s
+            where s.active = true
+              and exists (select p.id from MarketPrice p where p.stock = s)
+            order by s.market asc, s.name asc
+            """)
+    List<Stock> findAllActiveWithPrices();
+
     Optional<Stock> findFirstBySymbolAndActiveTrue(String symbol);
 
     Optional<Stock> findByMarketAndSymbolAndActiveTrue(String market, String symbol);
