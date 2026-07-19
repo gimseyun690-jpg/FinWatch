@@ -22,6 +22,7 @@ aws s3 cp "s3://${DEPLOYMENT_BUCKET}/releases/${RELEASE_ID}/deploy.tgz" "$bundle
   --region "$AWS_REGION" --only-show-errors
 tar -xzf "$bundle" -C "$release_root"
 rm -f "$bundle"
+chmod 0750 "$release_root"/scripts/aws/*.sh
 
 "$release_root/scripts/aws/render-runtime-env.sh" \
   "$PROJECT_NAME" "$ENVIRONMENT_NAME" "$AWS_REGION" "$RELEASE_ID" "$runtime_env"
