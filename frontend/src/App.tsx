@@ -27,7 +27,7 @@ import { WatchlistPanel } from './components/WatchlistPanel'
 import { syncExternalData } from './api/admin'
 import { getSession, logout as logoutSession } from './api/auth'
 import { useRealtimeQuotes } from './hooks/useRealtimeQuotes'
-import type { AuthSession, LoginResponse } from './types/auth'
+import type { AuthSession } from './types/auth'
 import type { DataSyncResult } from './types/admin'
 import type { StockRef } from './types/stock'
 import type { WatchlistItem } from './types/watchlist'
@@ -132,11 +132,6 @@ function App() {
     navigate(`/stocks/${encodeURIComponent(next.market)}/${encodeURIComponent(next.symbol)}${suffix ? `/${suffix}` : ''}`)
   }, [location.pathname, navigate])
 
-  function handleLogin(response: LoginResponse, returnTo = '/dashboard') {
-    setSession(response)
-    navigate(returnTo, { replace: true })
-  }
-
   const logout = useCallback(() => {
     const returnTo = location.pathname + location.search
     void logoutSession().finally(() => {
@@ -169,7 +164,7 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginRoute apiState={apiState} session={session} onLogin={handleLogin} />} />
+      <Route path="/login" element={<LoginRoute apiState={apiState} session={session} />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route element={<AuthGuard session={session} />}>
         <Route element={context ? <AppShell context={context} /> : <Outlet />}>
@@ -203,11 +198,11 @@ function App() {
   )
 }
 
-function LoginRoute({ apiState, session, onLogin }: { apiState: ApiState; session: AuthSession | null; onLogin: (response: LoginResponse, returnTo: string) => void }) {
+function LoginRoute({ apiState, session }: { apiState: ApiState; session: AuthSession | null }) {
   const [searchParams] = useSearchParams()
   const returnTo = validReturnTo(searchParams.get('returnTo'))
   if (session) return <Navigate to={returnTo} replace />
-  return <LoginPage apiState={apiState} returnTo={returnTo} oauthError={searchParams.get('error')} onLogin={(response) => onLogin(response, returnTo)} />
+  return <LoginPage apiState={apiState} returnTo={returnTo} oauthError={searchParams.get('error')} />
 }
 
 function AuthGuard({ session }: { session: AuthSession | null }) {

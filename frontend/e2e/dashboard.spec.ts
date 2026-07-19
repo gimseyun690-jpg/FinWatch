@@ -160,9 +160,11 @@ function response(data: unknown) {
 
 const realtimeSenders = new WeakMap<Page, (event: unknown) => void>()
 const watchlistReadCounts = new WeakMap<Page, number>()
+const requestedAuthRoles = new WeakMap<Page, 'ADMIN' | 'USER'>()
 
 async function mockApi(page: Page) {
   watchlistReadCounts.set(page, 0)
+  requestedAuthRoles.set(page, 'ADMIN')
   let authenticated = false
   let currentUser = {
     id: 1,
@@ -221,7 +223,20 @@ async function mockApi(page: Page) {
     if (path === '/api/v1/health') {
       body = { status: 'UP', timestamp: now }
     } else if (path === '/api/v1/auth/kakao/status') {
-      body = response({ enabled: false })
+      body = response({ enabled: true })
+    } else if (path === '/api/v1/auth/kakao/authorize') {
+      const role = requestedAuthRoles.get(page) ?? 'ADMIN'
+      currentUser = {
+        id: 1,
+        displayName: role === 'ADMIN' ? 'admin' : 'user',
+        email: role === 'ADMIN' ? 'admin@finwatch.local' : 'user@finwatch.local',
+        profileImageUrl: null,
+        role,
+        authProvider: 'KAKAO',
+      }
+      authenticated = true
+      await route.fulfill({ status: 303, headers: { location: '/dashboard' } })
+      return
     } else if (path === '/api/v1/auth/session') {
       if (!authenticated) {
         await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ success: false, code: 'AUTHENTICATION_REQUIRED', message: '로그인이 필요합니다.' }) })
@@ -479,10 +494,11 @@ async function mockApi(page: Page) {
   })
 }
 
-async function login(page: Page) {
+async function login(page: Page, role: 'ADMIN' | 'USER' = 'ADMIN') {
+  requestedAuthRoles.set(page, role)
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '투자 정보 대시보드 로그인' })).toBeVisible()
-  await page.getByRole('button', { name: '로그인', exact: true }).click()
+  await page.getByRole('button', { name: '카카오 로그인', exact: true }).click()
   await expect(page.getByRole('heading', { name: '개인 투자자용 메인 대시보드' })).toBeVisible()
 }
 
@@ -824,9 +840,7 @@ test('mobile bottom navigation and more drawer restore focus', async ({ page }) 
 })
 
 test('regular users cannot see or directly open administrator routes', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: /일반 사용자/ }).click()
-  await page.getByRole('button', { name: '로그인', exact: true }).click()
+  await login(page, 'USER')
   await expect(page.getByRole('heading', { name: '개인 투자자용 메인 대시보드' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'AI 사용량' })).toHaveCount(0)
 

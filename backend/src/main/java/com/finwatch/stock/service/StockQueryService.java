@@ -74,8 +74,7 @@ public class StockQueryService {
     }
 
     public List<StockSummary> getStocks() {
-        return stockRepository.findAllByActiveTrueOrderByMarketAscNameAsc().stream()
-                .filter(stock -> marketPriceRepository.existsByStockId(stock.getId()))
+        return stockRepository.findAllActiveWithPrices().stream()
                 .map(this::toSummary)
                 .toList();
     }

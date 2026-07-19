@@ -131,25 +131,8 @@ nav a.active {
 .kakao-login-button:focus-visible { outline: 3px solid color-mix(in srgb, #fee500 45%, white); outline-offset: 3px; }
 .kakao-login-button:disabled { filter: grayscale(.28); opacity: .52; }
 .kakao-login-section p { margin: 0; color: var(--text-muted); font-size: 10px; line-height: 1.5; text-align: center; }
-.login-method-divider { margin: 0 0 18px; }
-.login-card form { display: grid; gap: 14px; }
-.login-card label { display: grid; gap: 7px; }
-.login-card label > span { color: var(--text-muted); font-size: 11px; font-weight: 700; }
-.login-card input { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 13px 14px; outline: none; color: var(--text-strong); background: var(--bg-input); }
-.login-card input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 10%, transparent); }
-.login-card form > button { width: 100%; margin-top: 4px; }
 .login-card button:disabled { cursor: not-allowed; filter: grayscale(.5); opacity: .58; }
 .login-error { margin: 0; color: var(--red) !important; font-size: 11px; }
-.login-api-help { margin: -4px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
-.demo-account-section { margin-top: 25px; }
-.login-divider { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; color: var(--text-muted); font-size: 10px; }
-.login-divider::before, .login-divider::after { height: 1px; flex: 1; content: ''; background: var(--border); }
-.demo-account-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
-.demo-account-grid button { display: grid; gap: 4px; border: 1px solid var(--border); padding: 12px; color: var(--text-muted); text-align: left; background: var(--panel-soft); }
-.demo-account-grid button:hover { filter: none; border-color: var(--cyan); }
-.demo-account-grid button span { font-size: 10px; }
-.demo-account-grid button strong { color: var(--cyan); font-size: 12px; }
-.demo-account-grid button small { overflow: hidden; font-size: 10px; text-overflow: ellipsis; }
 .login-api-status { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 24px; color: var(--text-muted); font-size: 10px; }
 .login-api-status.connected .status-dot { background: var(--green); }
 .login-api-status.offline .status-dot { background: var(--red); }
@@ -861,7 +844,6 @@ footer { padding: 23px 0 35px; border-top: 1px solid var(--border); color: var(-
   .user-session > span { display: none; }
   .login-card { padding: 24px; }
   .login-heading h1 { font-size: 24px; }
-  .demo-account-grid { grid-template-columns: 1fr; }
   .watchlist-editor-heading { align-items: flex-start; }
   .watchlist-editor-heading > div { min-width: 0; }
   .watchlist-search-result { grid-template-columns: 72px minmax(0, 1fr) auto; gap: 8px; }

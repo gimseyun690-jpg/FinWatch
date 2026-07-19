@@ -23,6 +23,14 @@ class StockApiIntegrationTest {
     private MockMvc mockMvc;
 
     @Test
+    void returnsOnlyActiveStocksThatHavePriceData() throws Exception {
+        mockMvc.perform(get("/api/v1/stocks").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data[0].price").isNumber());
+    }
+
+    @Test
     void returnsStockPriceHistoryAndTechnicalAnalysis() throws Exception {
         mockMvc.perform(get("/api/v1/stocks/000660").with(jwt()))
                 .andExpect(status().isOk())
