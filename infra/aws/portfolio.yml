@@ -175,6 +175,8 @@ Resources:
         - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: OS repositories and ACME}
         - {IpProtocol: udp, FromPort: 53, ToPort: 53, CidrIp: !Ref VpcCidr, Description: VPC DNS}
         - {IpProtocol: tcp, FromPort: 53, ToPort: 53, CidrIp: !Ref VpcCidr, Description: VPC DNS fallback}
+        - {IpProtocol: tcp, FromPort: 9443, ToPort: 9443, CidrIp: 0.0.0.0/0, Description: KIS production REST API}
+        - {IpProtocol: tcp, FromPort: 29443, ToPort: 29443, CidrIp: 0.0.0.0/0, Description: KIS paper REST API}
         - {IpProtocol: tcp, FromPort: 21000, ToPort: 21000, CidrIp: 0.0.0.0/0, Description: KIS production WebSocket}
         - {IpProtocol: tcp, FromPort: 31000, ToPort: 31000, CidrIp: 0.0.0.0/0, Description: KIS paper WebSocket}
       Tags:
