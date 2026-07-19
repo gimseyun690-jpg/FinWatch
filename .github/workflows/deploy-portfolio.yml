@@ -131,7 +131,7 @@ jobs:
           jq -n --arg command "$command" '{commands:[$command]}' > /tmp/ssm-parameters.json
           command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters file:///tmp/ssm-parameters.json --comment "FinWatch ${{ steps.release.outputs.sha }}" --query Command.CommandId --output text)"
           echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
-          aws ssm wait command-executed --command-id "$command_id" --instance-id "$INSTANCE_ID"
+          aws ssm wait command-executed --command-id "$command_id" --instance-id "$INSTANCE_ID" || true
           status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text)"
           aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query StandardOutputContent --output text
           if [[ "$status" != Success ]]; then
