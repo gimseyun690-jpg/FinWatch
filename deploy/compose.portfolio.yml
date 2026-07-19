@@ -32,7 +32,6 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?AWS_REGION is required}
         awslogs-group: ${NGINX_LOG_GROUP:?NGINX_LOG_GROUP is required}
-        awslogs-stream-prefix: web
 
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be a SHA tag or digest}
@@ -63,7 +62,6 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?AWS_REGION is required}
         awslogs-group: ${BACKEND_LOG_GROUP:?BACKEND_LOG_GROUP is required}
-        awslogs-stream-prefix: api
 
   redis:
     image: ${REDIS_IMAGE:?REDIS_IMAGE must be digest-pinned}
@@ -90,7 +88,6 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?AWS_REGION is required}
         awslogs-group: ${REDIS_LOG_GROUP:?REDIS_LOG_GROUP is required}
-        awslogs-stream-prefix: redis
 
 networks:
   default:
