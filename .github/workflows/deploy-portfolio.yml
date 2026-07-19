@@ -88,13 +88,24 @@ jobs:
         shell: bash
         run: |
           for repository in "$BACKEND_REPOSITORY" "$FRONTEND_REPOSITORY"; do
+            index_manifest="$(aws ecr batch-get-image \
+              --repository-name "$repository" \
+              --image-ids imageTag=${{ steps.release.outputs.sha }} \
+              --accepted-media-types application/vnd.oci.image.index.v1+json \
+              --query 'images[0].imageManifest' \
+              --output text)"
+            image_digest="$(jq -er \
+              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")][0].digest' \
+              <<<"$index_manifest")"
+            status=''
             for attempt in $(seq 1 30); do
-              status="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageTag=${{ steps.release.outputs.sha }} --query imageScanStatus.status --output text 2>/dev/null || true)"
+              status="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageDigest="$image_digest" --query imageScanStatus.status --output text 2>/dev/null || true)"
               [[ "$status" == COMPLETE ]] && break
               [[ "$status" == FAILED ]] && exit 1
               sleep 10
             done
-            critical="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageTag=${{ steps.release.outputs.sha }} --query 'imageScanFindings.findingSeverityCounts.CRITICAL || `0`' --output text)"
+            [[ "$status" == COMPLETE ]] || { echo "ECR scan did not complete for $repository ($image_digest)." >&2; exit 1; }
+            critical="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageDigest="$image_digest" --query 'imageScanFindings.findingSeverityCounts.CRITICAL || `0`' --output text)"
             test "$critical" = 0
           done
 
