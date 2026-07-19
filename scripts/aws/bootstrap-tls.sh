@@ -22,4 +22,6 @@ docker run --rm \
 
 test -s "/etc/letsencrypt/live/${PUBLIC_HOST}/fullchain.pem"
 test -s "/etc/letsencrypt/live/${PUBLIC_HOST}/privkey.pem"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+"$script_dir/prepare-tls-permissions.sh" "$PUBLIC_HOST"
 echo "TLS certificate issued for $PUBLIC_HOST. Configure a scheduled renewal and expiry alarm before acceptance."
