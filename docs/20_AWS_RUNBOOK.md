@@ -1,6 +1,6 @@
 # FinWatch AWS 공개 배포 런북
 
-상태: AWS 기반 스택·GitHub OIDC 준비 완료, 최초 TLS와 애플리케이션 배포 진행 중
+상태: AWS 공개 배포 완료, 운영 인수 항목 점검 중
 
 기준일: 2026-07-19
 
@@ -17,9 +17,9 @@
 | 비용 알림 이메일 / 월 상한(USD) | 운영 이메일 / 20 |
 | EC2 / RDS 사양 | `t3.small` / `db.t4g.micro` 초안 |
 | RPO / RTO / 백업 보존 | 24시간 / 4시간 / 1일(AWS Free Plan) |
-| 공개 시작·종료일 | 미정 |
+| 공개 시작·종료일 | 2026-07-19 / 종료일 미정 |
 | 운영·장애·비용 책임자 | 미정 |
-| Kakao 운영 Redirect URI 승인 | 미정 |
+| Kakao 운영 Redirect URI 승인 | `https://finwatch-hyphoenix.duckdns.org/api/v1/auth/kakao/callback` 등록 완료 |
 
 또한 선택한 리전에서 PostgreSQL 17 엔진 버전과 인스턴스 클래스를 확인하고, Redis와 Certbot 이미지는 digest 또는 고정 버전으로 정한다. `latest` 태그는 사용하지 않는다.
 
@@ -175,7 +175,7 @@ SSM은 `SsmDeployTarget=true` 태그가 붙은 인스턴스만 대상으로 한�
 ## 9. 인수·증거
 
 ```bash
-bash scripts/aws/aws-smoke.sh https://finwatch.example.com
+bash scripts/aws/aws-smoke.sh https://finwatch-hyphoenix.duckdns.org
 ```
 
 다음 증거를 Secret 없이 `docs/evidence/aws/RELEASE_SHA/` 또는 제출 기록에 보관한다.
@@ -221,9 +221,17 @@ DB 스키마는 이미 적용될 수 있으므로 app rollback과 DB restore를 
 6. 공급자 key와 Kakao client secret을 교체하거나 폐기한다.
 7. Budget와 Cost Explorer에서 잔존 일별 비용이 없는지 최소 48시간 확인한다.
 
-## 12. 현재 미완료 항목
+## 12. 현재 배포 상태와 남은 운영 항목
 
-- AWS 계정·리전·도메인·예산·담당자가 확정되지 않았다.
-- 실제 CloudFormation stack, DNS, TLS, RDS, EC2, ECR은 생성하지 않았다.
-- 실제 공개 URL smoke, CloudWatch alarm test, RDS restore drill은 수행하지 않았다.
-- 따라서 현재 상태를 “AWS 배포 완료”라고 표시하면 안 된다. 현재 완료 상태는 “재현 가능한 배포 코드와 런북 준비”다.
+2026-07-19 기준 `finwatch-portfolio` 스택, private RDS, EC2, ECR, S3, Secrets Manager, CloudWatch와 GitHub OIDC 배포 역할을 구성했다. DuckDNS와 Let's Encrypt를 연결하고 release `a3cac91abe4ec0d9c461ebe906822081713126d5`를 배포했다. GitHub Actions 배포 run `29680176687`에서 이미지 빌드, ECR Critical 0 검사, RDS 사전 snapshot, SSM 배포, 외부 smoke가 모두 통과했다.
+
+공개 URL은 `https://finwatch-hyphoenix.duckdns.org`다. Redis·backend·frontend는 모두 healthy이고 HTTP→HTTPS, SPA 직접 route, PWA, API health, 외부 Actuator 차단, WebSocket 인증 경계와 Kakao 활성 상태가 통과했다. Let's Encrypt 인증서는 2026-10-17까지 유효하고 자동 갱신 timer가 enabled/active다. backend·Nginx·Redis CloudWatch log stream도 생성됐다. 공급자 키는 AWS Secrets Manager에만 저장하며 GitHub에는 운영 Secret을 두지 않는다.
+
+남은 운영 인수 항목은 다음과 같다.
+
+- CloudWatch 경보·SNS와 AWS Budget 이메일의 실제 수신 시험
+- RDS snapshot 복원 훈련과 실측 RPO/RTO 기록
+- 공개 URL에서 실제 카카오계정 로그인과 callback·session 최종 브라우저 확인
+- 운영·장애·비용 책임자와 공개 종료일 확정
+- 배포 과정에서 생성된 수동 RDS snapshot, ECR image, S3 release의 보존 주기와 비용 점검
+- GitHub Actions의 Node.js 20 기반 action 경고 해소를 위한 후속 버전 점검
