@@ -82,10 +82,6 @@ public class FinnhubRealtimeClient {
     public void start(List<String> symbols) {
         this.symbols = normalize(symbols);
         stopped = false;
-        if (this.symbols.isEmpty()) {
-            hub.updateProvider(PROVIDER, "IDLE", "구독할 미국 종목을 기다리는 중입니다.");
-            return;
-        }
         if (apiKey.isBlank()) {
             hub.updateProvider(PROVIDER, "ERROR", "FINNHUB_API_KEY가 필요합니다.");
             return;
@@ -133,23 +129,16 @@ public class FinnhubRealtimeClient {
         List<String> removals = previous.stream().filter(symbol -> !desiredSet.contains(symbol)).toList();
         WebSocket socket = activeSocket;
         if (socket == null) {
-            if (desired.isEmpty()) {
-                hub.updateProvider(PROVIDER, "IDLE", "구독할 미국 종목을 기다리는 중입니다.");
-            } else {
-                scheduler.execute(() -> {
-                    seedSnapshots(additions);
-                    connect();
-                });
-            }
+            scheduler.execute(() -> {
+                seedSnapshots(additions);
+                connect();
+            });
             return;
         }
         removals.forEach(symbol -> socket.sendText(subscriptionMessage("unsubscribe", symbol), true));
         seedSnapshots(additions);
         additions.forEach(symbol -> socket.sendText(subscriptionMessage("subscribe", symbol), true));
-        hub.updateProvider(
-                PROVIDER,
-                desired.isEmpty() ? "IDLE" : "CONNECTED",
-                desired.size() + "개 미국 종목 trade 구독 중");
+        hub.updateProvider(PROVIDER, "CONNECTED", connectionMessage(desired.size()));
     }
 
     public List<String> subscribedSymbols() {
@@ -197,7 +186,7 @@ public class FinnhubRealtimeClient {
     }
 
     private void connect() {
-        if (stopped || symbols.isEmpty() || !connectionPending.compareAndSet(false, true)) {
+        if (stopped || !connectionPending.compareAndSet(false, true)) {
             return;
         }
         hub.updateProvider(PROVIDER, reconnectAttempts.get() == 0 ? "CONNECTING" : "RECONNECTING", "Finnhub trade stream 연결 중");
@@ -240,7 +229,7 @@ public class FinnhubRealtimeClient {
     }
 
     private void scheduleReconnect() {
-        if (stopped || symbols.isEmpty() || !reconnectScheduled.compareAndSet(false, true)) {
+        if (stopped || !reconnectScheduled.compareAndSet(false, true)) {
             return;
         }
         int attempt = reconnectAttempts.incrementAndGet();
@@ -291,6 +280,12 @@ public class FinnhubRealtimeClient {
         return message.replaceAll("token=[^&\\s]+", "token=***");
     }
 
+    private String connectionMessage(int subscriptionCount) {
+        return subscriptionCount == 0
+                ? "Finnhub 연결됨 · 구독 종목 없음"
+                : subscriptionCount + "개 미국 종목 trade 구독 중";
+    }
+
     private final class Listener implements WebSocket.Listener {
 
         private final StringBuilder buffer = new StringBuilder();
@@ -308,7 +303,7 @@ public class FinnhubRealtimeClient {
             }
             subscriptions.whenComplete((ignored, error) -> {
                 if (error == null) {
-                    hub.updateProvider(PROVIDER, "CONNECTED", symbols.size() + "개 미국 종목 trade 구독 중");
+                    hub.updateProvider(PROVIDER, "CONNECTED", connectionMessage(symbols.size()));
                 } else {
                     hub.updateProvider(PROVIDER, "ERROR", "Finnhub 구독 요청 실패: " + safeMessage(error));
                     webSocket.abort();

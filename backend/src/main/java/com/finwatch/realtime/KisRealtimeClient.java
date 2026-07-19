@@ -93,10 +93,6 @@ public class KisRealtimeClient {
     public void start(List<String> symbols) {
         this.symbols = normalize(symbols);
         stopped = false;
-        if (this.symbols.isEmpty()) {
-            hub.updateProvider(PROVIDER, "IDLE", "구독할 KRX 종목을 기다리는 중입니다.");
-            return;
-        }
         if (appKey.isBlank() || appSecret.isBlank()) {
             hub.updateProvider(PROVIDER, "ERROR", "KIS_APP_KEY와 KIS_APP_SECRET이 필요합니다.");
             return;
@@ -114,7 +110,7 @@ public class KisRealtimeClient {
         if (stopped) {
             return;
         }
-        if (!desired.isEmpty() && (appKey.isBlank() || appSecret.isBlank())) {
+        if (appKey.isBlank() || appSecret.isBlank()) {
             hub.updateProvider(PROVIDER, "ERROR", "KIS_APP_KEY와 KIS_APP_SECRET이 필요합니다.");
             return;
         }
@@ -124,14 +120,10 @@ public class KisRealtimeClient {
         List<String> removals = previous.stream().filter(symbol -> !desiredSet.contains(symbol)).toList();
         WebSocket socket = activeSocket;
         if (socket == null) {
-            if (desired.isEmpty()) {
-                hub.updateProvider(PROVIDER, "IDLE", "구독할 KRX 종목을 기다리는 중입니다.");
-            } else {
-                scheduler.execute(() -> {
-                    seedSnapshots(additions);
-                    connect();
-                });
-            }
+            scheduler.execute(() -> {
+                seedSnapshots(additions);
+                connect();
+            });
             return;
         }
         String approvalKey = cachedApprovalKey;
@@ -141,10 +133,7 @@ public class KisRealtimeClient {
         removals.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "2"), true));
         seedSnapshots(additions);
         additions.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "1"), true));
-        hub.updateProvider(
-                PROVIDER,
-                desired.isEmpty() ? "IDLE" : "CONNECTED",
-                desired.size() + "개 KRX 종목 체결 구독 중");
+        hub.updateProvider(PROVIDER, "CONNECTED", connectionMessage(desired.size()));
     }
 
     public List<String> subscribedSymbols() {
@@ -191,7 +180,7 @@ public class KisRealtimeClient {
     }
 
     private void connect() {
-        if (stopped || symbols.isEmpty() || !connectionPending.compareAndSet(false, true)) {
+        if (stopped || !connectionPending.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -241,7 +230,7 @@ public class KisRealtimeClient {
     }
 
     private void scheduleReconnect() {
-        if (stopped || symbols.isEmpty() || !reconnectScheduled.compareAndSet(false, true)) {
+        if (stopped || !reconnectScheduled.compareAndSet(false, true)) {
             return;
         }
         int attempt = reconnectAttempts.incrementAndGet();
@@ -320,6 +309,12 @@ public class KisRealtimeClient {
         return message == null || message.isBlank() ? current.getClass().getSimpleName() : message;
     }
 
+    private String connectionMessage(int subscriptionCount) {
+        return subscriptionCount == 0
+                ? "KIS 연결됨 · 구독 종목 없음"
+                : subscriptionCount + "개 KRX 종목 체결 구독 중";
+    }
+
     private final class Listener implements WebSocket.Listener {
 
         private final String approvalKey;
@@ -344,7 +339,7 @@ public class KisRealtimeClient {
             }
             subscriptions.whenComplete((ignored, error) -> {
                 if (error == null) {
-                    hub.updateProvider(PROVIDER, "CONNECTED", symbols.size() + "개 KRX 종목 체결 구독 중");
+                    hub.updateProvider(PROVIDER, "CONNECTED", connectionMessage(symbols.size()));
                 } else {
                     hub.updateProvider(PROVIDER, "ERROR", "KIS 구독 요청 실패: " + safeMessage(error));
                     webSocket.abort();
