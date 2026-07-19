@@ -54,6 +54,12 @@ Parameters:
     Type: Number
     Default: 20
     MinValue: 20
+  DBBackupRetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 35
+    Description: Use 1 for AWS Free Plan accounts; paid portfolio environments default to 7 days.
   RedisImage:
     Type: String
     Description: Digest-pinned Redis image, for example redis@sha256:...
@@ -246,7 +252,7 @@ Resources:
       PubliclyAccessible: false
       MultiAZ: false
       AutoMinorVersionUpgrade: true
-      BackupRetentionPeriod: 7
+      BackupRetentionPeriod: !Ref DBBackupRetentionDays
       CopyTagsToSnapshot: true
       DeletionProtection: true
       EnablePerformanceInsights: false
