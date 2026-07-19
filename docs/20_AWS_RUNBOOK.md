@@ -1,8 +1,8 @@
 # FinWatch AWS 공개 배포 런북
 
-상태: 코드·IaC·CI/CD 준비 완료, AWS 계정에는 아직 배포하지 않음
+상태: AWS 기반 스택·GitHub OIDC 준비 완료, 최초 TLS와 애플리케이션 배포 진행 중
 
-기준일: 2026-07-18
+기준일: 2026-07-19
 
 이 문서는 `20_AWS_DEPLOYMENT_SPEC.md`를 실제 AWS 계정에서 실행할 때의 순서다. CloudFormation을 실행하면 EC2, EBS, RDS, Elastic IP, Route 53, CloudWatch, Secrets Manager 등에서 비용이 발생할 수 있다. 담당자와 상한을 확정하기 전에는 스택을 만들지 않는다.
 
@@ -12,11 +12,11 @@
 
 | 항목 | 확정값 |
 |---|---|
-| AWS 계정 ID / 리전 | 미정 |
-| canonical domain / Hosted Zone ID | 미정 |
-| 비용 알림 이메일 / 월 상한(USD) | 미정 |
+| AWS 계정 ID / 리전 | 별도 운영 기록 / `ap-northeast-2` |
+| canonical domain / Hosted Zone ID | `finwatch-hyphoenix.duckdns.org` / 외부 DNS |
+| 비용 알림 이메일 / 월 상한(USD) | 운영 이메일 / 20 |
 | EC2 / RDS 사양 | `t3.small` / `db.t4g.micro` 초안 |
-| RPO / RTO / 백업 보존 | 24시간 / 4시간 / 7일 초안 |
+| RPO / RTO / 백업 보존 | 24시간 / 4시간 / 1일(AWS Free Plan) |
 | 공개 시작·종료일 | 미정 |
 | 운영·장애·비용 책임자 | 미정 |
 | Kakao 운영 Redirect URI 승인 | 미정 |
@@ -60,12 +60,15 @@ aws cloudformation deploy \
   --parameter-overrides \
     PublicHost=finwatch.example.com \
     CertificateEmail=owner@example.com \
-    HostedZoneId=Z000000000000 \
+    HostedZoneId='' \
     BudgetEmail=owner@example.com \
-    MonthlyBudgetUsd=35 \
+    MonthlyBudgetUsd=20 \
+    DBBackupRetentionDays=1 \
     RedisImage=redis@sha256:REPLACE_WITH_VERIFIED_DIGEST \
     CertbotImage=certbot/certbot:vREPLACE_WITH_PINNED_VERSION
 ```
+
+AWS Free Plan 계정에서는 RDS 자동 백업 보존 기간 상한에 맞게 `DBBackupRetentionDays=1`을 사용한다. 유료 플랜에서는 기본값 7일을 유지할 수 있다.
 
 완료 후 스택 Outputs를 별도 배포 기록에 저장한다. `DatabaseMasterSecretArn`은 애플리케이션 EC2 역할에서 읽을 수 없도록 설계되어 있다.
 
@@ -81,6 +84,14 @@ export APP_USERNAME='finwatch_app'
 export APP_PASSWORD='generated-database-application-secret-value'
 bash scripts/aws/bootstrap-rds-app-user.sh
 unset PGHOST MASTER_USERNAME MASTER_PASSWORD APP_USERNAME APP_PASSWORD
+```
+
+SSM으로 EC2에서 부트스트랩할 때는 master secret에 대한 읽기 권한을 해당 작업 동안에만 임시로 부여하고 다음 wrapper를 사용한다. 이 wrapper는 secret JSON을 출력하지 않으며 종료 시 관련 환경변수를 제거한다.
+
+```bash
+sudo bash scripts/aws/bootstrap-rds-from-secrets.sh \
+  "$AWS_REGION" "$MASTER_SECRET_ARN" "$APP_SECRET_ARN" \
+  "$DB_ENDPOINT" /path/to/scripts/aws/bootstrap-rds-app-user.sh
 ```
 
 스크립트 완료 후 임시 보안 세션을 종료하고 CloudTrail에서 master secret 접근을 확인한다.
@@ -112,11 +123,11 @@ Kakao를 사용하지 않으면 두 Kakao 변수 모두 비워 둔다. 다만 �
 
 ## 6. DNS와 최초 TLS
 
-Route 53을 쓰지 않으면 외부 DNS의 A 레코드를 스택의 Elastic IP로 먼저 연결한다. DNS 전파 후 SSM Session Manager에서 EC2에 접속해 실행한다.
+Route 53을 쓰지 않으면 외부 DNS의 A 레코드를 스택의 Elastic IP로 먼저 연결한다. DuckDNS에서는 도메인의 `current ip`를 Elastic IP로 바꾸고 `update ip`를 누른다. 토큰은 배포 서버나 저장소에 넣지 않는다. DNS 전파 후 SSM Session Manager에서 EC2에 접속해 실행한다.
 
 ```bash
 export CERTBOT_IMAGE='certbot/certbot:vREPLACE_WITH_PINNED_VERSION'
-sudo -E bash /path/to/scripts/aws/bootstrap-tls.sh finwatch.example.com owner@example.com
+sudo -E bash /path/to/scripts/aws/bootstrap-tls.sh finwatch-hyphoenix.duckdns.org owner@example.com
 ```
 
 인증서 파일을 확인한 뒤에만 첫 애플리케이션 배포를 시작한다. 배포 스크립트가 갱신 timer를 설치하며, timer와 만료일을 운영자가 별도로 확인한다.
