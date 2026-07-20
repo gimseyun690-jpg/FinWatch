@@ -89,6 +89,7 @@ server {
 
     location = /sw.js {
         root /usr/share/nginx/html;
+        default_type application/javascript;
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         try_files $uri =404;
     }
