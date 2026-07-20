@@ -187,7 +187,7 @@ export function PortfolioPanel({ liveQuotes }: Props) {
   return (
     <article className="card portfolio-card" id="portfolio" aria-busy={portfolioLoading || catalogLoading || saving || deletingId != null}>
       <div className="section-heading">
-        <div><p className="eyebrow">PORTFOLIO · API</p><h2>통화별 포트폴리오 평가</h2></div>
+        <div><p className="eyebrow">PORTFOLIO</p><h2>통화별 포트폴리오 평가</h2></div>
         <button
           type="button"
           className="portfolio-edit-button"
@@ -279,7 +279,7 @@ export function PortfolioPanel({ liveQuotes }: Props) {
                   ? `${signedMoney(evaluatedPortfolio.baseCurrencyProfitLoss, 'KRW')} · 원화 통합 손익`
                   : '원화 손익 계산에는 매수 당시 환율이 필요합니다.'}
               </small>
-              {evaluatedPortfolio.fxRates[0] && (
+              {showAdminDetails && evaluatedPortfolio.fxRates[0] && (
                 <em>
                   <DataStatusBadge status={fxDataStatus(evaluatedPortfolio.fxRates[0])} />
                   USD/KRW {evaluatedPortfolio.fxRates[0].rate.toLocaleString('ko-KR')} · {evaluatedPortfolio.fxRates[0].source} · {formatAsOf(evaluatedPortfolio.fxRates[0].asOf)}
@@ -311,12 +311,14 @@ export function PortfolioPanel({ liveQuotes }: Props) {
                   <div>
                     <strong>{holding.evaluationAmount == null ? '평가 불가' : formatMoney(holding.evaluationAmount, holding.currency)}</strong>
                     <span className={profitClass(holding.profitLoss)}>{signedRate(holding.returnRate)}</span>
-                    <small>
-                      <DataStatusBadge status={holdingDataStatus(holding, streaming)} />
-                      {valuationStatusLabel(holding.valuationStatus)} · {holding.priceSource ?? '출처 없음'} · {formatAsOf(holding.priceAsOf)}
-                    </small>
+                    {showAdminDetails && (
+                      <small>
+                        <DataStatusBadge status={holdingDataStatus(holding, streaming)} />
+                        {valuationStatusLabel(holding.valuationStatus)} · {holding.priceSource ?? '출처 없음'} · {formatAsOf(holding.priceAsOf)}
+                      </small>
+                    )}
                     {holding.convertedEvaluationAmount != null && holding.currency !== 'KRW' && <small>약 {formatMoney(holding.convertedEvaluationAmount, 'KRW')}</small>}
-                    {holding.fxEffectApproximation != null && <small>환율효과 근사 {signedMoney(holding.fxEffectApproximation, 'KRW')}</small>}
+                    {showAdminDetails && holding.fxEffectApproximation != null && <small>환율효과 근사 {signedMoney(holding.fxEffectApproximation, 'KRW')}</small>}
                   </div>
                   <div className="holding-actions">
                     {confirmingDelete ? (

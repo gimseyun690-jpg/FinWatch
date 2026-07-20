@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useOutletContext } from 'react-router'
+import type { AppRouteContext } from '../app/context'
 import { createAlert, deleteAlert, getAlerts, setAlertStatus } from '../api/alerts'
 import { getStocks } from '../api/stocks'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
@@ -12,6 +14,8 @@ type Props = {
 }
 
 export function AlertsPanel({ liveQuotes }: Props) {
+  const context = useOutletContext<AppRouteContext | null>()
+  const showAdminDetails = context?.showAdminDetails ?? true
   const [alerts, setAlerts] = useState<PriceAlert[] | null>(null)
   const [stocks, setStocks] = useState<StockSummary[] | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
@@ -180,7 +184,7 @@ export function AlertsPanel({ liveQuotes }: Props) {
   return (
     <article className="card alerts-card" id="alerts" aria-busy={alertsLoading || catalogLoading || busy}>
       <div className="section-heading compact">
-        <div><p className="eyebrow">PRICE ALERTS · API</p><h2>가격 조건 알림</h2></div>
+        <div><p className="eyebrow">PRICE ALERTS</p><h2>가격 조건 알림</h2></div>
         <button
           type="button"
           className="alert-add-button"
@@ -280,10 +284,12 @@ export function AlertsPanel({ liveQuotes }: Props) {
                 <div>
                   <strong>{alert.name} {alert.condition === 'ABOVE' ? '≥' : '≤'} {formatMoney(alert.targetPrice, alert.currency)}</strong>
                   <span>현재 {latestPrice == null ? '가격 확인 불가' : formatMoney(latestPrice, alert.currency)} · {statusLabel(effectiveStatus)}</span>
-                  <small>
-                    <DataStatusBadge status={alertDataStatus(alert, quote)} />
-                    {evaluationStatusLabel(alert.evaluationStatus)} · {quote?.source ?? 'API 저장 평가값(출처 미제공)'} · {formatAsOf(quote?.asOf ?? alert.priceAsOf)}
-                  </small>
+                  {showAdminDetails && (
+                    <small>
+                      <DataStatusBadge status={alertDataStatus(alert, quote)} />
+                      {evaluationStatusLabel(alert.evaluationStatus)} · {quote?.source ?? 'API 저장 평가값(출처 미제공)'} · {formatAsOf(quote?.asOf ?? alert.priceAsOf)}
+                    </small>
+                  )}
                   {alert.triggeredAt && <small>조건 충족 {formatAsOf(alert.triggeredAt)}</small>}
                 </div>
                 <button type="button" onClick={() => void toggle(alert, effectiveStatus)} disabled={busy}>
