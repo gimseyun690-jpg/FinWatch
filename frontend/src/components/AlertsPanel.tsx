@@ -6,7 +6,7 @@ import { getStocks, searchStocks } from '../api/stocks'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import type { PriceAlert } from '../types/alert'
 import type { LiveQuote } from '../types/realtime'
-import type { StockCatalogItem } from '../types/stock'
+import type { StockCatalogItem, StockSummary } from '../types/stock'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
 
 type Props = {
@@ -80,7 +80,9 @@ export function AlertsPanel({ liveQuotes }: Props) {
     return () => window.removeEventListener('pointerdown', close)
   }, [])
 
-  const selectedStock = (searchedStocks.length > 0 ? searchedStocks : (stocks ?? [])).find((stock) => stock.symbol === symbol) ?? null
+  const selectedStock = (
+    (searchedStocks.length > 0 ? searchedStocks : (stocks ?? [])) as Array<{ symbol: string; name: string; market: string; currency: string }>
+  ).find((stock) => stock.symbol === symbol) ?? null
 
   const loadAlerts = useCallback(async (signal?: AbortSignal) => {
     setAlertsLoading(true)

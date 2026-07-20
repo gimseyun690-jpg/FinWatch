@@ -89,7 +89,9 @@ export function PortfolioPanel({ liveQuotes }: Props) {
   const [statusMessage, setStatusMessage] = useState('')
   const [offline, setOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
 
-  const selectedStock = (searchedStocks.length > 0 ? searchedStocks : (stocks ?? [])).find((stock) => stock.symbol === symbol) ?? null
+  const selectedStock = (
+    (searchedStocks.length > 0 ? searchedStocks : (stocks ?? [])) as Array<{ symbol: string; name: string; market: string; currency: string }>
+  ).find((stock) => stock.symbol === symbol) ?? null
   const evaluatedPortfolio = useMemo(
     () => applyLiveQuotes(portfolio, liveQuotes),
     [liveQuotes, portfolio],
