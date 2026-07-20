@@ -35,6 +35,16 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
   const summaryRequestAvailable = selectedArticle != null
     && (selectedArticle.aiAnalysisAllowed || selectedOriginalUrl != null)
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const [symbolNameMap, setSymbolNameMap] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -195,64 +205,110 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
           {!loadingNews && !newsError && news.length === 0 && <p>저장된 종목 뉴스가 없습니다.</p>}
           {news.map((article) => {
             const articleStockName = (article as any).stockName || symbolNameMap[article.symbol]
+            const isSelected = selectedId === article.id
             return (
-              <button
-                type="button"
-                className={selectedId === article.id ? 'selected' : ''}
-                key={article.id}
-                onClick={() => selectNews(article.id)}
-              >
-                <strong>
-                  {watchlistMode && articleStockName && <span style={{ marginRight: '6px', color: '#29d4c9', fontWeight: 'bold' }}>{articleStockName}</span>}{article.title}
-                </strong>
-                <span>{visiblePublisher(article)} · {new Date(article.publishedAt).toLocaleDateString('ko-KR')}</span>
-                <span className={`news-policy-label ${canRequestArticleSummary(article) ? 'allowed' : 'metadata-only'}`}>
-                  {articleAccessLabel(article)}
-                </span>
-              </button>
+              <div key={article.id} className={`news-item-row ${isSelected ? 'selected' : ''}`}>
+                <button
+                  type="button"
+                  className={isSelected ? 'selected' : ''}
+                  onClick={() => selectNews(article.id)}
+                >
+                  <strong>
+                    {watchlistMode && articleStockName && <span style={{ marginRight: '6px', color: '#29d4c9', fontWeight: 'bold' }}>{articleStockName}</span>}{article.title}
+                  </strong>
+                  <span>{visiblePublisher(article)} · {new Date(article.publishedAt).toLocaleDateString('ko-KR')}</span>
+                  <span className={`news-policy-label ${canRequestArticleSummary(article) ? 'allowed' : 'metadata-only'}`}>
+                    {articleAccessLabel(article)}
+                  </span>
+                </button>
+                
+                {isMobile && isSelected && (
+                  <div className="mobile-summary-wrapper">
+                    {!summary ? (
+                      <div className="summary-empty">
+                        <span aria-hidden="true">AI</span>
+                        <p>{selectedArticle == null
+                          ? '분석할 뉴스를 선택할 수 없습니다.'
+                          : selectedArticle.aiAnalysisAllowed
+                            ? '허용된 본문만 분석하며, 응답에 포함된 근거 범위와 운영 정보를 함께 표시합니다.'
+                            : selectedOriginalUrl
+                              ? '저장된 본문은 없지만, 요청 시 백엔드가 원문 링크에서 본문을 수집해 Gemini 요약을 시도합니다. 출처 사이트의 접근 정책에 따라 실패할 수 있습니다.'
+                              : '안전한 http(s) 원문 주소가 없어 원문 수집과 AI 요약을 실행할 수 없습니다.'}</p>
+                        {selectedArticle && (
+                          <div className="news-source-disclosure">
+                            <span>{visiblePublisher(selectedArticle)} · {articleAccessLabel(selectedArticle)}</span>
+                            {selectedOriginalUrl
+                              ? <a href={selectedOriginalUrl} target="_blank" rel="noopener noreferrer">원문 보기 <Icon name="external" size={12} /></a>
+                              : <span>안전한 원문 주소 확인 불가</span>}
+                          </div>
+                        )}
+                        {summaryError && <p className="request-error" role="alert">{summaryError}</p>}
+                        <button
+                          type="button"
+                          onClick={requestSummary}
+                          disabled={selectedId == null || summarizing || !summaryRequestAvailable}
+                        >
+                          {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'Gemini 뉴스 요약' : '원문 주소 확인 필요'}
+                        </button>
+                      </div>
+                    ) : (
+                      <SummaryResult
+                        summary={summary}
+                        article={selectedArticle}
+                        errorMessage={summaryError}
+                        summarizing={summarizing}
+                        onRetry={requestSummary}
+                        showAdminDetails={showAdminDetails}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>
 
-        <div className="summary-panel">
-          {!summary ? (
-            <div className="summary-empty">
-              <span aria-hidden="true">AI</span>
-              <p>{selectedArticle == null
-                ? '분석할 뉴스를 선택할 수 없습니다.'
-                : selectedArticle.aiAnalysisAllowed
-                  ? '허용된 본문만 분석하며, 응답에 포함된 근거 범위와 운영 정보를 함께 표시합니다.'
-                  : selectedOriginalUrl
-                    ? '저장된 본문은 없지만, 요청 시 백엔드가 원문 링크에서 본문을 수집해 Gemini 요약을 시도합니다. 출처 사이트의 접근 정책에 따라 실패할 수 있습니다.'
-                    : '안전한 http(s) 원문 주소가 없어 원문 수집과 AI 요약을 실행할 수 없습니다.'}</p>
-              {selectedArticle && (
-                <div className="news-source-disclosure">
-                  <span>{visiblePublisher(selectedArticle)} · {articleAccessLabel(selectedArticle)}</span>
-                  {selectedOriginalUrl
-                    ? <a href={selectedOriginalUrl} target="_blank" rel="noopener noreferrer">원문 보기 <Icon name="external" size={12} /></a>
-                    : <span>안전한 원문 주소 확인 불가</span>}
-                </div>
-              )}
-              {summaryError && <p className="request-error" role="alert">{summaryError}</p>}
-              <button
-                type="button"
-                onClick={requestSummary}
-                disabled={selectedId == null || summarizing || !summaryRequestAvailable}
-              >
-                {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'Gemini 뉴스 요약' : '원문 주소 확인 필요'}
-              </button>
-            </div>
-          ) : (
-            <SummaryResult
-              summary={summary}
-              article={selectedArticle}
-              errorMessage={summaryError}
-              summarizing={summarizing}
-              onRetry={requestSummary}
-              showAdminDetails={showAdminDetails}
-            />
-          )}
-        </div>
+        {!isMobile && (
+          <div className="summary-panel">
+            {!summary ? (
+              <div className="summary-empty">
+                <span aria-hidden="true">AI</span>
+                <p>{selectedArticle == null
+                  ? '분석할 뉴스를 선택할 수 없습니다.'
+                  : selectedArticle.aiAnalysisAllowed
+                    ? '허용된 본문만 분석하며, 응답에 포함된 근거 범위와 운영 정보를 함께 표시합니다.'
+                    : selectedOriginalUrl
+                      ? '저장된 본문은 없지만, 요청 시 백엔드가 원문 링크에서 본문을 수집해 Gemini 요약을 시도합니다. 출처 사이트의 접근 정책에 따라 실패할 수 있습니다.'
+                      : '안전한 http(s) 원문 주소가 없어 원문 수집과 AI 요약을 실행할 수 없습니다.'}</p>
+                {selectedArticle && (
+                  <div className="news-source-disclosure">
+                    <span>{visiblePublisher(selectedArticle)} · {articleAccessLabel(selectedArticle)}</span>
+                    {selectedOriginalUrl
+                      ? <a href={selectedOriginalUrl} target="_blank" rel="noopener noreferrer">원문 보기 <Icon name="external" size={12} /></a>
+                      : <span>안전한 원문 주소 확인 불가</span>}
+                  </div>
+                )}
+                {summaryError && <p className="request-error" role="alert">{summaryError}</p>}
+                <button
+                  type="button"
+                  onClick={requestSummary}
+                  disabled={selectedId == null || summarizing || !summaryRequestAvailable}
+                >
+                  {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'Gemini 뉴스 요약' : '원문 주소 확인 필요'}
+                </button>
+              </div>
+            ) : (
+              <SummaryResult
+                summary={summary}
+                article={selectedArticle}
+                errorMessage={summaryError}
+                summarizing={summarizing}
+                onRetry={requestSummary}
+                showAdminDetails={showAdminDetails}
+              />
+            )}
+          </div>
+        )}
       </div>
     </article>
   )
