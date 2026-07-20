@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useOutletContext } from 'react-router'
+import type { AppRouteContext } from '../app/context'
 import { createHolding, deleteHolding, getPortfolio } from '../api/portfolio'
 import { getStocks } from '../api/stocks'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
@@ -12,6 +14,8 @@ type Props = {
 }
 
 export function PortfolioPanel({ liveQuotes }: Props) {
+  const context = useOutletContext<AppRouteContext | null>()
+  const showAdminDetails = context?.showAdminDetails ?? true
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [stocks, setStocks] = useState<StockSummary[] | null>(null)
   const [symbol, setSymbol] = useState('')
