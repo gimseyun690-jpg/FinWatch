@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useOutletContext } from 'react-router'
+import type { AppRouteContext } from '../app/context'
 import {
   getStock,
   getStockDataLoadJob,
@@ -109,6 +111,8 @@ function mergeIntradayCandles(prices: PriceHistory | null, liveCandles: Intraday
 }
 
 export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: Props) {
+  const context = useOutletContext<AppRouteContext | null>()
+  const showAdminDetails = context?.showAdminDetails ?? true
   const { market: stockMarket, symbol: stockSymbol, stockId } = stockRef
   const requestStock = useMemo<StockRef>(() => ({
     market: stockMarket,
@@ -326,9 +330,16 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
     <section className="stock-detail" id="stock-detail" aria-labelledby="stock-detail-title">
       <div className="detail-title-row">
         <div>
-          <p className="eyebrow">STOCK DETAIL · {dataSource}</p>
+          {showAdminDetails && <p className="eyebrow">STOCK DETAIL · {dataSource}</p>}
           <h2 id="stock-detail-title">{stock.name} {headingLabel ?? (technical == null ? '실제 시세 차트' : '기술적 분석')}</h2>
-          <p className="stock-trust-meta"><span>{stock.symbol}</span><span>{stock.market}</span><span>{stock.currency}</span><span>{dataSource}</span><time dateTime={stock.asOf}>기준 {new Date(stock.asOf).toLocaleString('ko-KR')}</time><DataStatusBadge status={dataStatus} /></p>
+          <p className="stock-trust-meta">
+            <span>{stock.symbol}</span>
+            <span>{stock.market}</span>
+            <span>{stock.currency}</span>
+            {showAdminDetails && <span>{dataSource}</span>}
+            <time dateTime={stock.asOf}>기준 {new Date(stock.asOf).toLocaleString('ko-KR')}</time>
+            {showAdminDetails && <DataStatusBadge status={dataStatus} />}
+          </p>
         </div>
         {technical == null
           ? <span className="availability-badge">실제 이력 {catalogStock.historyPoints.toLocaleString('ko-KR')}개</span>
@@ -382,13 +393,13 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
           </div>
         ) : <div className="technical-grid">
           <article className="card technical-card summary-card">
-            <span>기술적 분석 요약</span>
+            <span className="has-tooltip" data-tooltip={"이동평균(MA), RSI, MACD 등의 핵심 지표들을 종합 연산하여 판단한 주식의 전반적인 매매 강도 요약 신호입니다."}>기술적 분석 요약</span>
             <strong className={signalClass(technical.summarySignal)}>{signalLabels[technical.summarySignal]}</strong>
             <p>이동평균과 RSI, MACD를 종합한 참고 신호입니다.</p>
           </article>
 
           <article className="card technical-card">
-            <span>이동평균선</span>
+            <span className="has-tooltip" data-tooltip={"이동평균선 (MA)\n일정 기간 동안의 주가 평균값의 추세선입니다.\n- 골든크로스(단기가 장기 돌파): 매수 신호\n- 데드크로스(단기가 장기 이탈): 매도 신호"}>이동평균선</span>
             <strong className={signalClass(technical.movingAverages.signal)}>
               {signalLabels[technical.movingAverages.signal]}
             </strong>
@@ -397,20 +408,20 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
           </article>
 
           <article className="card technical-card">
-            <span>RSI {technical.rsi.period} {technical.rsi.method ?? ''}</span>
+            <span className="has-tooltip" data-tooltip={`RSI (상대강도지수)\n주가의 상승 압력과 하락 압력 간의 상대적인 강도를 보여주는 오실레이터입니다.\n- 70 이상: 과매수 구간 (매도 검토 신호)\n- 30 이하: 과매도 구간 (매수 검토 신호)`}>RSI {technical.rsi.period} {technical.rsi.method ?? ''}</span>
             <strong className={signalClass(technical.rsi.signal)}>{technical.rsi.value.toFixed(1)}</strong>
             <p>{technical.rsi.value >= 70 ? '과매수 구간' : technical.rsi.value <= 30 ? '과매도 구간' : '중립 구간'}</p>
           </article>
 
           <article className="card technical-card">
-            <span>MACD</span>
+            <span className="has-tooltip" data-tooltip={"MACD (이동평균 수렴확산)\n단기 이평선과 장기 이평선의 수렴·확산을 기반으로 한 추세 지표입니다.\n- MACD 선이 시그널 선 위로 교차: 매수 신호\n- MACD 선이 시그널 선 아래로 교차: 매도 신호"}>MACD</span>
             <strong className={signalClass(technical.macd.signal)}>{signalLabels[technical.macd.signal]}</strong>
             <p>히스토그램 {technical.macd.histogram.toLocaleString('ko-KR')}</p>
           </article>
 
           {technical.bollingerBands && (
             <article className="card technical-card">
-              <span>볼린저 밴드 ({technical.bollingerBands.period}, {technical.bollingerBands.deviationMultiplier})</span>
+              <span className="has-tooltip" data-tooltip={"볼린저 밴드\n주가의 변동 범위를 표준편차 밴드로 보여줍니다.\n- 상단 밴드 터치/돌파: 과열 상태 (매도 신호 검토)\n- 하단 밴드 이탈/터치: 침체 상태 (매수 신호 검토)"}>볼린저 밴드 ({technical.bollingerBands.period}, {technical.bollingerBands.deviationMultiplier})</span>
               <strong>{formatMoney(technical.bollingerBands.middle, stock.currency)}</strong>
               <p>상단 {formatMoney(technical.bollingerBands.upper, stock.currency)}</p>
               <p>하단 {formatMoney(technical.bollingerBands.lower, stock.currency)}</p>
@@ -419,7 +430,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
 
           {technical.atr && (
             <article className="card technical-card">
-              <span>ATR {technical.atr.period}</span>
+              <span className="has-tooltip" data-tooltip={"ATR (평균실제변동폭)\n최근 14거래일 동안의 평균적인 주가 변동폭(변동성)입니다.\n- 높을 때: 변동성이 크며 추세 반전 또는 급등락 신호\n- 낮을 때: 횡보 및 안정적인 흐름"}>ATR {technical.atr.period}</span>
               <strong>{formatMoney(technical.atr.value, stock.currency)}</strong>
               <p>최근 변동성의 Wilder 평활 평균입니다.</p>
               {technical.atr.percent != null && <p>현재가 대비 {technical.atr.percent.toFixed(2)}%</p>}
@@ -428,7 +439,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
 
           {technical.volumeMa20 != null && (
             <article className="card technical-card">
-              <span>거래량 MA20</span>
+              <span className="has-tooltip" data-tooltip={"거래량 MA20\n최근 20거래일 동안의 평균 거래량입니다.\n- 주가 상승과 함께 평균 이상의 거래량 발생: 강한 매수 세력 유입\n- 주가 하락 및 거래량 감소: 매도 세력 둔화"}>거래량 MA20</span>
               <strong>{new Intl.NumberFormat('ko-KR', { notation: 'compact' }).format(technical.volumeMa20)}</strong>
               <p>20거래일 평균 거래량</p>
             </article>

@@ -199,6 +199,17 @@ export function AppShell({ context }: Props) {
           </nav>
           <div className="sidebar-footer">
             <PwaInstallButton />
+            <div className="sidebar-admin-toggle" style={{ padding: '4px 12px', margin: '4px 0', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <label className="admin-toggle-switch" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#94a3b8', cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={context.showAdminDetails}
+                  onChange={(e) => context.setShowAdminDetails(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>상세모드</span>
+              </label>
+            </div>
             <div className="sidebar-user">{context.session.user.profileImageUrl ? <img src={context.session.user.profileImageUrl} alt="" referrerPolicy="no-referrer" /> : <span aria-hidden="true">{context.session.user.displayName.slice(0, 1).toUpperCase()}</span>}<div><b>{context.session.user.displayName}</b><small>{context.session.user.email ?? `${context.session.user.authProvider} 로그인`}</small></div></div>
             <button type="button" className="shell-logout" onClick={context.logout}>로그아웃</button>
           </div>
@@ -211,8 +222,12 @@ export function AppShell({ context }: Props) {
             <GlobalStockSearch selectedStock={context.selectedStock} onSelect={context.selectStock} />
             <div className="shell-statuses" role="status" aria-live="polite">
               <CompactFxTicker />
-              <span className={`api-status ${context.apiState}`} title={statusText}><span className="status-dot" aria-hidden="true" /><b>{statusText}</b></span>
-              <span className={`realtime-status ${context.realtimeConnection}`} title={realtimeText}><span className="status-dot" aria-hidden="true" /><b>{realtimeText}</b></span>
+              {context.showAdminDetails && (
+                <>
+                  <span className={`api-status ${context.apiState}`} title={statusText}><span className="status-dot" aria-hidden="true" /><b>{statusText}</b></span>
+                  <span className={`realtime-status ${context.realtimeConnection}`} title={realtimeText}><span className="status-dot" aria-hidden="true" /><b>{realtimeText}</b></span>
+                </>
+              )}
             </div>
           </header>
           {!online && (
@@ -242,7 +257,21 @@ export function AppShell({ context }: Props) {
               {context.session.user.role === 'ADMIN' && <NavigationLink to="/admin/ai" label="AI 사용량" icon="ai" onClick={() => setDrawerOpen(false)} />}
               {context.session.user.role === 'ADMIN' && <NavigationLink to="/admin/data" label="데이터 수집 상태" icon="sync" onClick={() => setDrawerOpen(false)} />}
             </nav>
-            <div className="drawer-account"><span>{context.session.user.displayName} · {context.session.user.role}</span><strong>{context.session.user.email ?? `${context.session.user.authProvider} 로그인`}</strong><PwaInstallButton /><button type="button" className="shell-logout" onClick={context.logout}>로그아웃</button></div>
+            <div className="drawer-account">
+              <span>{context.session.user.displayName} · {context.session.user.role}</span>
+              <strong>{context.session.user.email ?? `${context.session.user.authProvider} 로그인`}</strong>
+              <label className="admin-toggle-switch mobile-toggle" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0', fontSize: '0.85rem', color: '#94a3b8', cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={context.showAdminDetails}
+                  onChange={(e) => context.setShowAdminDetails(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>상세모드</span>
+              </label>
+              <PwaInstallButton />
+              <button type="button" className="shell-logout" onClick={context.logout}>로그아웃</button>
+            </div>
           </div>
         </>
       )}

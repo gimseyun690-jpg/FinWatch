@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { useOutletContext } from 'react-router'
+import type { AppRouteContext } from '../app/context'
 import { explainTechnical } from '../api/technicalExplanation'
-import type { TechnicalExplanation, TechnicalSignalExplanation } from '../types/technicalExplanation'
+import type { TechnicalExplanation, TechnicalEvidence, TechnicalSignalExplanation } from '../types/technicalExplanation'
 import { DataStatusBadge } from './DataStatusBadge'
 import { resolveDataStatus } from './dataStatus'
 
@@ -11,6 +13,8 @@ type Props = {
 }
 
 export function AiTechnicalExplanation({ market, symbol, onUsageRecorded }: Props) {
+  const context = useOutletContext<AppRouteContext | null>()
+  const showAdminDetails = context?.showAdminDetails ?? true
   const stockKey = `${market.toUpperCase()}:${symbol.toUpperCase()}`
   const [explanation, setExplanation] = useState<TechnicalExplanation | null>(null)
   const [loading, setLoading] = useState(false)
@@ -67,10 +71,10 @@ export function AiTechnicalExplanation({ market, symbol, onUsageRecorded }: Prop
     <article className="card ai-technical-card" id="ai-technical">
       <div className="section-heading compact">
         <div>
-          <p className="eyebrow">EVIDENCE-BASED TECHNICAL AI</p>
+          {showAdminDetails && <p className="eyebrow">EVIDENCE-BASED TECHNICAL AI</p>}
           <h2>AI 기술 분석 해설</h2>
         </div>
-        {explanation && (
+        {showAdminDetails && explanation && (
           <span
             className={`cache-badge ${explanation.cacheHit ? 'hit' : 'miss'}`}
             aria-label={explanation.cacheHit ? 'CACHE HIT, 캐시 적중 결과' : 'CACHE MISS, 신규 생성 결과'}
@@ -91,16 +95,15 @@ export function AiTechnicalExplanation({ market, symbol, onUsageRecorded }: Prop
         </div>
       ) : (
         <div className="technical-ai-result" aria-live="polite">
-          <div className={`technical-ai-summary signal-${explanation.summarySignal.toLowerCase()}`}>
-            <span>서버 종합 신호 · {signalLabel(explanation.summarySignal)}</span>
-            <strong>{explanation.summary}</strong>
-          </div>
+          {/* Signal Strength Gauge */}
+          <SignalGauge signal={explanation.summarySignal} summary={explanation.summary} />
 
+          {/* Enhanced Explanation Cards */}
           <div className="technical-explanation-grid">
-            <Explanation title="추세" text={explanation.trendExplanation} />
-            <Explanation title="모멘텀" text={explanation.momentumExplanation} />
-            <Explanation title="변동성" text={explanation.volatilityExplanation} />
-            <Explanation title="거래량" text={explanation.volumeExplanation} />
+            <TrendCard text={explanation.trendExplanation} evidence={explanation.evidence} />
+            <MomentumCard text={explanation.momentumExplanation} evidence={explanation.evidence} />
+            <VolatilityCard text={explanation.volatilityExplanation} evidence={explanation.evidence} />
+            <VolumeCard text={explanation.volumeExplanation} evidence={explanation.evidence} />
           </div>
 
           <div className="technical-signal-grid">
@@ -144,21 +147,26 @@ export function AiTechnicalExplanation({ market, symbol, onUsageRecorded }: Prop
           )}
 
           <p className="analysis-disclaimer">
-            {explanation.disclaimer} · {explanation.calculationVersion} · {explanation.promptVersion} · 입력 {explanation.inputHash.slice(0, 12)}…
+            {explanation.disclaimer}
+            {showAdminDetails && ` · ${explanation.calculationVersion} · ${explanation.promptVersion} · 입력 ${explanation.inputHash.slice(0, 12)}…`}
           </p>
-          <div className="technical-ai-audit analysis-generation-meta">
-            <span>{explanation.symbol} · {explanation.interval}</span>
-            <DataStatusBadge status={resolveDataStatus(explanation.freshness)} detail={explanation.source} />
-            <span>데이터 기준 {new Date(explanation.latestRecordedAt).toLocaleString('ko-KR')}</span>
-            <span>생성 {new Date(explanation.generatedAt).toLocaleString('ko-KR')}</span>
-            <span>{explanation.modelName}</span>
-            <span>{explanation.cacheHit ? '캐시 적중 결과' : '신규 생성 결과'}</span>
-          </div>
-          <div className="usage-strip">
-            <div><strong>{explanation.inputTokens + explanation.outputTokens}</strong><span>사용 토큰</span></div>
-            <div><strong>${explanation.estimatedCost.toFixed(6)}</strong><span>이번 요청 비용</span></div>
-            <div><strong>{explanation.responseTimeMs}ms</strong><span>응답 시간</span></div>
-          </div>
+          {showAdminDetails && (
+            <>
+              <div className="technical-ai-audit analysis-generation-meta">
+                <span>{explanation.symbol} · {explanation.interval}</span>
+                <DataStatusBadge status={resolveDataStatus(explanation.freshness)} detail={explanation.source} />
+                <span>데이터 기준 {new Date(explanation.latestRecordedAt).toLocaleString('ko-KR')}</span>
+                <span>생성 {new Date(explanation.generatedAt).toLocaleString('ko-KR')}</span>
+                <span>{explanation.modelName}</span>
+                <span>{explanation.cacheHit ? '캐시 적중 결과' : '신규 생성 결과'}</span>
+              </div>
+              <div className="usage-strip">
+                <div><strong>{explanation.inputTokens + explanation.outputTokens}</strong><span>사용 토큰</span></div>
+                <div><strong>${explanation.estimatedCost.toFixed(6)}</strong><span>이번 요청 비용</span></div>
+                <div><strong>{explanation.responseTimeMs}ms</strong><span>응답 시간</span></div>
+              </div>
+            </>
+          )}
           {error && <p className="request-error" role="alert">{error}</p>}
           <button type="button" className="secondary-button" onClick={() => void requestExplanation()} disabled={loading}>
             {loading ? '확인 중…' : error ? 'AI 기술 해설 다시 시도' : '같은 스냅샷 다시 해설'}
@@ -169,9 +177,160 @@ export function AiTechnicalExplanation({ market, symbol, onUsageRecorded }: Prop
   )
 }
 
-function Explanation({ title, text }: { title: string; text: string }) {
-  return <section><span>{title}</span><p>{text}</p></section>
+/* ── Helpers ── */
+
+function getEv(evidence: TechnicalEvidence[], indicator: string, key: string): number | null {
+  const item = evidence.find((e) => e.indicator === indicator)
+  if (!item) return null
+  const val = item.values[key]
+  if (val == null) return null
+  const n = parseFloat(val)
+  return isNaN(n) ? null : n
 }
+
+/* ── Signal Strength Gauge ── */
+
+function SignalGauge({ signal, summary }: { signal: TechnicalExplanation['summarySignal']; summary: string }) {
+  const position = signal === 'BUY' ? 20 : signal === 'SELL' ? 80 : 50
+  return (
+    <div className={`signal-gauge-container signal-${signal.toLowerCase()}`}>
+      <div className="signal-gauge-header">
+        <span className="signal-gauge-label">종합 기술 신호</span>
+        <span className={`signal-gauge-value signal-${signal.toLowerCase()}`}>{signalLabel(signal)}</span>
+      </div>
+      <div className="signal-gauge-track" aria-label={`신호 강도: ${signalLabel(signal)}`}>
+        <div className="signal-gauge-zone zone-buy">매수</div>
+        <div className="signal-gauge-zone zone-neutral">중립</div>
+        <div className="signal-gauge-zone zone-sell">매도</div>
+        <div className="signal-gauge-marker" style={{ left: `${position}%` }} />
+      </div>
+      <p className="signal-gauge-summary">{summary}</p>
+    </div>
+  )
+}
+
+/* ── Enhanced Cards ── */
+
+function TrendCard({ text, evidence }: { text: string; evidence: TechnicalEvidence[] }) {
+  const price = getEv(evidence, 'MOVING_AVERAGE', 'price')
+  const ma5 = getEv(evidence, 'MOVING_AVERAGE', 'ma5')
+  const ma20 = getEv(evidence, 'MOVING_AVERAGE', 'ma20')
+  const ma60 = getEv(evidence, 'MOVING_AVERAGE', 'ma60')
+
+  return (
+    <section>
+      <span>추세</span>
+      {price != null && (
+        <div className="indicator-visual ma-position">
+          {[
+            { label: 'MA5', value: ma5 },
+            { label: 'MA20', value: ma20 },
+            { label: 'MA60', value: ma60 },
+          ].map(({ label, value }) => {
+            if (value == null) return null
+            const above = price >= value
+            return (
+              <div key={label} className={`ma-dot ${above ? 'above' : 'below'}`}>
+                <span className="ma-dot-indicator" />
+                <span className="ma-dot-label">{label}</span>
+                <span className="ma-dot-status">{above ? '지지' : '저항'}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <p>{text}</p>
+    </section>
+  )
+}
+
+function MomentumCard({ text, evidence }: { text: string; evidence: TechnicalEvidence[] }) {
+  const rsiValue = getEv(evidence, 'RSI', 'value')
+  const histogram = getEv(evidence, 'MACD', 'histogram')
+
+  return (
+    <section>
+      <span>모멘텀</span>
+      <div className="indicator-visual momentum-visuals">
+        {rsiValue != null && (
+          <div className="rsi-gauge-container">
+            <div className="rsi-gauge-label-row">
+              <span>RSI</span>
+              <strong className={rsiValue < 30 ? 'oversold' : rsiValue > 70 ? 'overbought' : ''}>{rsiValue.toFixed(1)}</strong>
+            </div>
+            <div className="rsi-gauge-track">
+              <div className="rsi-zone rsi-oversold" />
+              <div className="rsi-zone rsi-neutral" />
+              <div className="rsi-zone rsi-overbought" />
+              <div className="rsi-gauge-marker" style={{ left: `${Math.min(100, Math.max(0, rsiValue))}%` }} />
+            </div>
+            <div className="rsi-gauge-labels">
+              <span>과매도</span><span>중립</span><span>과매수</span>
+            </div>
+          </div>
+        )}
+        {histogram != null && (
+          <div className={`macd-hist-badge ${histogram > 0 ? 'positive' : 'negative'}`}>
+            MACD Hist {histogram > 0 ? '▲' : '▼'} {Math.abs(histogram).toFixed(0)}
+          </div>
+        )}
+      </div>
+      <p>{text}</p>
+    </section>
+  )
+}
+
+function VolatilityCard({ text, evidence }: { text: string; evidence: TechnicalEvidence[] }) {
+  const atrPercent = getEv(evidence, 'ATR', 'percent')
+  const level = atrPercent == null ? null : atrPercent < 5 ? 'low' : atrPercent < 10 ? 'medium' : 'high'
+  const levelLabel = level === 'low' ? '낮음' : level === 'medium' ? '보통' : level === 'high' ? '높음' : null
+
+  return (
+    <section>
+      <span>변동성</span>
+      {atrPercent != null && level && (
+        <div className="indicator-visual">
+          <div className={`atr-badge atr-${level}`}>
+            <span className="atr-badge-label">ATR14</span>
+            <strong>{atrPercent.toFixed(1)}%</strong>
+            <span className="atr-badge-level">{levelLabel}</span>
+          </div>
+        </div>
+      )}
+      <p>{text}</p>
+    </section>
+  )
+}
+
+function VolumeCard({ text, evidence }: { text: string; evidence: TechnicalEvidence[] }) {
+  const ratio = getEv(evidence, 'VOLUME', 'ratio')
+
+  return (
+    <section>
+      <span>거래량</span>
+      {ratio != null && (
+        <div className="indicator-visual">
+          <div className="volume-ratio-container">
+            <div className="volume-ratio-label-row">
+              <span>평균 대비</span>
+              <strong className={ratio > 1.5 ? 'high-volume' : ratio < 0.5 ? 'low-volume' : ''}>{ratio.toFixed(2)}배</strong>
+            </div>
+            <div className="volume-ratio-track">
+              <div
+                className={`volume-ratio-fill ${ratio > 1.5 ? 'high' : ratio < 0.7 ? 'low' : 'normal'}`}
+                style={{ width: `${Math.min(100, (ratio / 2) * 100)}%` }}
+              />
+              <div className="volume-ratio-baseline" />
+            </div>
+          </div>
+        </div>
+      )}
+      <p>{text}</p>
+    </section>
+  )
+}
+
+/* ── Signal List (unchanged logic) ── */
 
 function SignalList({
   title,

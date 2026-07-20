@@ -73,6 +73,11 @@ function App() {
   const [adminRefreshKey, setAdminRefreshKey] = useState(0)
   const [session, setSession] = useState<AuthSession | null | undefined>(undefined)
   const { quotes: liveQuotes, intradayCandles, connection: realtimeConnection, connectedProviders } = useRealtimeQuotes(Boolean(session), selectedStock)
+  const [showAdminDetails, setShowAdminDetailsState] = useState(() => localStorage.getItem('finwatch.ui.admin-details') === 'true')
+  const setShowAdminDetails = useCallback((show: boolean) => {
+    localStorage.setItem('finwatch.ui.admin-details', String(show))
+    setShowAdminDetailsState(show)
+  }, [])
 
   useEffect(() => {
     clearLegacyTokenSession()
@@ -156,7 +161,9 @@ function App() {
     selectStock,
     recordAiUsage,
     logout,
-  }), [apiState, session, selectedStock, liveQuotes, intradayCandles, realtimeConnection, connectedProviders, adminRefreshKey, selectStock, recordAiUsage, logout])
+    showAdminDetails,
+    setShowAdminDetails,
+  }), [apiState, session, selectedStock, liveQuotes, intradayCandles, realtimeConnection, connectedProviders, adminRefreshKey, selectStock, recordAiUsage, logout, showAdminDetails, setShowAdminDetails])
 
   if (session === undefined) {
     return <main className="session-bootstrap" role="status"><span className="search-spinner" aria-hidden="true" /><strong>보안 세션을 확인하는 중입니다.</strong></main>
@@ -172,7 +179,7 @@ function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="stocks" element={<StockSearchPage />} />
           <Route path="stocks/:market/:symbol" element={<StockRouteLayout />}>
-            <Route index element={<StockOverviewPage />} />
+            <Route index element={<Navigate to="technical" replace />} />
             <Route path="technical" element={<StockTechnicalPage />} />
             <Route path="content" element={<StockLegacyContentRedirect />} />
             <Route path="news" element={<StockNewsPage />} />
@@ -237,7 +244,7 @@ function DashboardPage() {
       <PageHeading eyebrow="PERSONAL INVESTMENT DASHBOARD" title="개인 투자자용 메인 대시보드" description="관심종목, 포트폴리오와 가격 알림을 한눈에 확인하세요." action={<button type="button" onClick={() => setEditorOpen(true)}>+ 관심종목 추가{watchlistCount == null ? '' : ` (${watchlistCount})`}</button>} />
       <FxRatePanel />
       <WatchlistPanel selectedStock={context.selectedStock} editorOpen={editorOpen} onSelect={context.selectStock} onEditorOpenChange={setEditorOpen} onItemsChange={updateWatchlistCount} liveQuotes={context.liveQuotes} />
-      <div className="dashboard-grid"><PortfolioPanel liveQuotes={context.liveQuotes} /><div className="side-stack"><AlertsPanel liveQuotes={context.liveQuotes} /><article className="card"><div className="section-heading compact"><h2>비용 최적화 흐름</h2><span className="muted">Redis</span></div><p>AI 결과를 입력 해시와 프롬프트 버전으로 구분해 재사용하고 호출 비용을 기록합니다.</p><div className="cache-note">요약 요청 → 캐시 확인 → 모델 호출 또는 즉시 반환 → 운영 로그 저장</div></article></div></div>
+      <div className="dashboard-grid"><PortfolioPanel liveQuotes={context.liveQuotes} /><div className="side-stack"><AlertsPanel liveQuotes={context.liveQuotes} />{context.showAdminDetails && <article className="card"><div className="section-heading compact"><h2>비용 최적화 흐름</h2><span className="muted">Redis</span></div><p>AI 결과를 입력 해시와 프롬프트 버전으로 구분해 재사용하고 호출 비용을 기록합니다.</p><div className="cache-note">요약 요청 → 캐시 확인 → 모델 호출 또는 즉시 반환 → 운영 로그 저장</div></article>}</div></div>
     </>
   )
 }
@@ -264,19 +271,13 @@ function StockRouteLayout() {
   const stockContext = { ...context, selectedStock: stock }
   return (
     <section className="stock-route-page">
-      <PageHeading eyebrow="STOCK WORKSPACE" title={`${market} · ${symbol}`} description="동일한 종목 문맥을 유지하며 개요, 기술분석, 콘텐츠와 브리핑을 확인합니다." />
+      <PageHeading eyebrow="STOCK WORKSPACE" title={`${market} · ${symbol}`} description="동일한 종목 문맥을 유지하며 기술분석, 뉴스, 공시와 브리핑을 확인합니다." />
       <nav className="stock-route-tabs" aria-label={`${symbol} 상세 메뉴`}>
-        <NavLink to={base} end>개요</NavLink><NavLink to={`${base}/technical`}>차트·기술분석</NavLink><NavLink to={`${base}/news`}>뉴스</NavLink><NavLink to={`${base}/disclosures`}>공시</NavLink><NavLink to={`${base}/briefing`}>AI 브리핑</NavLink>
+        <NavLink to={`${base}/technical`}>차트·기술분석</NavLink><NavLink to={`${base}/news`}>뉴스</NavLink><NavLink to={`${base}/disclosures`}>공시</NavLink><NavLink to={`${base}/briefing`}>AI 브리핑</NavLink>
       </nav>
       <Outlet context={stockContext} />
     </section>
   )
-}
-
-function StockOverviewPage() {
-  const context = useAppContext()
-  const realtimeKey = realtimeInstrumentKey(context.selectedStock.market, context.selectedStock.symbol)
-  return <Suspense fallback={<StockDetailLoading />}><StockDetail headingLabel="종목 개요" stockRef={context.selectedStock} liveQuote={context.liveQuotes[realtimeKey]} liveCandles={context.intradayCandles[realtimeKey]} /></Suspense>
 }
 
 function StockTechnicalPage() {
@@ -311,12 +312,12 @@ function StockBriefingPage() {
 
 function NewsPage() {
   const context = useAppContext()
-  return <AiNewsSummary market={context.selectedStock.market} symbol={context.selectedStock.symbol} onUsageRecorded={context.recordAiUsage} />
+  return <AiNewsSummary onUsageRecorded={context.recordAiUsage} watchlistMode={true} />
 }
 
 function DisclosuresPage() {
   const context = useAppContext()
-  return <DisclosurePanel stock={context.selectedStock} onUsageRecorded={context.recordAiUsage} />
+  return <DisclosurePanel onUsageRecorded={context.recordAiUsage} watchlistMode={true} />
 }
 
 function WatchlistPage() {

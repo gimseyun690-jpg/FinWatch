@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useOutletContext } from 'react-router'
+import type { AppRouteContext } from '../app/context'
 import { searchStocks } from '../api/stocks'
 import { addWatchlist, getWatchlist, removeWatchlist } from '../api/watchlists'
 import type { StockCatalogItem, StockRef } from '../types/stock'
@@ -43,6 +45,8 @@ export function WatchlistPanel({
   onItemsChange,
   liveQuotes,
 }: Props) {
+  const context = useOutletContext<AppRouteContext | null>()
+  const showAdminDetails = context?.showAdminDetails ?? true
   const [items, setItems] = useState<WatchlistItem[]>([])
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<StockCatalogItem[]>([])
@@ -201,7 +205,7 @@ export function WatchlistPanel({
                   <article className="watchlist-search-result" key={key}>
                     <span className="search-symbol"><strong>{stock.symbol}</strong><small>{stock.market}</small></span>
                     <span className="search-company"><strong>{stock.name}</strong><small>{stock.englishName ?? stock.exchange}</small></span>
-                    <DataStatusBadge status={stock.dataAvailability} detail={availabilityLabel[stock.dataAvailability]} />
+                    {showAdminDetails && <DataStatusBadge status={stock.dataAvailability} detail={availabilityLabel[stock.dataAvailability]} />}
                     <button
                       type="button"
                       onClick={() => addSelectedStock(stock)}
@@ -273,10 +277,12 @@ export function WatchlistPanel({
                       {changeRate >= 0 ? '+' : ''}{changeRate.toFixed(2)}%
                     </span>
                   )}
-                  <span className="quote-trust-row">
-                    <DataStatusBadge status={dataStatus} detail={quoteSource} />
-                    {quoteAsOf && <small>기준 {new Date(quoteAsOf).toLocaleTimeString('ko-KR')}</small>}
-                  </span>
+                  {showAdminDetails && (
+                    <span className="quote-trust-row">
+                      <DataStatusBadge status={dataStatus} detail={quoteSource} />
+                      {quoteAsOf && <small>기준 {new Date(quoteAsOf).toLocaleTimeString('ko-KR')}</small>}
+                    </span>
+                  )}
                 </button>
                 <button
                   className={`remove-watchlist${confirmRemoveKey === key ? ' confirm' : ''}`}

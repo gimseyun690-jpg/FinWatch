@@ -1,21 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useOutletContext } from 'react-router'
+import type { AppRouteContext } from '../app/context'
 import { getDataLoadJob, getDisclosures, startDisclosureLoad, summarizeDisclosure } from '../api/disclosures'
 import type { Disclosure } from '../types/disclosure'
 import type { AiSummary } from '../types/news'
 import type { StockRef } from '../types/stock'
+import { getWatchlist } from '../api/watchlists'
 import { DataStatusBadge } from './DataStatusBadge'
 import { Icon } from './Icon'
 
 type Props = {
-  stock: StockRef
+  stock?: StockRef
   onUsageRecorded?: () => void
+  watchlistMode?: boolean
 }
 
 const POLL_INTERVAL_MS = 700
 const MAX_POLL_ATTEMPTS = 30
 
-export function DisclosurePanel({ stock, onUsageRecorded }: Props) {
-  const stockKey = `${stock.market.toUpperCase()}:${stock.symbol.toUpperCase()}`
+export function DisclosurePanel({ stock, onUsageRecorded, watchlistMode = false }: Props) {
+  const context = useOutletContext<AppRouteContext | null>()
+  const showAdminDetails = context?.showAdminDetails ?? true
+  const stockKey = stock ? `${stock.market.toUpperCase()}:${stock.symbol.toUpperCase()}` : 'WATCHLIST'
   const [items, setItems] = useState<Disclosure[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -31,10 +37,44 @@ export function DisclosurePanel({ stock, onUsageRecorded }: Props) {
   const evidenceDetailsRef = useRef<HTMLDetailsElement | null>(null)
   const evidenceRefs = useRef(new Map<string, HTMLElement>())
 
+  const [symbolNameMap, setSymbolNameMap] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    getWatchlist()
+      .then((watchlistItems) => {
+        const map: Record<string, string> = {}
+        watchlistItems.forEach((item) => {
+          map[item.symbol] = item.name
+        })
+        setSymbolNameMap(map)
+      })
+      .catch(() => {})
+  }, [])
+
   const load = useCallback(async (signal?: AbortSignal, requestedStockKey = stockKey) => {
-    const disclosures = await getDisclosures(stock.market, stock.symbol, signal)
-    if (!signal?.aborted && currentStockKeyRef.current === requestedStockKey) setItems(disclosures)
-  }, [stock.market, stock.symbol, stockKey])
+    if (watchlistMode) {
+      const watchlistItems = await getWatchlist(signal)
+      const results = await Promise.all(
+        watchlistItems.map(async (item) => {
+          try {
+            const list = await getDisclosures(item.market, item.symbol, signal)
+            return list.map(d => ({
+              ...d,
+              stockName: item.name
+            }))
+          } catch {
+            return []
+          }
+        })
+      )
+      const merged = results.flat().sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+      if (!signal?.aborted) setItems(merged)
+    } else {
+      if (!stock) return
+      const disclosures = await getDisclosures(stock.market, stock.symbol, signal)
+      if (!signal?.aborted && currentStockKeyRef.current === requestedStockKey) setItems(disclosures)
+    }
+  }, [stock?.market, stock?.symbol, stockKey, watchlistMode])
 
   useEffect(() => {
     currentStockKeyRef.current = stockKey
@@ -72,6 +112,7 @@ export function DisclosurePanel({ stock, onUsageRecorded }: Props) {
   }, [summary])
 
   async function refresh() {
+    if (!stock) return
     actionRequestRef.current?.abort()
     setSummarizingId(null)
     const controller = new AbortController()
@@ -155,13 +196,19 @@ export function DisclosurePanel({ stock, onUsageRecorded }: Props) {
     <article className="card disclosure-card" id="disclosures">
       <div className="section-heading compact disclosure-heading">
         <div>
-          <p className="eyebrow">OFFICIAL DISCLOSURES</p>
+          {showAdminDetails && <p className="eyebrow">OFFICIAL DISCLOSURES</p>}
           <h2>기업 공시</h2>
-          <p>{stock.market === 'KRX' ? '금융감독원 Open DART' : '미국 SEC EDGAR'}의 공식 제출 자료입니다.</p>
+          {watchlistMode ? (
+            <p>내가 등록한 관심종목들의 공식 제출 자료입니다.</p>
+          ) : (
+            <p>{stock?.market === 'KRX' ? '금융감독원 Open DART' : '미국 SEC EDGAR'}의 공식 제출 자료입니다.</p>
+          )}
         </div>
-        <button type="button" className="disclosure-refresh" onClick={refresh} disabled={refreshing}>
-          {refreshing ? '공시 수집 중…' : '공시 새로고침'}
-        </button>
+        {!watchlistMode && (
+          <button type="button" className="disclosure-refresh" onClick={refresh} disabled={refreshing}>
+            {refreshing ? '공시 수집 중…' : '공시 새로고침'}
+          </button>
+        )}
       </div>
 
       {message && <p className="disclosure-status" role="status">{message}</p>}
@@ -180,17 +227,22 @@ export function DisclosurePanel({ stock, onUsageRecorded }: Props) {
             const traceableEvidenceIds = originalUrl && summary?.newsId === item.id
               ? new Set(summary.evidenceSegments.map((id) => id.trim()).filter(Boolean))
               : new Set<string>()
+            const disclosureStockName = (item as any).stockName || symbolNameMap[item.symbol] || ''
             return (
               <div key={item.id} className={`disclosure-row ${selectedId === item.id ? 'selected' : ''}`}>
               <div className="disclosure-row-meta">
-                <span className="disclosure-provider">{providerLabel(item.source)}</span>
+                {(disclosureStockName || showAdminDetails) && (
+                  <span className="disclosure-provider">
+                    {disclosureStockName && <span style={{ marginRight: showAdminDetails ? '6px' : '0px', color: '#29d4c9', fontWeight: 'bold' }}>{disclosureStockName}</span>}{showAdminDetails && providerLabel(item.source)}
+                  </span>
+                )}
                 {item.disclosureType && <span className="disclosure-type">{item.disclosureType}</span>}
                 <span className={`disclosure-content-state ${item.aiAnalysisAllowed ? 'ready' : ''}`}>
                   {item.aiAnalysisAllowed ? '원문 확보됨' : '요약 시 원문 확보'}
                 </span>
               </div>
               <strong>{item.title}</strong>
-              <span>{item.publisher} · {formatDate(item.publishedAt)}</span>
+              <span>{formatPublisher(item.publisher, disclosureStockName)} · {formatDate(item.publishedAt)}</span>
               <div className="disclosure-actions">
                 <button
                   type="button"
@@ -214,12 +266,14 @@ export function DisclosurePanel({ stock, onUsageRecorded }: Props) {
                       <span>{sentimentLabel(summary.sentiment)}</span>
                       <h3>{item.title}</h3>
                     </div>
-                    <span
-                      className={`cache-badge ${summary.cacheHit ? 'hit' : 'miss'}`}
-                      aria-label={summary.cacheHit ? 'CACHE HIT, 캐시 적중 결과' : 'CACHE MISS, 신규 생성 결과'}
-                    >
-                      {summary.cacheHit ? 'CACHE HIT' : 'CACHE MISS'}
-                    </span>
+                    {showAdminDetails && (
+                      <span
+                        className={`cache-badge ${summary.cacheHit ? 'hit' : 'miss'}`}
+                        aria-label={summary.cacheHit ? 'CACHE HIT, 캐시 적중 결과' : 'CACHE MISS, 신규 생성 결과'}
+                      >
+                        {summary.cacheHit ? 'CACHE HIT' : 'CACHE MISS'}
+                      </span>
+                    )}
                   </div>
                   <p className="disclosure-summary-text">{summary.summary}</p>
                   {summary.keyPoints.length > 0 && (
@@ -242,15 +296,19 @@ export function DisclosurePanel({ stock, onUsageRecorded }: Props) {
                     </section>
                   </div>
                   <div className="evidence-row">
-                    <DataStatusBadge
-                      status={traceableEvidenceIds.size > 0 ? 'READY' : 'PARTIAL'}
-                      detail={traceableEvidenceIds.size > 0 ? '공식 원문에서 근거 확인 가능' : '근거 확인 불가'}
-                    />
-                    <span>{analysisScopeLabel(summary.analysisScope)}</span>
+                    {showAdminDetails && (
+                      <>
+                        <DataStatusBadge
+                          status={traceableEvidenceIds.size > 0 ? 'READY' : 'PARTIAL'}
+                          detail={traceableEvidenceIds.size > 0 ? '공식 원문에서 근거 확인 가능' : '근거 확인 불가'}
+                        />
+                        <span>{analysisScopeLabel(summary.analysisScope)}</span>
+                      </>
+                    )}
                     {traceableEvidenceIds.size > 0
                       ? <EvidenceChips ids={summary.evidenceSegments} availableEvidenceIds={traceableEvidenceIds} onSelect={revealEvidence} />
                       : <span>안전한 공식 원문과 연결된 근거 확인 불가</span>}
-                    <span>{summary.processedCharacters.toLocaleString()} / {summary.originalCharacters.toLocaleString()}자</span>
+                    {showAdminDetails && <span>{summary.processedCharacters.toLocaleString()} / {summary.originalCharacters.toLocaleString()}자</span>}
                   </div>
                   {traceableEvidenceIds.size > 0 && (
                     <details ref={evidenceDetailsRef} className="disclosure-evidence-drawer">
@@ -275,14 +333,18 @@ export function DisclosurePanel({ stock, onUsageRecorded }: Props) {
                   <p className="analysis-disclaimer disclosure-summary-disclaimer">
                     AI 요약은 공식 원문 확인을 보조하는 참고 정보이며, 중요한 판단 전 반드시 원문을 확인하세요.
                   </p>
-                  <div className="usage-strip">
-                    <div><strong>{summary.inputTokens + summary.outputTokens}</strong><span>사용 토큰</span></div>
-                    <div><strong>${summary.estimatedCost.toFixed(6)}</strong><span>이번 요청 비용</span></div>
-                    <div><strong>{summary.responseTimeMs}ms</strong><span>응답 시간</span></div>
-                  </div>
-                  <p className="disclosure-summary-audit">
-                    생성 {new Date(summary.generatedAt).toLocaleString('ko-KR')} · {summary.cacheHit ? '캐시 적중 결과' : '신규 생성 결과'} · {summary.modelName} · {summary.promptVersion} · 공급자 호출 {summary.providerCallCount}회
-                  </p>
+                  {showAdminDetails && (
+                    <>
+                      <div className="usage-strip">
+                        <div><strong>{summary.inputTokens + summary.outputTokens}</strong><span>사용 토큰</span></div>
+                        <div><strong>${summary.estimatedCost.toFixed(6)}</strong><span>이번 요청 비용</span></div>
+                        <div><strong>{summary.responseTimeMs}ms</strong><span>응답 시간</span></div>
+                      </div>
+                      <p className="disclosure-summary-audit">
+                        생성 {new Date(summary.generatedAt).toLocaleString('ko-KR')} · {summary.cacheHit ? '캐시 적중 결과' : '신규 생성 결과'} · {summary.modelName} · {summary.promptVersion} · 공급자 호출 {summary.providerCallCount}회
+                      </p>
+                    </>
+                  )}
                 </section>
               )}
             </div>
@@ -387,4 +449,23 @@ function delay(milliseconds: number, signal: AbortSignal) {
 
 function isCurrentRequest(controller: AbortController, current: AbortController | null) {
   return !controller.signal.aborted && current === controller
+}
+
+function formatPublisher(publisher: string, stockName: string) {
+  const pub = publisher?.trim() ?? ''
+  if (!pub) return '공식 공시 공급자'
+  if (!stockName) return pub
+
+  const isCompany = pub === stockName
+    || pub.includes(stockName)
+    || pub.includes('주식회사')
+    || pub.includes('Co')
+    || pub.includes('Inc')
+    || pub.length > 4;
+
+  if (isCompany) {
+    return pub;
+  } else {
+    return `${stockName} (${pub})`;
+  }
 }

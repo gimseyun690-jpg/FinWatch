@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import { useOutletContext } from 'react-router'
+import type { AppRouteContext } from '../app/context'
 import {
   CandlestickSeries,
   ColorType,
@@ -60,7 +62,7 @@ const defaultChartSettings: ChartSettings = {
   showBollinger: false,
   showVolume: true,
   showVolumeMa20: true,
-  showEvents: true,
+  showEvents: false,
   oscillator: 'rsi',
 }
 
@@ -492,6 +494,8 @@ export function InteractiveStockChart({
   onIntervalChange,
   onRetry,
 }: Props) {
+  const context = useOutletContext<AppRouteContext | null>()
+  const showAdminDetails = context?.showAdminDetails ?? true
   const shellRef = useRef<HTMLDivElement>(null)
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
@@ -1339,26 +1343,36 @@ export function InteractiveStockChart({
       <div className="chart-indicators" role="group" aria-label="보기 지표 설정">
         <div role="group" aria-label="가격 오버레이 지표">
           <span>오버레이</span>
-          <button type="button" aria-pressed={showMa5} onClick={() => setShowMa5((value) => !value)}>MA5</button>
-          <button type="button" aria-pressed={showMa20} onClick={() => setShowMa20((value) => !value)}>MA20</button>
-          <button type="button" aria-pressed={showMa60} onClick={() => setShowMa60((value) => !value)}>MA60</button>
-          <button type="button" aria-pressed={showBollinger} onClick={() => setShowBollinger((value) => !value)}>볼린저(20,2)</button>
-          <button type="button" aria-pressed={showEvents} onClick={() => setShowEvents((value) => !value)}>이벤트</button>
-          <button type="button" aria-pressed={showVolume} onClick={() => setShowVolume((value) => !value)}>거래량</button>
-          <button type="button" aria-pressed={showVolumeMa20} onClick={() => setShowVolumeMa20((value) => !value)}>거래량 MA20</button>
+          <button type="button" className="has-tooltip" data-tooltip={"MA5 (5일 단기 이동평균선)\n단기적인 주가 트렌드를 가장 빠르게 반영하는 추세 지표입니다."} aria-pressed={showMa5} onClick={() => setShowMa5((value) => !value)}>MA5</button>
+          <button type="button" className="has-tooltip" data-tooltip={"MA20 (20일 중기 이동평균선/심리선)\n주가의 단기 방향을 정하는 생명선으로 불리며, 강도 파악에 기준이 됩니다."} aria-pressed={showMa20} onClick={() => setShowMa20((value) => !value)}>MA20</button>
+          <button type="button" className="has-tooltip" data-tooltip={"MA60 (60일 수급선/장기 추세선)\n중장기적인 시장 수급 상태 및 주가의 대세 방향성을 의미합니다."} aria-pressed={showMa60} onClick={() => setShowMa60((value) => !value)}>MA60</button>
+          <button type="button" className="has-tooltip" data-tooltip={"볼린저 밴드 (20, 2)\n주가의 변동 범위를 표준편차 밴드로 둘러싸 보여주며, 상단/하단 이탈을 과열/침체로 해석합니다."} aria-pressed={showBollinger} onClick={() => setShowBollinger((value) => !value)}>볼린저(20,2)</button>
+          <button type="button" className="has-tooltip" data-tooltip={"이벤트 마커\n차트 내 이동평균 교차(골든/데드), RSI 과매수/과매도 발생 지점을 마커로 나타냅니다."} aria-pressed={showEvents} onClick={() => setShowEvents((value) => !value)}>이벤트</button>
+          <button type="button" className="has-tooltip" data-tooltip={"거래량\n일정 시간 내에 체결된 주식 수이며, 주가 등락의 힘과 매수/매도 신뢰도를 판단하는 기본 척도입니다."} aria-pressed={showVolume} onClick={() => setShowVolume((value) => !value)}>거래량</button>
+          <button type="button" className="has-tooltip" data-tooltip={"거래량 MA20\n최근 20거래일 동안의 평균 거래량을 선으로 이어 보여줍니다."} aria-pressed={showVolumeMa20} onClick={() => setShowVolumeMa20((value) => !value)}>거래량 MA20</button>
         </div>
         <div role="group" aria-label="하단 보조지표 패널">
           <span>하단 패널</span>
-          {(['rsi', 'macd', 'atr', 'none'] as const).map((panel) => (
-            <button
-              key={panel}
-              type="button"
-              aria-pressed={oscillator === panel}
-              onClick={() => setOscillator(panel)}
-            >
-              {panel === 'none' ? '숨김' : panel.toUpperCase()}
-            </button>
-          ))}
+          {(['rsi', 'macd', 'atr', 'none'] as const).map((panel) => {
+            const tooltips = {
+              rsi: 'RSI (상대강도지수)\n과매수(70 이상, 매도 검토) 및 과매도(30 이하, 매수 검토) 수준을 파악해 추세 전환 가능성을 알려주는 오실레이터입니다.',
+              macd: 'MACD (이동평균 수렴확산)\n장단기 이평선의 골든크로스(매수) 및 데드크로스(매도) 교차 시점과 기세 강도를 알려주는 추세 추종 지표입니다.',
+              atr: 'ATR (평균실제변동폭)\n최근 14거래일 동안 주가가 움직인 평균 범위(변동성)입니다. 높을수록 변동성이 큽니다.',
+              none: '하단 보조지표 오실레이터 차트 패널을 닫습니다.'
+            }
+            return (
+              <button
+                key={panel}
+                type="button"
+                className="has-tooltip"
+                data-tooltip={tooltips[panel]}
+                aria-pressed={oscillator === panel}
+                onClick={() => setOscillator(panel)}
+              >
+                {panel === 'none' ? '숨김' : panel.toUpperCase()}
+              </button>
+            )
+          })}
           <button type="button" onClick={resetIndicators}>지표 초기화</button>
         </div>
       </div>
@@ -1409,18 +1423,20 @@ export function InteractiveStockChart({
         </div>
       </div>
 
-      <div className="chart-data-meta" aria-label="차트 데이터 기준">
-        <DataStatusBadge
-          status={dataStatus}
-          detail={loading && items.length > 0 ? '백그라운드 갱신 중' : undefined}
-        />
-        <span><b>시장</b> {market}</span>
-        <span><b>통화</b> {currency}</span>
-        <span><b>출처</b> {sourceLabel(source)}</span>
-        <span><b>시간대</b> {timeZone}</span>
-        <span><b>간격</b> {intervalLabel(interval)}</span>
-        <span><b>기준시각</b> {formatBasisTime(basisTime, timeZone)}</span>
-      </div>
+      {showAdminDetails && (
+        <div className="chart-data-meta" aria-label="차트 데이터 기준">
+          <DataStatusBadge
+            status={dataStatus}
+            detail={loading && items.length > 0 ? '백그라운드 갱신 중' : undefined}
+          />
+          <span><b>시장</b> {market}</span>
+          <span><b>통화</b> {currency}</span>
+          <span><b>출처</b> {sourceLabel(source)}</span>
+          <span><b>시간대</b> {timeZone}</span>
+          <span><b>간격</b> {intervalLabel(interval)}</span>
+          <span><b>기준시각</b> {formatBasisTime(basisTime, timeZone)}</span>
+        </div>
+      )}
 
       <div className="chart-canvas-wrap">
         <div

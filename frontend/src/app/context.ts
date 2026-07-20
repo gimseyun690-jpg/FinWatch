@@ -16,4 +16,6 @@ export type AppRouteContext = {
   selectStock: (stock: StockRef) => void
   recordAiUsage: () => void
   logout: () => void
+  showAdminDetails: boolean
+  setShowAdminDetails: (show: boolean) => void
 }

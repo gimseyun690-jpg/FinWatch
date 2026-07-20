@@ -45,6 +45,7 @@ services:
       SESSION_COOKIE_SECURE: "false"
       DATA_MODE: DEMO
       AI_PROVIDER: mock
+      SEC_EDGAR_USER_AGENT: "FinWatch/1.0 (contact@finwatch.local)"
     expose:
       - "8080"
     depends_on:

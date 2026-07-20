@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useOutletContext } from 'react-router'
+import type { AppRouteContext } from '../app/context'
 import { getUsdKrw, getUsdKrwHistory } from '../api/fx'
 import type { FxHistory, FxRate } from '../types/fx'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
@@ -6,6 +8,8 @@ import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 const periods: FxHistory['period'][] = ['1W', '1M', '3M', '1Y']
 
 export function FxRatePanel() {
+  const context = useOutletContext<AppRouteContext | null>()
+  const showAdminDetails = context?.showAdminDetails ?? true
   const [rate, setRate] = useState<FxRate | null>(null)
   const [history, setHistory] = useState<FxHistory | null>(null)
   const [period, setPeriod] = useState<FxHistory['period']>('1M')
@@ -73,8 +77,14 @@ export function FxRatePanel() {
         <span><b>USD/KRW</b><small>1 USD당 KRW</small></span>
         <strong>{rate.rate.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
         <span className={(rate.changeRate ?? 0) >= 0 ? 'profit' : 'down'}>{signed(rate.changeRate)}</span>
-        <DataStatusBadge status={status} />
-        <small>{rate.source} · 기준 {new Date(rate.asOf).toLocaleString('ko-KR')} · 갱신 {new Date(rate.fetchedAt).toLocaleTimeString('ko-KR')}</small>
+        <span className="fx-status-wrapper">
+          {showAdminDetails && <DataStatusBadge status={status} />}
+        </span>
+        {showAdminDetails ? (
+          <small style={{ justifySelf: 'end', textAlign: 'right' }}>{rate.source} · 기준 {new Date(rate.asOf).toLocaleString('ko-KR')} · 갱신 {new Date(rate.fetchedAt).toLocaleTimeString('ko-KR')}</small>
+        ) : (
+          <small style={{ justifySelf: 'end', textAlign: 'right' }}>고시 기준: {new Date(rate.asOf).toLocaleDateString('ko-KR')}</small>
+        )}
         <b aria-hidden="true">{open ? '접기' : '차트 보기'}</b>
       </button>
       {open && (

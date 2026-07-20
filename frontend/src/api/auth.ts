@@ -42,3 +42,22 @@ export async function getKakaoLoginStatus(signal?: AbortSignal): Promise<KakaoLo
   if (!response.ok) throw new Error(body.message ?? '카카오 로그인 설정을 확인하지 못했습니다.')
   return body.data
 }
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  const headers = new Headers()
+  headers.set('Content-Type', 'application/json')
+  const token = csrfToken()
+  if (token) headers.set('X-XSRF-TOKEN', token)
+
+  const response = await fetch('/api/v1/auth/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers,
+    body: JSON.stringify({ email, password }),
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  const body = (await response.json()) as ApiResponse<LoginResponse> & ApiError
+  if (!response.ok) throw new Error(body.message ?? '로그인에 실패했습니다.')
+  return body.data
+}

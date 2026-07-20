@@ -67,7 +67,7 @@ public class DailyBriefingSnapshotFactory {
         validate(series);
         MarketPrice currentPrice = series.getLast();
         MarketPrice previousPrice = series.get(series.size() - 2);
-        if (currentPrice.getRecordedAt().isAfter(Instant.now().plus(Duration.ofMinutes(5)))) {
+        if (currentPrice.getRecordedAt().isAfter(Instant.now().plus(Duration.ofDays(2)))) {
             throw new DailyBriefingException(HttpStatus.UNPROCESSABLE_ENTITY, "BRIEFING_INPUT_INVALID", "미래 시각의 일봉은 브리핑에 사용할 수 없습니다.");
         }
 

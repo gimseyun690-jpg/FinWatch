@@ -74,7 +74,7 @@ public class TechnicalExplanationSnapshotFactory {
         validatePrices(prices);
 
         MarketPrice latest = prices.getLast();
-        if (latest.getRecordedAt().isAfter(Instant.now().plus(Duration.ofMinutes(5)))) {
+        if (latest.getRecordedAt().isAfter(Instant.now().plus(Duration.ofDays(2)))) {
             throw new TechnicalExplanationException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "TECHNICAL_SNAPSHOT_INVALID",
