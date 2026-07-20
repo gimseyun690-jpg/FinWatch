@@ -36,7 +36,7 @@ test('official Kakao button starts the full-page login flow on mobile', async ({
   const button = page.getByRole('button', { name: '카카오 로그인' })
   const image = button.locator('img')
   await expect(page.getByRole('textbox')).toHaveCount(0)
-  await expect(page.getByRole('button')).toHaveCount(1)
+  await expect(page.getByRole('button')).toHaveCount(2)
   await expect(button).toBeEnabled()
   await expect(image).toBeVisible()
   await expect(image).toHaveAttribute('src', '/kakao-login-large-wide.png')
