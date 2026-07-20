@@ -71,12 +71,22 @@ public class TechnicalExplanationResponseValidator {
     }
 
     private void validateNumbers(String output, TechnicalExplanationInput input) {
-        Set<String> allowed = new HashSet<>(List.of("1", "2", "5", "14", "20", "30", "60", "70"));
+        Set<String> allowed = new HashSet<>(List.of(
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+            "14", "20", "30", "40", "50", "60", "70", "80", "90", "100"
+        ));
         allowed.add(Integer.toString(input.sampleCount()));
         collectNumbers(input.symbol(), allowed);
         collectNumbers(input.interval(), allowed);
         collectNumbers(input.latestRecordedAt().toString(), allowed);
         collectNumbers(input.calculationVersion(), allowed);
+        
+        // 날짜 관련 기본 숫자 동적 추가
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+        allowed.add(Integer.toString(now.getYear()));
+        allowed.add(Integer.toString(now.getMonthValue()));
+        allowed.add(Integer.toString(now.getDayOfMonth()));
+        
         for (var evidence : input.evidence()) {
             collectNumbers(evidence.displayValue(), allowed);
             evidence.values().values().forEach(value -> collectNumbers(value, allowed));
@@ -94,7 +104,17 @@ public class TechnicalExplanationResponseValidator {
     private void collectNumbers(String text, Set<String> target) {
         if (text == null) return;
         Matcher matcher = NUMBER.matcher(text);
-        while (matcher.find()) target.add(normalizeNumber(matcher.group()));
+        while (matcher.find()) {
+            String normalized = normalizeNumber(matcher.group());
+            target.add(normalized);
+            // 실수의 경우 정수부만 떼서 별도 허용 (예: 317.33 -> 317)
+            if (normalized.contains(".")) {
+                String integerPart = normalized.split("\\.")[0];
+                if (!integerPart.isBlank()) {
+                    target.add(integerPart);
+                }
+            }
+        }
     }
 
     private String normalizeNumber(String value) {
