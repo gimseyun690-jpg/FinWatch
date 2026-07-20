@@ -74,7 +74,7 @@ export function DisclosurePanel({ stock, onUsageRecorded, watchlistMode = false 
       const disclosures = await getDisclosures(stock.market, stock.symbol, signal)
       if (!signal?.aborted && currentStockKeyRef.current === requestedStockKey) setItems(disclosures)
     }
-  }, [stock, stock?.market, stock?.symbol, stockKey, watchlistMode])
+  }, [stock, stockKey, watchlistMode])
 
   useEffect(() => {
     currentStockKeyRef.current = stockKey
