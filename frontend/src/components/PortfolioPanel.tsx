@@ -23,6 +23,12 @@ export function PortfolioPanel({ liveQuotes }: Props) {
   const [averagePrice, setAveragePrice] = useState('')
   const [purchaseFxRate, setPurchaseFxRate] = useState('')
   const [editing, setEditing] = useState(false)
+  const [purchaseCurrency, setPurchaseCurrency] = useState<'USD' | 'KRW'>('USD')
+
+  useEffect(() => {
+    setPurchaseCurrency('USD')
+    setPurchaseFxRate('')
+  }, [symbol])
   const [portfolioLoading, setPortfolioLoading] = useState(true)
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -120,8 +126,18 @@ export function PortfolioPanel({ liveQuotes }: Props) {
       return
     }
     const parsedQuantity = Number(quantity)
-    const parsedAveragePrice = Number(averagePrice)
+    let parsedAveragePrice = Number(averagePrice)
     const parsedFxRate = purchaseFxRate ? Number(purchaseFxRate) : null
+
+    if (selectedStock?.currency === 'USD' && purchaseCurrency === 'KRW') {
+      if (parsedFxRate == null || parsedFxRate <= 0) {
+        setActionError('원화(KRW) 매수 시에는 매수 당시 환율 입력이 필수입니다.')
+        return
+      }
+      // 원화 매수가를 환율로 나누어 달러 매수가로 환산
+      parsedAveragePrice = parsedAveragePrice / parsedFxRate
+    }
+
     if (!selectedStock || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0 || !Number.isFinite(parsedAveragePrice) || parsedAveragePrice < 0) {
       setActionError('종목, 수량, 평균 매수가를 올바르게 입력해 주세요.')
       return
@@ -146,6 +162,7 @@ export function PortfolioPanel({ liveQuotes }: Props) {
       })
       setAveragePrice('')
       setPurchaseFxRate('')
+      setPurchaseCurrency('USD')
       setEditing(false)
       const refreshed = await loadPortfolio()
       setStatusMessage(refreshed
@@ -253,8 +270,64 @@ export function PortfolioPanel({ liveQuotes }: Props) {
                 ))}
               </select>
               <input type="number" min="0.000001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="수량" aria-label="보유 수량" required disabled={saving} />
-              <input type="number" min="0" step="any" value={averagePrice} onChange={(event) => setAveragePrice(event.target.value)} placeholder="평균 매수가" aria-label="평균 매수가" required disabled={saving} />
-              {selectedStock?.currency === 'USD' && <input type="number" min="0.0000000001" step="any" value={purchaseFxRate} onChange={(event) => setPurchaseFxRate(event.target.value)} placeholder="매수 당시 USD/KRW (선택)" aria-label="매수 당시 USD KRW 환율" disabled={saving} />}
+              {selectedStock?.currency === 'USD' && (
+                <div className="purchase-currency-toggle" style={{ display: 'flex', gap: '8px', margin: '4px 0 10px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>매수 당시 통화:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPurchaseCurrency('USD')
+                      setPurchaseFxRate('')
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border)',
+                      background: purchaseCurrency === 'USD' ? 'var(--cyan)' : 'rgba(255,255,255,0.02)',
+                      color: purchaseCurrency === 'USD' ? '#0f172a' : 'var(--text-muted)',
+                      fontWeight: purchaseCurrency === 'USD' ? '800' : 'normal',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    USD ($)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPurchaseCurrency('KRW')
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border)',
+                      background: purchaseCurrency === 'KRW' ? 'var(--cyan)' : 'rgba(255,255,255,0.02)',
+                      color: purchaseCurrency === 'KRW' ? '#0f172a' : 'var(--text-muted)',
+                      fontWeight: purchaseCurrency === 'KRW' ? '800' : 'normal',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    KRW (₩)
+                  </button>
+                </div>
+              )}
+              <input type="number" min="0" step="any" value={averagePrice} onChange={(event) => setAveragePrice(event.target.value)} placeholder={selectedStock?.currency === 'USD' ? `평균 매수가 (${purchaseCurrency})` : '평균 매수가'} aria-label="평균 매수가" required disabled={saving} />
+              {selectedStock?.currency === 'USD' && (
+                <input
+                  type="number"
+                  min="0.0000000001"
+                  step="any"
+                  value={purchaseFxRate}
+                  onChange={(event) => setPurchaseFxRate(event.target.value)}
+                  placeholder={purchaseCurrency === 'KRW' ? "매수 당시 USD/KRW (필수)" : "매수 당시 USD/KRW (선택)"}
+                  aria-label="매수 당시 USD KRW 환율"
+                  required={purchaseCurrency === 'KRW'}
+                  disabled={saving}
+                />
+              )}
               <button type="submit" disabled={saving || !selectedStock}>{saving ? '저장 중…' : '등록'}</button>
             </>
           ) : (
