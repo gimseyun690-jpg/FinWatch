@@ -843,8 +843,34 @@ button.has-tooltip, .legend-swatch.has-tooltip {
 .panel-state-empty { min-height: 105px; align-content: center; }
 .portfolio-edit-button { border: 1px solid var(--border); color: var(--cyan); background: transparent; }
 .portfolio-edit-button:hover { filter: none; border-color: var(--cyan); }
-.portfolio-form { display: grid; grid-template-columns: 1.2fr .7fr 1fr 1fr auto; gap: 8px; margin: 20px 0 4px; }
-.portfolio-form select, .portfolio-form input { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px; color: var(--text-strong); background: var(--panel-soft); }
+.portfolio-form { display: flex; flex-direction: column; gap: 10px; margin: 20px 0 4px; }
+.portfolio-form input[type="search"], .portfolio-form input[type="number"] { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text-strong); background: var(--panel-soft); font-size: 13px; box-sizing: border-box; }
+.portfolio-form input[type="search"]:focus, .portfolio-form input[type="number"]:focus { border-color: var(--cyan); outline: none; }
+.portfolio-form button[type="submit"] { width: 100%; margin-top: 4px; }
+.portfolio-form .purchase-currency-toggle { flex-wrap: wrap; }
+/* Stock search autocomplete shared styles */
+.stock-search-wrap { position: relative; width: 100%; }
+.stock-search-input { display: block; width: 100%; padding: 10px 12px; background: var(--panel-soft); border: 1px solid var(--border); border-radius: 8px; color: var(--text-strong); font-size: 13px; outline: none; transition: border-color 0.2s; box-sizing: border-box; }
+.stock-search-input:focus { border-color: var(--cyan); }
+.stock-search-selected { display: flex; align-items: center; gap: 8px; padding: 7px 10px; margin-top: 6px; background: color-mix(in srgb, var(--cyan) 6%, var(--panel-soft)); border: 1px solid color-mix(in srgb, var(--cyan) 28%, var(--border)); border-radius: 7px; }
+.stock-search-selected-symbol { font-size: 12px; font-weight: 800; color: var(--cyan); }
+.stock-search-selected-name { font-size: 12px; font-weight: 600; color: var(--text-strong); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stock-search-selected-market { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.stock-search-popover { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 110; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; max-height: 220px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+.stock-search-hint { padding: 10px 14px; font-size: 12px; color: var(--text-muted); }
+.stock-search-list { list-style: none; padding: 4px 0; margin: 0; }
+.stock-search-option { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; padding: 9px 14px; border: none; background: transparent; color: var(--text-strong); cursor: pointer; text-align: left; transition: background 0.12s; }
+.stock-search-option:hover, .stock-search-option.active { background: color-mix(in srgb, var(--cyan) 7%, transparent); }
+.stock-search-option strong { font-size: 12px; font-weight: 800; color: var(--text-strong); white-space: nowrap; }
+.stock-search-option span { font-size: 11px; color: var(--text-muted); text-align: right; }
+.stock-search-option em { font-style: normal; color: var(--text-dim, var(--text-muted)); margin-left: 4px; }
+/* Currency toggle */
+.purchase-currency-toggle { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.purchase-currency-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.purchase-currency-buttons { display: flex; gap: 6px; }
+.currency-btn { padding: 5px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; transition: all 0.18s; }
+.currency-btn.active { background: var(--cyan); color: #0f172a; border-color: var(--cyan); font-weight: 800; }
+.currency-btn:not(.active):hover { border-color: var(--cyan); color: var(--text-strong); }
 .portfolio-error { margin: 12px 0 0; color: var(--red); font-size: 11px; }
 .currency-summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 22px; }
 .currency-summary { border: 1px solid var(--border); border-radius: 11px; padding: 16px; background: var(--panel-soft); }
@@ -870,9 +896,9 @@ button.has-tooltip, .legend-swatch.has-tooltip {
 .portfolio-note { margin: 14px 0 0; color: var(--text-muted); font-size: 10px; line-height: 1.6; }
 .alerts-card { padding: 20px; }
 .alert-add-button { border: 1px solid var(--border); padding: 7px 9px; color: var(--cyan); background: transparent; font-size: 10px; }
-.alert-form { display: grid; grid-template-columns: 1fr .7fr; gap: 7px; margin-top: 15px; }
-.alert-form select, .alert-form input { min-width: 0; border: 1px solid var(--border); border-radius: 7px; padding: 8px; color: var(--text-strong); background: var(--panel-soft); font-size: 10px; }
-.alert-form button { grid-column: 1 / -1; }
+.alert-form { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
+.alert-form select, .alert-form input[type="number"] { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text-strong); background: var(--panel-soft); font-size: 13px; box-sizing: border-box; }
+.alert-form button[type="submit"] { width: 100%; margin-top: 4px; }
 .alert-error { color: var(--red); font-size: 10px; }
 .alert-list { display: grid; gap: 5px; margin-top: 14px; }
 .alert-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 7px; border-bottom: 1px solid var(--border); padding: 9px 0; }
@@ -944,9 +970,7 @@ footer { padding: 23px 0 35px; border-top: 1px solid var(--border); color: var(-
   .remove-watchlist { min-height: 44px; opacity: 1; }
   .card-heading { align-items: flex-start; flex-direction: column; gap: 4px; margin-bottom: 14px; }
   .portfolio-card { padding: 19px; }
-  .portfolio-form { grid-template-columns: 1fr 1fr; }
-  .portfolio-form select { grid-column: 1 / -1; }
-  .portfolio-form button { grid-column: 1 / -1; }
+  .portfolio-form { flex-direction: column; }
   .fx-strip { gap: 10px; padding: 12px; }
   .fx-strip > strong { font-size: 15px; }
   .currency-summary-grid { grid-template-columns: 1fr; }

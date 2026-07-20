@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { getUsdKrw } from '../api/fx'
+import { getAlerts, setAlertStatus } from '../api/alerts'
 import type { AppRouteContext } from '../app/context'
 import type { FxRate } from '../types/fx'
+import type { PriceAlert } from '../types/alert'
 import { GlobalStockSearch } from './GlobalStockSearch'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { Icon, type IconName } from './Icon'
@@ -105,6 +107,62 @@ export function AppShell({ context }: Props) {
       : context.realtimeConnection === 'connecting'
         ? '실시간 연결 중'
         : '실시간 끊김'
+
+  const [activeAlerts, setActiveAlerts] = useState<PriceAlert[]>([])
+  const triggeredAlertIdsRef = useRef<Set<number>>(new Set())
+
+  useEffect(() => {
+    if (context.session) {
+      getAlerts()
+        .then((items) => {
+          setActiveAlerts(items.filter((item) => item.status === 'ACTIVE'))
+        })
+        .catch(() => {})
+    }
+  }, [context.session, context.adminRefreshKey])
+
+  useEffect(() => {
+    if (activeAlerts.length === 0) return
+
+    activeAlerts.forEach((alert) => {
+      if (triggeredAlertIdsRef.current.has(alert.id)) return
+
+      const key = `${alert.market.toUpperCase()}:${alert.symbol.toUpperCase()}`
+      const quote = context.liveQuotes[key]
+      if (!quote || quote.price == null) return
+
+      const isAbove = alert.condition === 'ABOVE' && quote.price >= alert.targetPrice
+      const isBelow = alert.condition === 'BELOW' && quote.price <= alert.targetPrice
+
+      if (isAbove || isBelow) {
+        triggeredAlertIdsRef.current.add(alert.id)
+
+        const directionText = alert.condition === 'ABOVE' ? '이상' : '이하'
+
+        setAlertStatus(alert.id, 'TRIGGERED')
+          .then(() => {
+            context.recordAiUsage()
+          })
+          .catch(() => {})
+
+        const formattedTarget = new Intl.NumberFormat('ko-KR', {
+          style: 'currency',
+          currency: alert.currency,
+          maximumFractionDigits: alert.currency === 'KRW' ? 0 : 2
+        }).format(alert.targetPrice)
+
+        const formattedCurrent = new Intl.NumberFormat('ko-KR', {
+          style: 'currency',
+          currency: alert.currency,
+          maximumFractionDigits: alert.currency === 'KRW' ? 0 : 2
+        }).format(quote.price)
+
+        setTimeout(() => {
+          window.alert(`[가격 도달 알림] ${alert.name} (${alert.symbol}) 종목이 설정하신 가격 ${formattedTarget} ${directionText}에 도달했습니다!\n(실시간 현재가: ${formattedCurrent})`)
+        }, 100)
+      }
+    })
+  }, [context.liveQuotes, activeAlerts, context])
 
   useEffect(() => {
     document.title = `${title} | FinWatch`

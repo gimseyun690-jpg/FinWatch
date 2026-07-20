@@ -231,9 +231,9 @@ export function DisclosurePanel({ stock, onUsageRecorded, watchlistMode = false 
             return (
               <div key={item.id} className={`disclosure-row ${selectedId === item.id ? 'selected' : ''}`}>
               <div className="disclosure-row-meta">
-                {(disclosureStockName || showAdminDetails) && (
+                {disclosureStockName && (
                   <span className="disclosure-provider">
-                    {disclosureStockName && <span style={{ marginRight: showAdminDetails ? '6px' : '0px', color: '#29d4c9', fontWeight: 'bold' }}>{disclosureStockName}</span>}{showAdminDetails && providerLabel(item.source)}
+                    <span style={{ color: '#29d4c9', fontWeight: 'bold' }}>{disclosureStockName}</span>
                   </span>
                 )}
                 {item.disclosureType && <span className="disclosure-type">{item.disclosureType}</span>}

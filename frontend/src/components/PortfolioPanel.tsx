@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router'
 import type { AppRouteContext } from '../app/context'
 import { createHolding, deleteHolding, getPortfolio } from '../api/portfolio'
-import { getStocks } from '../api/stocks'
+import { getStocks, searchStocks } from '../api/stocks'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import type { Portfolio, PortfolioHolding } from '../types/portfolio'
 import type { LiveQuote } from '../types/realtime'
@@ -29,6 +29,55 @@ export function PortfolioPanel({ liveQuotes }: Props) {
     setPurchaseCurrency('USD')
     setPurchaseFxRate('')
   }, [symbol])
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchedStocks, setSearchedStocks] = useState<StockSummary[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1)
+  const portfolioSearchRootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const query = searchQuery.trim()
+    if (!query) {
+      setSearchedStocks([])
+      setSearchLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => {
+      setSearchLoading(true)
+      searchStocks(query, controller.signal)
+        .then((res) => {
+          if (controller.signal.aborted) return
+          const held = new Set(portfolio?.holdings.map((h) => h.symbol) ?? [])
+          const filtered = (res.items ?? []).filter((stock) => !held.has(stock.symbol))
+          setSearchedStocks(filtered)
+          setActiveSearchIndex(filtered.length > 0 ? 0 : -1)
+          setSearchOpen(true)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!controller.signal.aborted) setSearchLoading(false)
+        })
+    }, 250)
+
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [searchQuery, portfolio])
+
+  useEffect(() => {
+    const close = (e: PointerEvent) => {
+      if (!portfolioSearchRootRef.current?.contains(e.target as Node)) {
+        setSearchOpen(false)
+      }
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [])
   const [portfolioLoading, setPortfolioLoading] = useState(true)
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -44,7 +93,7 @@ export function PortfolioPanel({ liveQuotes }: Props) {
     const held = new Set(portfolio?.holdings.map((holding) => holding.symbol) ?? [])
     return (stocks ?? []).filter((stock) => !held.has(stock.symbol))
   }, [portfolio, stocks])
-  const selectedStock = (stocks ?? []).find((stock) => stock.symbol === symbol) ?? null
+  const selectedStock = (searchedStocks.length > 0 ? searchedStocks : (stocks ?? [])).find((stock) => stock.symbol === symbol) ?? null
   const evaluatedPortfolio = useMemo(
     () => applyLiveQuotes(portfolio, liveQuotes),
     [liveQuotes, portfolio],
@@ -101,13 +150,6 @@ export function PortfolioPanel({ liveQuotes }: Props) {
     }
   }, [])
 
-  useEffect(() => {
-    if (!symbol && availableStocks.length > 0) setSymbol(availableStocks[0].symbol)
-    if (symbol && !availableStocks.some((stock) => stock.symbol === symbol)) {
-      setSymbol(availableStocks[0]?.symbol ?? '')
-    }
-  }, [availableStocks, symbol])
-
   async function retryAll() {
     setActionError('')
     setStatusMessage(offline ? '네트워크 연결을 확인한 뒤 다시 시도해 주세요.' : '최신 데이터를 다시 요청하고 있습니다.')
@@ -163,6 +205,8 @@ export function PortfolioPanel({ liveQuotes }: Props) {
       setAveragePrice('')
       setPurchaseFxRate('')
       setPurchaseCurrency('USD')
+      setSearchQuery('')
+      setSymbol('')
       setEditing(false)
       const refreshed = await loadPortfolio()
       setStatusMessage(refreshed
@@ -262,73 +306,119 @@ export function PortfolioPanel({ liveQuotes }: Props) {
 
       {editing && (
         <form className="portfolio-form" onSubmit={addHolding} aria-busy={saving}>
-          {availableStocks.length > 0 ? (
+          {stocks != null && stocks.length > 0 ? (
             <>
-              <select value={symbol} onChange={(event) => setSymbol(event.target.value)} aria-label="보유 종목" disabled={saving}>
-                {availableStocks.map((stock) => (
-                  <option key={`${stock.market}:${stock.symbol}`} value={stock.symbol}>{stock.name} · {stock.market} · {stock.currency} · {stock.source}</option>
-                ))}
-              </select>
-              <input type="number" min="0.000001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="수량" aria-label="보유 수량" required disabled={saving} />
+              <div className="stock-search-wrap" ref={portfolioSearchRootRef}>
+                <input
+                  type="search"
+                  className="stock-search-input"
+                  value={searchQuery}
+                  placeholder="등록할 종목명 또는 심볼 검색"
+                  autoComplete="off"
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    setSearchOpen(true)
+                  }}
+                  disabled={saving}
+                  required={!selectedStock}
+                />
+                {selectedStock && (
+                  <div className="stock-search-selected">
+                    <span className="stock-search-selected-symbol">{selectedStock.symbol}</span>
+                    <span className="stock-search-selected-name">{selectedStock.name}</span>
+                    <span className="stock-search-selected-market">{selectedStock.market} · {selectedStock.currency}</span>
+                  </div>
+                )}
+                {searchOpen && searchQuery.trim() && (
+                  <div className="stock-search-popover">
+                    {searchLoading ? (
+                      <p className="stock-search-hint">검색 중입니다…</p>
+                    ) : searchedStocks.length === 0 ? (
+                      <p className="stock-search-hint">검색 결과가 없습니다.</p>
+                    ) : (
+                      <ul className="stock-search-list">
+                        {searchedStocks.map((stock, index) => (
+                          <li key={`${stock.market}:${stock.symbol}`}>
+                            <button
+                              type="button"
+                              className={`stock-search-option${index === activeSearchIndex ? ' active' : ''}`}
+                              onClick={() => {
+                                setSymbol(stock.symbol)
+                                setSearchQuery(stock.name)
+                                setSearchOpen(false)
+                              }}
+                              onMouseEnter={() => setActiveSearchIndex(index)}
+                            >
+                              <strong>{stock.symbol}</strong>
+                              <span>{stock.name} <em>{stock.market}</em></span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <input
+                type="number"
+                min="0.000001"
+                step="any"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+                placeholder="보유 수량"
+                aria-label="보유 수량"
+                required
+                disabled={saving}
+              />
+
               {selectedStock?.currency === 'USD' && (
-                <div className="purchase-currency-toggle" style={{ display: 'flex', gap: '8px', margin: '4px 0 10px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>매수 당시 통화:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPurchaseCurrency('USD')
-                      setPurchaseFxRate('')
-                    }}
-                    style={{
-                      padding: '4px 10px',
-                      fontSize: '0.75rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border)',
-                      background: purchaseCurrency === 'USD' ? 'var(--cyan)' : 'rgba(255,255,255,0.02)',
-                      color: purchaseCurrency === 'USD' ? '#0f172a' : 'var(--text-muted)',
-                      fontWeight: purchaseCurrency === 'USD' ? '800' : 'normal',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    USD ($)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPurchaseCurrency('KRW')
-                    }}
-                    style={{
-                      padding: '4px 10px',
-                      fontSize: '0.75rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border)',
-                      background: purchaseCurrency === 'KRW' ? 'var(--cyan)' : 'rgba(255,255,255,0.02)',
-                      color: purchaseCurrency === 'KRW' ? '#0f172a' : 'var(--text-muted)',
-                      fontWeight: purchaseCurrency === 'KRW' ? '800' : 'normal',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    KRW (₩)
-                  </button>
+                <div className="purchase-currency-toggle">
+                  <span className="purchase-currency-label">매수 당시 통화</span>
+                  <div className="purchase-currency-buttons">
+                    <button
+                      type="button"
+                      className={`currency-btn${purchaseCurrency === 'USD' ? ' active' : ''}`}
+                      onClick={() => { setPurchaseCurrency('USD'); setPurchaseFxRate('') }}
+                    >USD ($)</button>
+                    <button
+                      type="button"
+                      className={`currency-btn${purchaseCurrency === 'KRW' ? ' active' : ''}`}
+                      onClick={() => setPurchaseCurrency('KRW')}
+                    >KRW (₩)</button>
+                  </div>
                 </div>
               )}
-              <input type="number" min="0" step="any" value={averagePrice} onChange={(event) => setAveragePrice(event.target.value)} placeholder={selectedStock?.currency === 'USD' ? `평균 매수가 (${purchaseCurrency})` : '평균 매수가'} aria-label="평균 매수가" required disabled={saving} />
+
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={averagePrice}
+                onChange={(event) => setAveragePrice(event.target.value)}
+                placeholder={selectedStock?.currency === 'USD' ? `평균 매수가 (${purchaseCurrency})` : '평균 매수가'}
+                aria-label="평균 매수가"
+                required
+                disabled={saving}
+              />
+
               {selectedStock?.currency === 'USD' && (
                 <input
                   type="number"
-                  min="0.0000000001"
-                  step="any"
+                  min="0"
+                  step="0.01"
                   value={purchaseFxRate}
                   onChange={(event) => setPurchaseFxRate(event.target.value)}
-                  placeholder={purchaseCurrency === 'KRW' ? "매수 당시 USD/KRW (필수)" : "매수 당시 USD/KRW (선택)"}
+                  placeholder={purchaseCurrency === 'KRW' ? '매수 당시 USD/KRW 환율 (필수)' : '매수 당시 USD/KRW 환율 (선택)'}
                   aria-label="매수 당시 USD KRW 환율"
                   required={purchaseCurrency === 'KRW'}
                   disabled={saving}
                 />
               )}
-              <button type="submit" disabled={saving || !selectedStock}>{saving ? '저장 중…' : '등록'}</button>
+
+              <button type="submit" disabled={saving || !selectedStock}>
+                {saving ? '저장 중…' : '등록'}
+              </button>
             </>
           ) : (
             <p className="portfolio-empty">{catalogLoadError ? '종목 목록을 불러오지 못해 지금은 등록할 수 없습니다.' : '등록 가능한 종목이 없습니다.'}</p>
@@ -359,7 +449,7 @@ export function PortfolioPanel({ liveQuotes }: Props) {
               {showAdminDetails && evaluatedPortfolio.fxRates[0] && (
                 <em>
                   <DataStatusBadge status={fxDataStatus(evaluatedPortfolio.fxRates[0])} />
-                  USD/KRW {evaluatedPortfolio.fxRates[0].rate.toLocaleString('ko-KR')} · {evaluatedPortfolio.fxRates[0].source} · {formatAsOf(evaluatedPortfolio.fxRates[0].asOf)}
+                  USD/KRW {evaluatedPortfolio.fxRates[0].rate.toLocaleString('ko-KR')} · {formatAsOf(evaluatedPortfolio.fxRates[0].asOf)}
                 </em>
               )}
             </section>
@@ -391,7 +481,7 @@ export function PortfolioPanel({ liveQuotes }: Props) {
                     {showAdminDetails && (
                       <small>
                         <DataStatusBadge status={holdingDataStatus(holding, streaming)} />
-                        {valuationStatusLabel(holding.valuationStatus)} · {holding.priceSource ?? '출처 없음'} · {formatAsOf(holding.priceAsOf)}
+                        {valuationStatusLabel(holding.valuationStatus)} · {formatAsOf(holding.priceAsOf)}
                       </small>
                     )}
                     {holding.convertedEvaluationAmount != null && holding.currency !== 'KRW' && <small>약 {formatMoney(holding.convertedEvaluationAmount, 'KRW')}</small>}

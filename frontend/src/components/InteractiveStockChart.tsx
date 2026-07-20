@@ -1431,7 +1431,6 @@ export function InteractiveStockChart({
           />
           <span><b>시장</b> {market}</span>
           <span><b>통화</b> {currency}</span>
-          <span><b>출처</b> {sourceLabel(source)}</span>
           <span><b>시간대</b> {timeZone}</span>
           <span><b>간격</b> {intervalLabel(interval)}</span>
           <span><b>기준시각</b> {formatBasisTime(basisTime, timeZone)}</span>

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router'
 import type { AppRouteContext } from '../app/context'
 import { createAlert, deleteAlert, getAlerts, setAlertStatus } from '../api/alerts'
-import { getStocks } from '../api/stocks'
+import { getStocks, searchStocks } from '../api/stocks'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import type { PriceAlert } from '../types/alert'
 import type { LiveQuote } from '../types/realtime'
@@ -33,7 +33,54 @@ export function AlertsPanel({ liveQuotes }: Props) {
   const [actionError, setActionError] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
   const [offline, setOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
-  const selectedStock = (stocks ?? []).find((stock) => stock.symbol === symbol) ?? stocks?.[0] ?? null
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchedStocks, setSearchedStocks] = useState<StockSummary[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1)
+  const alertSearchRootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const query = searchQuery.trim()
+    if (!query) {
+      setSearchedStocks([])
+      setSearchLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => {
+      setSearchLoading(true)
+      searchStocks(query, controller.signal)
+        .then((res) => {
+          if (controller.signal.aborted) return
+          setSearchedStocks(res.items ?? [])
+          setActiveSearchIndex(res.items.length > 0 ? 0 : -1)
+          setSearchOpen(true)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!controller.signal.aborted) setSearchLoading(false)
+        })
+    }, 250)
+
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [searchQuery])
+
+  useEffect(() => {
+    const close = (e: PointerEvent) => {
+      if (!alertSearchRootRef.current?.contains(e.target as Node)) {
+        setSearchOpen(false)
+      }
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [])
+
+  const selectedStock = (searchedStocks.length > 0 ? searchedStocks : (stocks ?? [])).find((stock) => stock.symbol === symbol) ?? null
 
   const loadAlerts = useCallback(async (signal?: AbortSignal) => {
     setAlertsLoading(true)
@@ -116,6 +163,8 @@ export function AlertsPanel({ liveQuotes }: Props) {
     try {
       await createAlert({ symbol: selectedStock.symbol, condition, targetPrice: parsedTargetPrice, currency: selectedStock.currency })
       setTargetPrice('')
+      setSearchQuery('')
+      setSymbol('')
       setEditorOpen(false)
       const refreshed = await loadAlerts()
       setStatusMessage(refreshed
@@ -238,9 +287,57 @@ export function AlertsPanel({ liveQuotes }: Props) {
         <form className="alert-form" onSubmit={add} aria-busy={saving}>
           {stocks != null && stocks.length > 0 ? (
             <>
-              <select value={symbol} onChange={(event) => setSymbol(event.target.value)} aria-label="알림 종목" disabled={saving}>
-                {stocks.map((stock) => <option key={`${stock.market}:${stock.symbol}`} value={stock.symbol}>{stock.name} · {stock.market} · {stock.currency} · {stock.source}</option>)}
-              </select>
+              <div className="stock-search-wrap" ref={alertSearchRootRef}>
+                <input
+                  type="search"
+                  className="stock-search-input"
+                  value={searchQuery}
+                  placeholder="알림을 설정할 종목명 또는 심볼 검색"
+                  autoComplete="off"
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    setSearchOpen(true)
+                  }}
+                  disabled={saving}
+                  required={!selectedStock}
+                />
+                {selectedStock && (
+                  <div className="stock-search-selected">
+                    <span className="stock-search-selected-symbol">{selectedStock.symbol}</span>
+                    <span className="stock-search-selected-name">{selectedStock.name}</span>
+                    <span className="stock-search-selected-market">{selectedStock.market} · {selectedStock.currency}</span>
+                  </div>
+                )}
+                {searchOpen && searchQuery.trim() && (
+                  <div className="stock-search-popover">
+                    {searchLoading ? (
+                      <p className="stock-search-hint">검색 중입니다…</p>
+                    ) : searchedStocks.length === 0 ? (
+                      <p className="stock-search-hint">검색 결과가 없습니다.</p>
+                    ) : (
+                      <ul className="stock-search-list">
+                        {searchedStocks.map((stock, index) => (
+                          <li key={`${stock.market}:${stock.symbol}`}>
+                            <button
+                              type="button"
+                              className={`stock-search-option${index === activeSearchIndex ? ' active' : ''}`}
+                              onClick={() => {
+                                setSymbol(stock.symbol)
+                                setSearchQuery(stock.name)
+                                setSearchOpen(false)
+                              }}
+                              onMouseEnter={() => setActiveSearchIndex(index)}
+                            >
+                              <strong>{stock.symbol}</strong>
+                              <span>{stock.name} <em>{stock.market}</em></span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
               <select value={condition} onChange={(event) => setCondition(event.target.value as 'ABOVE' | 'BELOW')} aria-label="알림 조건" disabled={saving}>
                 <option value="ABOVE">이상</option><option value="BELOW">이하</option>
               </select>
@@ -287,7 +384,7 @@ export function AlertsPanel({ liveQuotes }: Props) {
                   {showAdminDetails && (
                     <small>
                       <DataStatusBadge status={alertDataStatus(alert, quote)} />
-                      {evaluationStatusLabel(alert.evaluationStatus)} · {quote?.source ?? 'API 저장 평가값(출처 미제공)'} · {formatAsOf(quote?.asOf ?? alert.priceAsOf)}
+                      {evaluationStatusLabel(alert.evaluationStatus)} · {formatAsOf(quote?.asOf ?? alert.priceAsOf)}
                     </small>
                   )}
                   {alert.triggeredAt && <small>조건 충족 {formatAsOf(alert.triggeredAt)}</small>}
