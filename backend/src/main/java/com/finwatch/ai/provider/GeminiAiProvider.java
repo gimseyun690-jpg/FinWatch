@@ -288,6 +288,10 @@ public class GeminiAiProvider implements AiProvider {
                 sentiment는 POSITIVE, NEUTRAL, NEGATIVE 중 하나여야 합니다.
                 기사에 근거가 없는 항목은 추측하지 말고 빈 배열로 반환하세요.
 
+                [출력 언어 중요 지침]
+                - 제공된 기사 데이터(DATA)가 영어(English) 또는 다른 외국어로 작성되어 있더라도, 모든 요약(summary), 핵심 포인트(keyPoints), 긍정 요인(positiveFactors), 위험 요인(riskFactors), 키워드(keywords) 등 JSON 결과물의 모든 텍스트는 반드시 영어 대신 격조 있고 자연스러운 한국어(Korean)로 번역 및 요약하여 작성해야 합니다.
+                - 언급 기업(mentionedCompanies) 항목 또한 가능한 한 대중적인 한국어 명칭(예: 'Apple' 대신 '애플')으로 변환하여 작성해 주세요.
+
                 프롬프트 버전: %s
                 근거 구간: %s
                 기사 제목: %s

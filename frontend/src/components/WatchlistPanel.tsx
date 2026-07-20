@@ -126,7 +126,6 @@ export function WatchlistPanel({
       const added = await addWatchlist({ market: stock.market, symbol: stock.symbol })
       const next = [...items, added]
       updateItems(next)
-      onSelect({ market: added.market, symbol: added.symbol })
       setFeedback(`${added.name}을(를) 관심종목에 추가했습니다.`)
     } catch (error: unknown) {
       setErrorMessage(error instanceof Error ? error.message : '관심종목 등록에 실패했습니다.')
