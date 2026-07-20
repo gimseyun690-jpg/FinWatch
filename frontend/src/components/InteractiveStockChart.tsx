@@ -258,22 +258,6 @@ function intervalLabel(interval: PriceInterval) {
   return interval === '1m' ? '1분봉' : interval === '1W' ? '주봉' : interval === '1M' ? '월봉' : '일봉'
 }
 
-function sourceLabel(source: string) {
-  return source === 'DEMO'
-    ? 'DEMO · 샘플 데이터'
-    : source === 'KIS_OVERSEAS'
-      ? 'KIS 해외 · 실제 데이터'
-      : source === 'KIS'
-        ? 'KIS · 실제 데이터'
-        : source === 'FINNHUB'
-          ? 'Finnhub · 실제 데이터'
-          : source === 'LIVE'
-            ? 'WebSocket · 실시간'
-            : source === 'MIXED'
-              ? '혼합 출처'
-              : source
-}
-
 function marketTimeZone(market: string) {
   return market === 'KRX' ? 'Asia/Seoul' : 'America/New_York'
 }

@@ -6,7 +6,7 @@ import { getStocks, searchStocks } from '../api/stocks'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import type { PriceAlert } from '../types/alert'
 import type { LiveQuote } from '../types/realtime'
-import type { StockSummary } from '../types/stock'
+import type { StockCatalogItem } from '../types/stock'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
 
 type Props = {
@@ -34,7 +34,7 @@ export function AlertsPanel({ liveQuotes }: Props) {
   const [statusMessage, setStatusMessage] = useState('')
   const [offline, setOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchedStocks, setSearchedStocks] = useState<StockSummary[]>([])
+  const [searchedStocks, setSearchedStocks] = useState<StockCatalogItem[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1)

@@ -139,10 +139,7 @@ export function AppShell({ context }: Props) {
 
         const directionText = alert.condition === 'ABOVE' ? '이상' : '이하'
 
-        setAlertStatus(alert.id, 'TRIGGERED')
-          .then(() => {
-            context.recordAiUsage()
-          })
+        setAlertStatus(alert.id, 'DISABLED')
           .catch(() => {})
 
         const formattedTarget = new Intl.NumberFormat('ko-KR', {

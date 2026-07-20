@@ -6,7 +6,7 @@ import { getStocks, searchStocks } from '../api/stocks'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import type { Portfolio, PortfolioHolding } from '../types/portfolio'
 import type { LiveQuote } from '../types/realtime'
-import type { StockSummary } from '../types/stock'
+import type { StockSummary, StockCatalogItem } from '../types/stock'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
 
 type Props = {
@@ -31,7 +31,7 @@ export function PortfolioPanel({ liveQuotes }: Props) {
   }, [symbol])
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchedStocks, setSearchedStocks] = useState<StockSummary[]>([])
+  const [searchedStocks, setSearchedStocks] = useState<StockCatalogItem[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1)
@@ -89,10 +89,6 @@ export function PortfolioPanel({ liveQuotes }: Props) {
   const [statusMessage, setStatusMessage] = useState('')
   const [offline, setOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
 
-  const availableStocks = useMemo(() => {
-    const held = new Set(portfolio?.holdings.map((holding) => holding.symbol) ?? [])
-    return (stocks ?? []).filter((stock) => !held.has(stock.symbol))
-  }, [portfolio, stocks])
   const selectedStock = (searchedStocks.length > 0 ? searchedStocks : (stocks ?? [])).find((stock) => stock.symbol === symbol) ?? null
   const evaluatedPortfolio = useMemo(
     () => applyLiveQuotes(portfolio, liveQuotes),
