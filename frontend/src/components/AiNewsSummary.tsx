@@ -297,7 +297,7 @@ function SummaryResult({
 
       {/* Headline */}
       <section className="summary-headline-section" aria-labelledby={`news-conclusion-${summary.analysisId}`}>
-        <p className="eyebrow">AI 한 줄 결론</p>
+        <p className="eyebrow">AI 결론</p>
         <blockquote id={`news-conclusion-${summary.analysisId}`} className="summary-headline-quote">{summary.summary}</blockquote>
         {summary.keyPoints.length > 0 && (
           <div className="summary-keypoints">

@@ -24,11 +24,25 @@ public class MockAiProvider implements AiProvider {
             String preprocessedContent,
             String segmentId,
             String promptVersion) {
-        List<String> sentences = List.of(preprocessedContent.split("(?<=[.!?])\\s+"));
-        List<String> keyPoints = sentences.stream().filter(sentence -> !sentence.isBlank()).limit(3).toList();
-        String summary = String.join(" ", keyPoints);
-        if (summary.isBlank()) {
-            summary = title + " 관련 핵심 내용을 확인했습니다.";
+        boolean isEnglish = isMostlyEnglish(title + " " + preprocessedContent);
+        
+        String summary;
+        List<String> keyPoints;
+        
+        if (isEnglish) {
+            summary = "[해외 뉴스 요약] " + (title != null && !title.isBlank() ? title : "해외 기업") + "의 최신 동향과 관련된 주요 보도입니다. 글로벌 공급망 개선 및 수요 확대 흐름 속에서 신제품 출시와 견조한 실적을 기반으로 긍정적인 시장 신호를 보이고 있으며, 글로벌 기술 경쟁 심화가 장기 변수로 지적되었습니다.";
+            keyPoints = List.of(
+                "글로벌 시장의 신규 파트너십 구축 및 기술 라이선스 체결 소식이 공유되었습니다.",
+                "최근 분기 실적 지표가 원자재 가격 안정화 및 물류 흐름 개선으로 시장 예상을 상회했습니다.",
+                "단기적인 인플레이션과 거시경제적 금리 변동 영향에 따른 리스크 요인이 분석되었습니다."
+            );
+        } else {
+            List<String> sentences = List.of(preprocessedContent.split("(?<=[.!?])\\s+"));
+            keyPoints = sentences.stream().filter(sentence -> !sentence.isBlank()).limit(3).toList();
+            summary = String.join(" ", keyPoints);
+            if (summary.isBlank()) {
+                summary = title + " 관련 핵심 내용을 확인했습니다.";
+            }
         }
 
         Set<String> keywords = new LinkedHashSet<>();
@@ -41,18 +55,18 @@ public class MockAiProvider implements AiProvider {
             keywords.add("시장 이슈");
         }
 
-        String sentiment = containsAny(preprocessedContent, "증가", "확대", "회복", "성장", "상향")
+        String sentiment = containsAny(preprocessedContent, "증가", "확대", "회복", "성장", "상향", "increase", "growth", "positive", "expand")
                 ? "POSITIVE"
-                : containsAny(preprocessedContent, "감소", "하락", "위험", "둔화") ? "NEGATIVE" : "NEUTRAL";
-        List<String> positiveFactors = containsAny(preprocessedContent, "증가", "확대", "회복", "성장", "상향")
-                ? List.of("수요와 실적 개선 가능성이 언급되었습니다.")
+                : containsAny(preprocessedContent, "감소", "하락", "위험", "둔화", "decrease", "decline", "risk", "drop") ? "NEGATIVE" : "NEUTRAL";
+        List<String> positiveFactors = containsAny(preprocessedContent, "증가", "확대", "회복", "성장", "상향", "increase", "growth", "positive", "expand")
+                ? List.of(isEnglish ? "글로벌 신규 공급 계약 및 매출 견인 동력이 확인되었습니다." : "수요와 실적 개선 가능성이 언급되었습니다.")
                 : List.of();
-        List<String> riskFactors = containsAny(preprocessedContent, "위험", "변동", "경쟁", "둔화", "감소")
-                ? List.of("시장 변동성과 경쟁 환경을 함께 확인해야 합니다.")
-                : List.of("기사에 구체적인 위험 요인이 충분히 제시되지 않았습니다.");
-        List<String> mentionedCompanies = (title + " " + preprocessedContent).contains("SK하이닉스")
+        List<String> riskFactors = containsAny(preprocessedContent, "위험", "변동", "경쟁", "둔화", "감소", "decrease", "decline", "risk", "drop")
+                ? List.of(isEnglish ? "글로벌 금리 기조 및 경쟁사 신공정 진입에 따른 마진 압박 요인이 있습니다." : "시장 변동성과 경쟁 환경을 함께 확인해야 합니다.")
+                : List.of(isEnglish ? "시장 점유율 유지 여부와 거시 경제 여건의 변화에 유의해야 합니다." : "기사에 구체적인 위험 요인이 충분히 제시되지 않았습니다.");
+        List<String> mentionedCompanies = (title + " " + preprocessedContent).contains("SK하이닉스") || (title + " " + preprocessedContent).toLowerCase().contains("hynix")
                 ? List.of("SK하이닉스")
-                : List.of();
+                : (title + " " + preprocessedContent).toLowerCase().contains("apple") ? List.of("애플") : List.of();
         int inputTokens = estimateTokens(title + preprocessedContent + segmentId + promptVersion);
         int outputTokens = estimateTokens(summary + String.join(" ", keywords));
 
@@ -67,6 +81,12 @@ public class MockAiProvider implements AiProvider {
                 sentiment,
                 inputTokens,
                 outputTokens);
+    }
+
+    private boolean isMostlyEnglish(String text) {
+        if (text == null || text.isBlank()) return false;
+        long englishChars = text.chars().filter(c -> (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')).count();
+        return (double) englishChars / text.length() > 0.3;
     }
 
     @Override
