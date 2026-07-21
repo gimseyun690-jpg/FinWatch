@@ -232,7 +232,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                           : selectedArticle.aiAnalysisAllowed
                             ? '허용된 본문만 분석하며, 응답에 포함된 근거 범위와 운영 정보를 함께 표시합니다.'
                             : selectedOriginalUrl
-                              ? '저장된 본문은 없지만, 요청 시 백엔드가 원문 링크에서 본문을 수집해 Gemini 요약을 시도합니다. 출처 사이트의 접근 정책에 따라 실패할 수 있습니다.'
+                              ? '저장된 본문은 없지만, 요청 시 백엔드가 원문 링크에서 본문을 수집해 AI 요약을 시도합니다. 출처 사이트의 접근 정책에 따라 실패할 수 있습니다.'
                               : '안전한 http(s) 원문 주소가 없어 원문 수집과 AI 요약을 실행할 수 없습니다.'}</p>
                         {selectedArticle && (
                           <div className="news-source-disclosure">
@@ -248,7 +248,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                           onClick={requestSummary}
                           disabled={selectedId == null || summarizing || !summaryRequestAvailable}
                         >
-                          {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'Gemini 뉴스 요약' : '원문 주소 확인 필요'}
+                          {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'AI 뉴스 요약' : '원문 주소 확인 필요'}
                         </button>
                       </div>
                     ) : (
@@ -278,7 +278,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                   : selectedArticle.aiAnalysisAllowed
                     ? '허용된 본문만 분석하며, 응답에 포함된 근거 범위와 운영 정보를 함께 표시합니다.'
                     : selectedOriginalUrl
-                      ? '저장된 본문은 없지만, 요청 시 백엔드가 원문 링크에서 본문을 수집해 Gemini 요약을 시도합니다. 출처 사이트의 접근 정책에 따라 실패할 수 있습니다.'
+                      ? '저장된 본문은 없지만, 요청 시 백엔드가 원문 링크에서 본문을 수집해 AI 요약을 시도합니다. 출처 사이트의 접근 정책에 따라 실패할 수 있습니다.'
                       : '안전한 http(s) 원문 주소가 없어 원문 수집과 AI 요약을 실행할 수 없습니다.'}</p>
                 {selectedArticle && (
                   <div className="news-source-disclosure">
@@ -294,7 +294,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                   onClick={requestSummary}
                   disabled={selectedId == null || summarizing || !summaryRequestAvailable}
                 >
-                  {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'Gemini 뉴스 요약' : '원문 주소 확인 필요'}
+                  {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'AI 뉴스 요약' : '원문 주소 확인 필요'}
                 </button>
               </div>
             ) : (

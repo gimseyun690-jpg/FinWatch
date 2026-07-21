@@ -86,7 +86,7 @@ export function AiTechnicalExplanation({ market, symbol, onUsageRecorded }: Prop
 
       {!explanation ? (
         <div className="technical-ai-empty">
-          <div><strong>{market} · {symbol}</strong><span>서버가 계산한 일봉 지표만 Gemini에 전달합니다.</span></div>
+          <div><strong>{market} · {symbol}</strong><span>서버가 계산한 일봉 지표만 AI 모델에 전달합니다.</span></div>
           <p>AI는 지표 값을 다시 계산하거나 종목을 추천하지 않고, 추세·모멘텀·변동성·거래량의 근거와 충돌을 설명합니다.</p>
           {error && <p className="request-error" role="alert">{error}</p>}
           <button type="button" onClick={() => void requestExplanation()} disabled={loading}>

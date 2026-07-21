@@ -166,7 +166,7 @@ export function DisclosurePanel({ stock, onUsageRecorded, watchlistMode = false 
       setSummary(result)
       setMessage(result.cacheHit
         ? '저장된 공시 분석을 Redis 캐시에서 불러왔습니다.'
-        : '공식 원문을 Gemini로 분석하고 결과를 저장했습니다.')
+        : '공식 원문을 AI로 분석하고 결과를 저장했습니다.')
       onUsageRecorded?.()
       try {
         await load(controller.signal, requestedStockKey)
@@ -253,7 +253,7 @@ export function DisclosurePanel({ stock, onUsageRecorded, watchlistMode = false 
                     ? '원문 수집·분석 중…'
                     : summary && selectedId === item.id
                       ? '같은 공시 다시 분석'
-                      : 'Gemini 공시 요약'}
+                      : 'AI 공시 요약'}
                 </button>
                 {originalUrl
                   ? <a href={originalUrl} target="_blank" rel="noopener noreferrer">원문 보기 <Icon name="external" size={12} /></a>
