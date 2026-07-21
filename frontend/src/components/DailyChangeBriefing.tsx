@@ -111,7 +111,7 @@ export function DailyChangeBriefing({ market, symbol, onUsageRecorded }: Props) 
         </section>
 
         <div className="viewpoint-matrix">
-          {briefing.viewpoints.map((item) => <div key={item.viewpoint} className={`viewpoint status-${item.status.toLowerCase()}`}>
+          {briefing.viewpoints.filter((item) => item.status !== 'INSUFFICIENT').map((item) => <div key={item.viewpoint} className={`viewpoint status-${item.status.toLowerCase()}`}>
             <span>{viewpointLabel(item.viewpoint)}</span><strong>{statusLabel(item.status)}</strong><p>{item.headline}</p><small>{item.changeType}</small>
             <EvidenceChips ids={item.evidenceIds} availableEvidenceIds={availableEvidenceIds} onSelect={revealEvidence} label={`${viewpointLabel(item.viewpoint)} 근거`} />
           </div>)}

@@ -22,6 +22,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import com.finwatch.ai.domain.AiAnalysis;
+import com.finwatch.ai.dto.AiDisclosureSummaryRequest;
+import com.finwatch.ai.dto.AiSummaryRequest;
 import com.finwatch.ai.dto.DailyChangeBriefingInput;
 import com.finwatch.ai.dto.DailyChangeBriefingInput.BriefingEvidence;
 import com.finwatch.ai.dto.DailyChangeBriefingInput.BriefingViewpoint;
@@ -49,12 +51,17 @@ public class DailyBriefingSnapshotFactory {
     private final AiAnalysisRepository analyses;
     private final TechnicalAnalysisCalculator calculator;
     private final ObjectMapper objectMapper;
+    private final AiNewsSummaryService newsSummaryService;
+    private final AiDisclosureSummaryService disclosureSummaryService;
 
     public DailyBriefingSnapshotFactory(StockRepository stocks, MarketPriceRepository prices,
             NewsArticleRepository news, AiAnalysisRepository analyses,
-            TechnicalAnalysisCalculator calculator, ObjectMapper objectMapper) {
+            TechnicalAnalysisCalculator calculator, ObjectMapper objectMapper,
+            AiNewsSummaryService newsSummaryService, AiDisclosureSummaryService disclosureSummaryService) {
         this.stocks = stocks; this.prices = prices; this.news = news; this.analyses = analyses;
         this.calculator = calculator; this.objectMapper = objectMapper;
+        this.newsSummaryService = newsSummaryService;
+        this.disclosureSummaryService = disclosureSummaryService;
     }
 
     public SnapshotBundle create(String requestedMarket, String requestedSymbol) {
@@ -127,11 +134,26 @@ public class DailyBriefingSnapshotFactory {
         for (NewsArticle article : articles) {
             String dedupe = article.getContentHash() == null ? article.getCanonicalUrl() : article.getContentHash();
             if (!seen.add(dedupe)) continue;
+            boolean disclosure = "DISCLOSURE".equals(article.getContentKind());
             AiAnalysis analysis = article.getContentHash() == null ? null
                     : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                             .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
+            if (analysis == null) {
+                try {
+                    if (disclosure) {
+                        disclosureSummaryService.summarize(new AiDisclosureSummaryRequest(article.getId(), "news-summary-v1"));
+                    } else if (article.isAiAnalysisAllowed()) {
+                        newsSummaryService.summarize(new AiSummaryRequest(article.getId(), "news-summary-v1"));
+                    }
+                    analysis = article.getContentHash() == null ? null
+                            : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
+                                    .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
+                } catch (Exception exception) {
+                    excluded++;
+                    continue;
+                }
+            }
             if (!article.isAiAnalysisAllowed() || analysis == null) { excluded++; continue; }
-            boolean disclosure = "DISCLOSURE".equals(article.getContentKind());
             String id = (disclosure ? "D" : "N") + (disclosure ? ++disclosureCount : ++newsCount);
             target.add(new BriefingEvidence(id, disclosure ? "DISCLOSURE" : "NEWS", "CONTENT_ANALYSIS",
                     analysis.getSentiment(), null, null, article.getTitle() + " · " + analysis.getSummary(),
