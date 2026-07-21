@@ -249,7 +249,7 @@ public class DailyBriefingSnapshotFactory {
         }
 
         List<NewsArticle> successfullyAnalyzedNews = java.util.Collections.synchronizedList(new ArrayList<>());
-        candidateNews.parallelStream().forEach(originalArticle -> {
+        candidateNews.stream().forEach(originalArticle -> {
             if (successfullyAnalyzedNews.size() >= 4) return;
             try {
                 // 1단계: 캐시된 분석 결과 확인

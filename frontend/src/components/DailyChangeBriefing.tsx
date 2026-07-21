@@ -67,7 +67,6 @@ export function DailyChangeBriefing({ market, symbol, onUsageRecorded }: Props) 
         <div>
           {showAdminDetails && <p className="eyebrow">EVIDENCE-BASED DAILY CHANGE</p>}
           <h2>오늘의 변화 브리핑</h2>
-          <p>완성된 두 일봉과 새 뉴스·공시만 비교합니다.</p>
         </div>
         {showAdminDetails && briefing && (
           <span
@@ -88,7 +87,7 @@ export function DailyChangeBriefing({ market, symbol, onUsageRecorded }: Props) 
         {error && <p className="request-error" role="alert">{error}</p>}
         <button type="button" onClick={() => void generate()} disabled={loading}>{loading ? '변화 근거 계산 중…' : '오늘의 변화 생성'}</button>
       </div> : <div className="daily-briefing-result" aria-live="polite">
-        <div className="briefing-date-row"><span>{briefing.previousTradingDate ?? '기준 없음'} → {briefing.currentTradingDate}</span><strong className={`relation-${briefing.relation.toLowerCase()}`}>{relationIcon(briefing.relation)} {relationLabel(briefing.relation)}</strong></div>
+        <div className="briefing-date-row"><strong className={`relation-${briefing.relation.toLowerCase()}`}>{relationIcon(briefing.relation)} {relationLabel(briefing.relation)}</strong></div>
         {briefing.staleBriefing && <p className="briefing-warning">현재 일봉과 다른 저장 결과입니다. 다시 생성해 최신 근거를 확인하세요.</p>}
         <section className="briefing-headline">
           <div className="briefing-headline-meta">
