@@ -209,9 +209,9 @@ function EvidenceChips({
   const validIds = [...new Set(ids)].filter((id) => availableEvidenceIds.has(id))
   if (validIds.length === 0) return null
   return (
-    <small className="evidence-chip-list" aria-label={label}>
+    <div className="evidence-chip-list" aria-label={label}>
       {validIds.map((id) => <button key={id} type="button" className="evidence-chip" onClick={() => onSelect(id)}>{id}</button>)}
-    </small>
+    </div>
   )
 }
 

@@ -709,6 +709,7 @@ button.has-tooltip, .legend-swatch.has-tooltip {
 .viewpoint.status-caution, .viewpoint.status-diverging, .viewpoint.status-mixed { border-color: color-mix(in srgb, var(--amber) 35%, var(--border)); }
 .viewpoint.status-caution > strong, .viewpoint.status-diverging > strong, .viewpoint.status-mixed > strong { color: var(--amber); }
 .viewpoint.status-insufficient > strong { color: var(--text-muted); }
+.viewpoint .evidence-chip-list { margin-top: 6px; display: flex; gap: 4px; }
 .briefing-statement-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
 .briefing-statement-grid section { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--panel-soft); }
 .briefing-statement-grid h3 { margin: 0 0 9px; font-size: 11px; }
