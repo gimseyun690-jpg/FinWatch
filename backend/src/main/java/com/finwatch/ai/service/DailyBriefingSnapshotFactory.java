@@ -249,17 +249,19 @@ public class DailyBriefingSnapshotFactory {
         }
 
         List<NewsArticle> successfullyAnalyzedNews = java.util.Collections.synchronizedList(new ArrayList<>());
-        candidateNews.parallelStream().forEach(article -> {
+        candidateNews.parallelStream().forEach(originalArticle -> {
             if (successfullyAnalyzedNews.size() >= 4) return;
             try {
                 // 1단계: 캐시된 분석 결과 확인
-                AiAnalysis analysis = article.getContentHash() == null ? null
-                        : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
+                AiAnalysis analysis = originalArticle.getContentHash() == null ? null
+                        : analyses.findAllByNewsIdAndContentHash(originalArticle.getId(), originalArticle.getContentHash()).stream()
                                 .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
-                // 2단계: 본문 없으면 크롤링으로 본문 확보
-                if (analysis == null && !article.isAiAnalysisAllowed() && article.isAiSummaryRequestAllowed()) {
+                // 2단계: 본문 없으면 크롤링 후 DB에서 최신 엔티티 재조회
+                NewsArticle article = originalArticle;
+                if (analysis == null && !originalArticle.isAiAnalysisAllowed() && originalArticle.isAiSummaryRequestAllowed()) {
                     try {
-                        contentIngestionService.refreshForAiSummary(article.getId());
+                        contentIngestionService.refreshForAiSummary(originalArticle.getId());
+                        article = news.findById(originalArticle.getId()).orElse(originalArticle);
                     } catch (Exception ignored) {}
                 }
                 // 3단계: 본문 있으면 AI 요약 실행

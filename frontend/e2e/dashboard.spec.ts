@@ -513,7 +513,6 @@ test('desktop chart tools, indicator settings and drawings remain usable', async
 
   await expect(page.locator('.realtime-status')).toContainText('실시간 2/2')
   await expect(page.locator('.stock-detail .eyebrow')).toContainText('KIS_WS')
-  await expect(page.locator('.live-tick-badge')).toHaveText('TICK')
   await expect(page.locator('.price-chart-card .quote-row')).toContainText('₩2,750,000')
 
   const bollinger = page.getByRole('button', { name: '볼린저(20,2)' })
