@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.finwatch.data.provider.ProviderException;
@@ -60,7 +61,7 @@ public class FxRateService {
         this.delayedWithin = delayedWithin;
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public LatestFxRate latest(String base, String quote) {
         Pair pair = pair(base, quote);
         String key = cacheKey(pair);
@@ -89,7 +90,7 @@ public class FxRateService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<LatestFxRate> latestForPortfolio() {
         try {
             LatestFxRate value = latest(USD, KRW);
@@ -99,7 +100,7 @@ public class FxRateService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public FxHistory history(String base, String quote, String period, String interval) {
         Pair pair = pair(base, quote);
         if (!"1D".equalsIgnoreCase(interval)) throw new FxRateException(HttpStatus.BAD_REQUEST, "FX_INTERVAL_INVALID", "환율 MVP interval은 1D만 지원합니다.");

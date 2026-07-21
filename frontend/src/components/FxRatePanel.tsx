@@ -78,7 +78,7 @@ export function FxRatePanel() {
         <strong>{rate.rate.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
         <span className={(rate.changeRate ?? 0) >= 0 ? 'profit' : 'down'}>{signed(rate.changeRate)}</span>
         <span className="fx-status-wrapper">
-          {showAdminDetails && <DataStatusBadge status={status} />}
+          {showAdminDetails && status !== 'REFERENCE' && <DataStatusBadge status={status} />}
         </span>
         {showAdminDetails ? (
           <small style={{ justifySelf: 'end', textAlign: 'right' }}>{rate.source} · 기준 {new Date(rate.asOf).toLocaleString('ko-KR')} · 갱신 {new Date(rate.fetchedAt).toLocaleTimeString('ko-KR')}</small>

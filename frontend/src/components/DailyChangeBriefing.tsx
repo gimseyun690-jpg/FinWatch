@@ -118,8 +118,8 @@ export function DailyChangeBriefing({ market, symbol, onUsageRecorded }: Props) 
         <div className="briefing-statement-grid">
           <StatementList title="🟢 새롭게 강해진 흐름" values={briefing.newStrengths} tone="positive" availableEvidenceIds={availableEvidenceIds} onEvidenceSelect={revealEvidence} />
           <StatementList title="🔴 새 위험·주의" values={briefing.newRisks} tone="risk" availableEvidenceIds={availableEvidenceIds} onEvidenceSelect={revealEvidence} />
-          <StatementList title="🔵 관점 일치" values={briefing.alignedViews} tone="positive" availableEvidenceIds={availableEvidenceIds} onEvidenceSelect={revealEvidence} />
-          <StatementList title="🟡 관점 충돌" values={briefing.conflictingViews} tone="risk" availableEvidenceIds={availableEvidenceIds} onEvidenceSelect={revealEvidence} />
+          <StatementList title="🔵 일치하는 신호" values={briefing.alignedViews} tone="positive" availableEvidenceIds={availableEvidenceIds} onEvidenceSelect={revealEvidence} />
+          <StatementList title="🟡 엇갈리는 신호" values={briefing.conflictingViews} tone="risk" availableEvidenceIds={availableEvidenceIds} onEvidenceSelect={revealEvidence} />
         </div>
 
         <details ref={evidenceDetailsRef} className="briefing-evidence"><summary>검증 근거 {briefing.evidence.length}개 보기</summary><div>
@@ -247,7 +247,7 @@ function safeExternalUrl(value: string | undefined) {
 function toDomId(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, '-')
 }
-function relationLabel(value: DailyBriefing['relation']) { return ({ ALIGNED: '관점 일치', CONFLICTING: '관점 충돌', PARTIAL: '부분 근거', INSUFFICIENT: '근거 부족' })[value] }
+function relationLabel(value: DailyBriefing['relation']) { return ({ ALIGNED: '신호 일치', CONFLICTING: '신호 엇갈림', PARTIAL: '부분 근거', INSUFFICIENT: '근거 부족' })[value] }
 function relationIcon(value: DailyBriefing['relation']) { return ({ ALIGNED: '✅', CONFLICTING: '⚡', PARTIAL: '🔶', INSUFFICIENT: '❓' })[value] ?? '' }
 function viewpointLabel(value: string) { return ({ TREND: '추세', MOMENTUM: '모멘텀', OVERHEAT: '과열', VOLATILITY: '변동성', VOLUME: '거래량', NEWS: '뉴스', DISCLOSURE: '공시' } as Record<string, string>)[value] ?? value }
 function statusLabel(value: string) { return ({ POSITIVE: '긍정', CAUTION: '주의', NEUTRAL: '중립', CONFIRMING: '확인', DIVERGING: '괴리', MIXED: '혼재', INSUFFICIENT: '없음' } as Record<string, string>)[value] ?? value }
