@@ -263,4 +263,12 @@ public class MockAiProvider implements AiProvider {
             return val;
         }
     }
+
+    @Override
+    public List<Long> selectImportantNews(String stockName, List<NewsItemForSelection> newsItems, int limit) {
+        return newsItems.stream()
+                .map(NewsItemForSelection::id)
+                .limit(limit)
+                .toList();
+    }
 }

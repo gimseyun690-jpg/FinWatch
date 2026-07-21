@@ -68,4 +68,11 @@ public interface AiProvider {
             List<String> dataLimitations,
             int inputTokens,
             int outputTokens) { }
+
+    List<Long> selectImportantNews(
+            String stockName,
+            List<NewsItemForSelection> newsItems,
+            int limit);
+
+    record NewsItemForSelection(Long id, String title) {}
 }

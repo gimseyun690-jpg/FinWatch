@@ -22,6 +22,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import com.finwatch.ai.domain.AiAnalysis;
+import com.finwatch.ai.provider.AiProvider;
+import com.finwatch.ai.provider.AiProvider.NewsItemForSelection;
 import com.finwatch.ai.dto.AiDisclosureSummaryRequest;
 import com.finwatch.ai.dto.AiSummaryRequest;
 import com.finwatch.ai.dto.DailyChangeBriefingInput;
@@ -53,15 +55,18 @@ public class DailyBriefingSnapshotFactory {
     private final ObjectMapper objectMapper;
     private final AiNewsSummaryService newsSummaryService;
     private final AiDisclosureSummaryService disclosureSummaryService;
+    private final AiProvider aiProvider;
 
     public DailyBriefingSnapshotFactory(StockRepository stocks, MarketPriceRepository prices,
             NewsArticleRepository news, AiAnalysisRepository analyses,
             TechnicalAnalysisCalculator calculator, ObjectMapper objectMapper,
-            AiNewsSummaryService newsSummaryService, AiDisclosureSummaryService disclosureSummaryService) {
+            AiNewsSummaryService newsSummaryService, AiDisclosureSummaryService disclosureSummaryService,
+            AiProvider aiProvider) {
         this.stocks = stocks; this.prices = prices; this.news = news; this.analyses = analyses;
         this.calculator = calculator; this.objectMapper = objectMapper;
         this.newsSummaryService = newsSummaryService;
         this.disclosureSummaryService = disclosureSummaryService;
+        this.aiProvider = aiProvider;
     }
 
     public SnapshotBundle create(String requestedMarket, String requestedSymbol) {
@@ -128,40 +133,48 @@ public class DailyBriefingSnapshotFactory {
         List<NewsArticle> articles = news.findAllByStockMarketAndStockSymbolOrderByPublishedAtDesc(stock.getMarket(), stock.getSymbol()).stream()
                 .filter(item -> item.getPublishedAt().isAfter(fromExclusive) && !item.getPublishedAt().isAfter(toInclusive))
                 .toList();
+
         int excluded = 0, newsCount = 0, disclosureCount = 0;
         Set<String> seen = new LinkedHashSet<>();
-        List<NewsArticle> filteredArticles = new java.util.ArrayList<>();
-        int newsLimit = 0;
+        List<NewsArticle> rawNews = new ArrayList<>();
+        List<NewsArticle> rawDisclosures = new ArrayList<>();
 
         for (NewsArticle article : articles) {
             String dedupe = article.getContentHash() == null ? article.getCanonicalUrl() : article.getContentHash();
             if (!seen.add(dedupe)) continue;
-            boolean disclosure = "DISCLOSURE".equals(article.getContentKind());
-            if (disclosure) {
-                filteredArticles.add(article);
+            if ("DISCLOSURE".equals(article.getContentKind())) {
+                rawDisclosures.add(article);
             } else {
-                if (newsLimit < 5) {
-                    filteredArticles.add(article);
-                    newsLimit++;
-                }
+                rawNews.add(article);
             }
         }
 
-        // Sort back chronologically so D1, D2, N1, N2... are in correct order
-        filteredArticles.sort(Comparator.comparing(NewsArticle::getPublishedAt));
+        List<NewsArticle> targetDisclosures = rawDisclosures;
+        List<NewsArticle> candidateNews = new ArrayList<>();
 
-        for (NewsArticle article : filteredArticles) {
-            boolean disclosure = "DISCLOSURE".equals(article.getContentKind());
+        if (rawNews.size() > 5) {
+            List<NewsItemForSelection> selectionItems = rawNews.stream()
+                    .map(n -> new NewsItemForSelection(n.getId(), n.getTitle()))
+                    .toList();
+            try {
+                List<Long> selectedIds = aiProvider.selectImportantNews(stock.getName(), selectionItems, 10);
+                for (Long id : selectedIds) {
+                    rawNews.stream().filter(n -> n.getId().equals(id)).findFirst().ifPresent(candidateNews::add);
+                }
+            } catch (Exception e) {
+                candidateNews = rawNews.stream().limit(10).collect(Collectors.toList());
+            }
+        } else {
+            candidateNews = rawNews;
+        }
+
+        for (NewsArticle article : targetDisclosures) {
             AiAnalysis analysis = article.getContentHash() == null ? null
                     : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                             .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
             if (analysis == null) {
                 try {
-                    if (disclosure) {
-                        disclosureSummaryService.summarize(new AiDisclosureSummaryRequest(article.getId(), "news-summary-v1"));
-                    } else if (article.isAiAnalysisAllowed()) {
-                        newsSummaryService.summarize(new AiSummaryRequest(article.getId(), "news-summary-v1"));
-                    }
+                    disclosureSummaryService.summarize(new AiDisclosureSummaryRequest(article.getId(), "news-summary-v1"));
                     analysis = article.getContentHash() == null ? null
                             : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                                     .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
@@ -171,12 +184,50 @@ public class DailyBriefingSnapshotFactory {
                 }
             }
             if (!article.isAiAnalysisAllowed() || analysis == null) { excluded++; continue; }
-            String id = (disclosure ? "D" : "N") + (disclosure ? ++disclosureCount : ++newsCount);
-            target.add(new BriefingEvidence(id, disclosure ? "DISCLOSURE" : "NEWS", "CONTENT_ANALYSIS",
+            disclosureCount++;
+            String id = "D" + disclosureCount;
+            target.add(new BriefingEvidence(id, "DISCLOSURE", "CONTENT_ANALYSIS",
                     analysis.getSentiment(), null, null, article.getTitle() + " · " + analysis.getSummary(),
-                    Map.of("type", disclosure ? "DISCLOSURE" : "NEWS", "targetId", article.getId().toString(),
+                    Map.of("type", "DISCLOSURE", "targetId", article.getId().toString(),
                             "url", article.getUrl(), "source", article.getSource(), "publishedAt", article.getPublishedAt().toString())));
         }
+
+        List<NewsArticle> successfullyAnalyzedNews = new ArrayList<>();
+        for (NewsArticle article : candidateNews) {
+            if (successfullyAnalyzedNews.size() >= 5) break;
+            AiAnalysis analysis = article.getContentHash() == null ? null
+                    : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
+                            .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
+            if (analysis == null) {
+                try {
+                    if (article.isAiAnalysisAllowed()) {
+                        newsSummaryService.summarize(new AiSummaryRequest(article.getId(), "news-summary-v1"));
+                        analysis = article.getContentHash() == null ? null
+                                : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
+                                        .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
+                    }
+                } catch (Exception exception) {
+                    excluded++;
+                    continue;
+                }
+            }
+            if (!article.isAiAnalysisAllowed() || analysis == null) { excluded++; continue; }
+            successfullyAnalyzedNews.add(article);
+        }
+
+        successfullyAnalyzedNews.sort(Comparator.comparing(NewsArticle::getPublishedAt));
+        for (NewsArticle article : successfullyAnalyzedNews) {
+            AiAnalysis analysis = analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
+                    .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
+            if (analysis == null) continue;
+            newsCount++;
+            String id = "N" + newsCount;
+            target.add(new BriefingEvidence(id, "NEWS", "CONTENT_ANALYSIS",
+                    analysis.getSentiment(), null, null, article.getTitle() + " · " + analysis.getSummary(),
+                    Map.of("type", "NEWS", "targetId", article.getId().toString(),
+                            "url", article.getUrl(), "source", article.getSource(), "publishedAt", article.getPublishedAt().toString())));
+        }
+
         return new ContentResult(newsCount, disclosureCount, excluded);
     }
 

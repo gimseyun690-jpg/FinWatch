@@ -216,6 +216,57 @@ public class GeminiAiProvider implements AiProvider {
                 safeList(payload.dataLimitations()), inputTokens, outputTokens);
     }
 
+    @Override
+    public List<Long> selectImportantNews(String stockName, List<NewsItemForSelection> newsItems, int limit) {
+        if (newsItems == null || newsItems.isEmpty()) return List.of();
+        GeminiGenerateResponse response;
+        try {
+            response = restClient.post()
+                    .uri("/v1beta/models/{model}:generateContent", model)
+                    .header("x-goog-api-key", apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(importantNewsRequestBody(stockName, newsItems, limit))
+                    .retrieve()
+                    .body(GeminiGenerateResponse.class);
+        } catch (Exception exception) {
+            return newsItems.stream().map(NewsItemForSelection::id).limit(limit).toList();
+        }
+        String responseText = responseText(response);
+        GeminiImportantNewsPayload payload;
+        try {
+            payload = objectMapper.readValue(responseText, GeminiImportantNewsPayload.class);
+            return payload.importantNewsIds().stream()
+                    .filter(id -> newsItems.stream().anyMatch(item -> item.id().equals(id)))
+                    .toList();
+        } catch (Exception exception) {
+            return newsItems.stream().map(NewsItemForSelection::id).limit(limit).toList();
+        }
+    }
+
+    private Map<String, Object> importantNewsRequestBody(String stockName, List<NewsItemForSelection> newsItems, int limit) {
+        StringBuilder newsBuilder = new StringBuilder();
+        for (NewsItemForSelection item : newsItems) {
+            newsBuilder.append(String.format("ID: %d - 제목: %s\n", item.id(), item.title()));
+        }
+        String prompt = String.format("""
+                당신은 주식 시장 뉴스 분석가입니다.
+                다음은 오늘 '%s' 종목과 관련하여 발행된 뉴스 리스트입니다.
+                각 뉴스 제목을 바탕으로, 이 종목의 주가 변화(호재 또는 악재)에 가장 직접적이고 영향력이 크다고 판단되는 중요한 뉴스를 중요도 순으로 정렬하여 최대 %d개 골라내어 ID 배열로 응답하세요.
+                
+                <NEWS_LIST>
+                %s
+                </NEWS_LIST>
+                """, stockName, limit, newsBuilder.toString());
+        Map<String, Object> schema = Map.of(
+                "type", "OBJECT",
+                "properties", Map.of("importantNewsIds", Map.of("type", "ARRAY", "items", Map.of("type", "INTEGER"))),
+                "required", List.of("importantNewsIds")
+        );
+        return Map.of("contents", List.of(Map.of("role", "user", "parts", List.of(Map.of("text", prompt)))),
+                "generationConfig", Map.of("responseMimeType", "application/json", "responseSchema", schema,
+                        "temperature", 0.1, "maxOutputTokens", 500));
+    }
+
     private String responseText(GeminiGenerateResponse response) {
         if (response == null || response.candidates() == null || response.candidates().isEmpty()) {
             String blockReason = response == null || response.promptFeedback() == null
@@ -509,5 +560,8 @@ public class GeminiAiProvider implements AiProvider {
     }
 
     private record GeminiError(Integer code, String message, String status) {
+    }
+
+    private record GeminiImportantNewsPayload(List<Long> importantNewsIds) {
     }
 }
