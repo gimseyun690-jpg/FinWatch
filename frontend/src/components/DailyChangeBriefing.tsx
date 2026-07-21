@@ -88,7 +88,6 @@ export function DailyChangeBriefing({ market, symbol, onUsageRecorded }: Props) 
         <button type="button" onClick={() => void generate()} disabled={loading}>{loading ? '변화 근거 계산 중…' : '오늘의 변화 생성'}</button>
       </div> : <div className="daily-briefing-result" aria-live="polite">
         <div className="briefing-date-row"><strong className={`relation-${briefing.relation.toLowerCase()}`}>{relationIcon(briefing.relation)} {relationLabel(briefing.relation)}</strong></div>
-        {briefing.staleBriefing && <p className="briefing-warning">현재 일봉과 다른 저장 결과입니다. 다시 생성해 최신 근거를 확인하세요.</p>}
         <section className="briefing-headline">
           <div className="briefing-headline-meta">
             <p className="eyebrow">AI 종합 판단</p>
