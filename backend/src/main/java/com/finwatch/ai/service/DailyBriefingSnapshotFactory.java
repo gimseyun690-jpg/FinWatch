@@ -127,13 +127,30 @@ public class DailyBriefingSnapshotFactory {
     private ContentResult contentEvidence(Stock stock, Instant fromExclusive, Instant toInclusive, List<BriefingEvidence> target) {
         List<NewsArticle> articles = news.findAllByStockMarketAndStockSymbolOrderByPublishedAtDesc(stock.getMarket(), stock.getSymbol()).stream()
                 .filter(item -> item.getPublishedAt().isAfter(fromExclusive) && !item.getPublishedAt().isAfter(toInclusive))
-                .sorted(Comparator.comparing(NewsArticle::getPublishedAt))
                 .toList();
         int excluded = 0, newsCount = 0, disclosureCount = 0;
         Set<String> seen = new LinkedHashSet<>();
+        List<NewsArticle> filteredArticles = new java.util.ArrayList<>();
+        int newsLimit = 0;
+
         for (NewsArticle article : articles) {
             String dedupe = article.getContentHash() == null ? article.getCanonicalUrl() : article.getContentHash();
             if (!seen.add(dedupe)) continue;
+            boolean disclosure = "DISCLOSURE".equals(article.getContentKind());
+            if (disclosure) {
+                filteredArticles.add(article);
+            } else {
+                if (newsLimit < 5) {
+                    filteredArticles.add(article);
+                    newsLimit++;
+                }
+            }
+        }
+
+        // Sort back chronologically so D1, D2, N1, N2... are in correct order
+        filteredArticles.sort(Comparator.comparing(NewsArticle::getPublishedAt));
+
+        for (NewsArticle article : filteredArticles) {
             boolean disclosure = "DISCLOSURE".equals(article.getContentKind());
             AiAnalysis analysis = article.getContentHash() == null ? null
                     : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
@@ -182,7 +199,10 @@ public class DailyBriefingSnapshotFactory {
 
     private BriefingViewpoint contentView(String viewpoint, String prefix, int count, List<BriefingEvidence> evidence) {
         List<BriefingEvidence> items = evidence.stream().filter(item -> item.id().startsWith(prefix)).toList();
-        if (count == 0) return new BriefingViewpoint(viewpoint, "INSUFFICIENT", "INSUFFICIENT", "검증된 신규 근거 없음", List.of());
+        if (count == 0) {
+            String headline = "DISCLOSURE".equals(viewpoint) ? "당일 공시 없음" : "당일 뉴스 없음";
+            return new BriefingViewpoint(viewpoint, "INSUFFICIENT", "INSUFFICIENT", headline, List.of());
+        }
         boolean positive = items.stream().anyMatch(item -> "POSITIVE".equals(item.currentValue()));
         boolean negative = items.stream().anyMatch(item -> "NEGATIVE".equals(item.currentValue()));
         String status = positive && negative ? "MIXED" : positive ? "POSITIVE" : negative ? "CAUTION" : "NEUTRAL";

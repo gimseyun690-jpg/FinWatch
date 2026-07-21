@@ -111,8 +111,8 @@ export function DailyChangeBriefing({ market, symbol, onUsageRecorded }: Props) 
         </section>
 
         <div className="viewpoint-matrix">
-          {briefing.viewpoints.filter((item) => item.status !== 'INSUFFICIENT').map((item) => <div key={item.viewpoint} className={`viewpoint status-${item.status.toLowerCase()}`}>
-            <span>{viewpointLabel(item.viewpoint)}</span><strong>{statusLabel(item.status)}</strong><p>{item.headline}</p><small>{item.changeType}</small>
+          {briefing.viewpoints.map((item) => <div key={item.viewpoint} className={`viewpoint status-${item.status.toLowerCase()}`}>
+            <span>{viewpointLabel(item.viewpoint)}</span><strong>{statusLabel(item.status)}</strong><p>{item.headline}</p><small>{changeTypeLabel(item.changeType)}</small>
             <EvidenceChips ids={item.evidenceIds} availableEvidenceIds={availableEvidenceIds} onSelect={revealEvidence} label={`${viewpointLabel(item.viewpoint)} 근거`} />
           </div>)}
         </div>
@@ -252,5 +252,6 @@ function toDomId(value: string) {
 function relationLabel(value: DailyBriefing['relation']) { return ({ ALIGNED: '관점 일치', CONFLICTING: '관점 충돌', PARTIAL: '부분 근거', INSUFFICIENT: '근거 부족' })[value] }
 function relationIcon(value: DailyBriefing['relation']) { return ({ ALIGNED: '✅', CONFLICTING: '⚡', PARTIAL: '🔶', INSUFFICIENT: '❓' })[value] ?? '' }
 function viewpointLabel(value: string) { return ({ TREND: '추세', MOMENTUM: '모멘텀', OVERHEAT: '과열', VOLATILITY: '변동성', VOLUME: '거래량', NEWS: '뉴스', DISCLOSURE: '공시' } as Record<string, string>)[value] ?? value }
-function statusLabel(value: string) { return ({ POSITIVE: '긍정', CAUTION: '주의', NEUTRAL: '중립', CONFIRMING: '확인', DIVERGING: '괴리', MIXED: '혼재', INSUFFICIENT: '부족' } as Record<string, string>)[value] ?? value }
+function statusLabel(value: string) { return ({ POSITIVE: '긍정', CAUTION: '주의', NEUTRAL: '중립', CONFIRMING: '확인', DIVERGING: '괴리', MIXED: '혼재', INSUFFICIENT: '없음' } as Record<string, string>)[value] ?? value }
 function domainLabel(value: string) { return ({ TECHNICAL: '기술', NEWS: '뉴스', DISCLOSURE: '공시', QUALITY: '품질' } as Record<string, string>)[value] ?? value }
+function changeTypeLabel(value: string) { return ({ INSUFFICIENT: '분석 대상 없음', NEW: '신규', UNCHANGED: '유지', REVERSED: '전환', STRENGTHENED: '강화', WEAKENED: '약화' } as Record<string, string>)[value] ?? value }
