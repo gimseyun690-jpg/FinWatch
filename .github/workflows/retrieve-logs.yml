@@ -1,0 +1,30 @@
+name: Retrieve EC2 Logs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  get-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::891377038166:role/finwatch-portfolio-github-deploy
+          aws-region: ap-northeast-2
+
+      - name: Run logs query via SSM
+        run: |
+          INSTANCE_ID="i-0bf19c2fa31bfde27"
+          COMMAND="docker compose -f /opt/finwatch/current/deploy/compose.portfolio.yml --env-file /opt/finwatch/current/compose.env logs --tail=100 backend"
+          
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --instance-ids "$INSTANCE_ID" \
+            --parameters "commands=[$COMMAND]" \
+            --query "Command.CommandId" \
+            --output text
