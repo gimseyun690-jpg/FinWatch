@@ -419,7 +419,6 @@ export function AlertsPanel({ liveQuotes }: Props) {
           })}
         </div>
       )}
-      <p className="alert-note">조건 충족 상태만 표시하며 모바일 푸시·이메일 전송은 MVP 범위에서 제외합니다. 가격과 기준 시각을 확인할 수 없으면 조건 충족으로 간주하지 않습니다.</p>
     </article>
   )
 }
