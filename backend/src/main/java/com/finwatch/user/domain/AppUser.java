@@ -86,6 +86,11 @@ public class AppUser {
         this.updatedAt = this.lastLoginAt;
     }
 
+    public void updatePassword(String passwordHash) {
+        this.passwordHash = passwordHash;
+        this.updatedAt = Instant.now();
+    }
+
     public void markDeleted() {
         this.email = null;
         this.passwordHash = null;

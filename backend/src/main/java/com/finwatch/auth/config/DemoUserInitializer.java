@@ -3,7 +3,6 @@ package com.finwatch.auth.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +14,6 @@ import com.finwatch.user.repository.AppUserRepository;
 
 @Component
 @Order(1)
-@ConditionalOnProperty(name = "app.auth.demo-users-enabled", havingValue = "true", matchIfMissing = true)
 public class DemoUserInitializer implements ApplicationRunner {
 
     private final AppUserRepository appUserRepository;
@@ -42,8 +40,13 @@ public class DemoUserInitializer implements ApplicationRunner {
     }
 
     private void createIfMissing(String email, String password, UserRole role) {
-        if (!appUserRepository.existsByEmailIgnoreCase(email)) {
+        var userOpt = appUserRepository.findByEmailIgnoreCase(email);
+        if (userOpt.isEmpty()) {
             appUserRepository.save(AppUser.create(email, passwordEncoder.encode(password), role));
+        } else {
+            var user = userOpt.get();
+            user.updatePassword(passwordEncoder.encode(password));
+            appUserRepository.save(user);
         }
     }
 }
