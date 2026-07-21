@@ -31,6 +31,7 @@ import com.finwatch.ai.dto.DailyChangeBriefingInput;
 import com.finwatch.ai.dto.DailyChangeBriefingInput.BriefingEvidence;
 import com.finwatch.ai.dto.DailyChangeBriefingInput.BriefingViewpoint;
 import com.finwatch.ai.repository.AiAnalysisRepository;
+import com.finwatch.data.sync.ExternalDataSyncService;
 import com.finwatch.news.domain.NewsArticle;
 import com.finwatch.news.repository.NewsArticleRepository;
 import com.finwatch.stock.domain.MarketPrice;
@@ -57,23 +58,30 @@ public class DailyBriefingSnapshotFactory {
     private final AiNewsSummaryService newsSummaryService;
     private final AiDisclosureSummaryService disclosureSummaryService;
     private final AiProvider aiProvider;
+    private final ExternalDataSyncService externalDataSyncService;
 
     public DailyBriefingSnapshotFactory(StockRepository stocks, MarketPriceRepository prices,
             NewsArticleRepository news, AiAnalysisRepository analyses,
             TechnicalAnalysisCalculator calculator, ObjectMapper objectMapper,
             AiNewsSummaryService newsSummaryService, AiDisclosureSummaryService disclosureSummaryService,
-            AiProvider aiProvider) {
+            AiProvider aiProvider, ExternalDataSyncService externalDataSyncService) {
         this.stocks = stocks; this.prices = prices; this.news = news; this.analyses = analyses;
         this.calculator = calculator; this.objectMapper = objectMapper;
         this.newsSummaryService = newsSummaryService;
         this.disclosureSummaryService = disclosureSummaryService;
         this.aiProvider = aiProvider;
+        this.externalDataSyncService = externalDataSyncService;
     }
 
     public SnapshotBundle create(String requestedMarket, String requestedSymbol) {
         String symbol = requestedSymbol.trim().toUpperCase(Locale.ROOT);
         String market = requestedMarket == null || requestedMarket.isBlank() ? null : requestedMarket.trim().toUpperCase(Locale.ROOT);
         Stock stock = findStock(market, symbol);
+        try {
+            externalDataSyncService.syncStock(stock.getMarket(), stock.getSymbol());
+        } catch (Exception e) {
+            // Ignore ingestion errors to keep system resilient using existing db data
+        }
         List<MarketPrice> series = prices.findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), "1D");
         if (series.size() < 61) throw new DailyBriefingException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "BRIEFING_BASELINE_UNAVAILABLE", "전일 변화 브리핑에는 완성 일봉이 최소 61개 필요합니다.");
