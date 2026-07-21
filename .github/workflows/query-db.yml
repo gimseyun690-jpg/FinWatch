@@ -3,6 +3,10 @@ name: Query Database for Debugging
 on:
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   query:
     runs-on: ubuntu-latest
