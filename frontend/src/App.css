@@ -1033,7 +1033,7 @@ footer { padding: 23px 0 35px; border-top: 1px solid var(--border); color: var(-
 .workspace-frame.sidebar-collapsed { grid-template-columns: 72px minmax(0, 1fr); }
 .desktop-sidebar { position: sticky; z-index: 50; top: 0; display: grid; height: 100dvh; grid-template-rows: 74px auto minmax(0, 1fr) auto; overflow: hidden; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--bg-shell) 96%, transparent); }
 .sidebar-brand { display: flex; min-width: 0; align-items: center; justify-content: center; gap: 9px; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text-strong); text-decoration: none; }
-.sidebar-brand img { display: block; width: 42px; height: 42px; object-fit: contain; }
+.sidebar-brand img { display: block; width: 42px; height: 42px; object-fit: contain; transition: width .18s ease, height .18s ease; }
 .sidebar-brand > strong { font-size: 20px; letter-spacing: -.04em; }
 .sidebar-brand > strong span { color: var(--cyan); }
 .sidebar-brand > i { display: none; color: var(--cyan); font-size: 16px; font-style: normal; font-weight: 900; }
@@ -1058,8 +1058,9 @@ footer { padding: 23px 0 35px; border-top: 1px solid var(--border); color: var(-
 .sidebar-user small { overflow: hidden; color: var(--text-muted); font-size: 10px; text-overflow: ellipsis; }
 .shell-logout { min-height: 38px; border: 1px solid var(--border); padding: 8px 10px; color: var(--text-muted); background: transparent; font-size: 10px; }
 .shell-logout:hover { border-color: var(--red); color: var(--red); filter: none; }
-.sidebar-collapsed .sidebar-brand img, .sidebar-collapsed .sidebar-brand > strong, .sidebar-collapsed .nav-group > small, .sidebar-collapsed .shell-nav-link > b, .sidebar-collapsed .sidebar-user > div, .sidebar-collapsed .sidebar-footer .pwa-install-button, .sidebar-collapsed .shell-logout { display: none; }
-.sidebar-collapsed .sidebar-brand > i { display: block; }
+.sidebar-collapsed .sidebar-brand { padding: 10px 0; justify-content: center; }
+.sidebar-collapsed .sidebar-brand > strong, .sidebar-collapsed .nav-group > small, .sidebar-collapsed .shell-nav-link > b, .sidebar-collapsed .sidebar-user > div, .sidebar-collapsed .sidebar-footer .pwa-install-button, .sidebar-collapsed .shell-logout { display: none; }
+.sidebar-collapsed .sidebar-brand img { display: block; width: 34px; height: 34px; }
 .sidebar-collapsed .sidebar-toggle { justify-self: center; margin-right: 0; }
 .sidebar-collapsed .sidebar-navigation { padding-right: 8px; padding-left: 8px; }
 .sidebar-collapsed .shell-nav-link { justify-content: center; padding: 10px !important; }

@@ -236,7 +236,7 @@ export function AppShell({ context }: Props) {
       <div className={`workspace-frame${collapsed ? ' sidebar-collapsed' : ''}`} ref={frameRef}>
         <aside className="desktop-sidebar" aria-label="데스크톱 주 메뉴">
           <NavLink to="/dashboard" className="sidebar-brand" aria-label="FinWatch 대시보드">
-            <img src="/finwatch-icon-64.png" alt="" aria-hidden="true" /><strong>Fin<span>Watch</span></strong><i>FW</i>
+            <img src="/finwatch-icon-64.png" alt="" aria-hidden="true" /><strong>Fin<span>Watch</span></strong>
           </NavLink>
           <button type="button" className="sidebar-toggle" onClick={toggleSidebar} aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'} title={collapsed ? '사이드바 펼치기' : '사이드바 접기'}>
             <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} />
