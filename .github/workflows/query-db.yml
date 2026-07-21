@@ -1,0 +1,30 @@
+name: Query Database for Debugging
+
+on:
+  workflow_dispatch:
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::891377038166:role/finwatch-portfolio-github-deploy
+          aws-region: ap-northeast-2
+
+      - name: Run DB Query via SSM
+        run: |
+          INSTANCE_ID="i-0bf19c2fa31bfde27"
+          
+          # Query to check stock names, symbols, and news counts
+          COMMAND_STOCK="docker exec -i deploy-db-1 psql -U finwatch -d finwatch -c \"SELECT id, symbol, name, market FROM stock;\""
+          
+          # Query to check recent news articles and their content status for Samsung Electronics (005930)
+          COMMAND_NEWS="docker exec -i deploy-db-1 psql -U finwatch -d finwatch -c \"SELECT s.symbol, n.title, n.published_at, n.content_source, LENGTH(n.content) as content_length, n.url FROM news_article n JOIN stock s ON n.stock_id = s.id WHERE s.symbol IN ('005930', '000660', 'NVDA') ORDER BY n.published_at DESC LIMIT 30;\""
+          
+          echo "=== STOCKS ==="
+          aws ssm send-command --document-name "AWS-RunShellScript" --instance-ids "$INSTANCE_ID" --parameters "commands=[$COMMAND_STOCK]" --query "Command.CommandId" --output text
+          
+          echo "=== NEWS ==="
+          aws ssm send-command --document-name "AWS-RunShellScript" --instance-ids "$INSTANCE_ID" --parameters "commands=[$COMMAND_NEWS]" --query "Command.CommandId" --output text
