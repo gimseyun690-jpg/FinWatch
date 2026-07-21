@@ -102,6 +102,16 @@ public class ExternalDataSyncService {
         return sync(List.of(stock));
     }
 
+    @Transactional
+    public void syncNewsOnly(Stock stock) {
+        if (dataMode == DataMode.DEMO) return;
+        if ("KRX".equalsIgnoreCase(stock.getMarket())) {
+            syncNaverNews(stock);
+        } else if (isUsMarket(stock.getMarket())) {
+            syncFinnhubNews(stock);
+        }
+    }
+
     private DataSyncResponse sync(List<Stock> stocks) {
         Instant startedAt = Instant.now();
         List<StockSyncResult> results = new ArrayList<>();

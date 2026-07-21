@@ -78,7 +78,7 @@ public class DailyBriefingSnapshotFactory {
         String market = requestedMarket == null || requestedMarket.isBlank() ? null : requestedMarket.trim().toUpperCase(Locale.ROOT);
         Stock stock = findStock(market, symbol);
         try {
-            externalDataSyncService.syncStock(stock.getMarket(), stock.getSymbol());
+            externalDataSyncService.syncNewsOnly(stock);
         } catch (Exception e) {
             // Ignore ingestion errors to keep system resilient using existing db data
         }
@@ -143,7 +143,8 @@ public class DailyBriefingSnapshotFactory {
                 .filter(item -> item.getPublishedAt().isAfter(fromExclusive) && !item.getPublishedAt().isAfter(toInclusive))
                 .toList();
 
-        int excluded = 0, newsCount = 0, disclosureCount = 0;
+        java.util.concurrent.atomic.AtomicInteger excluded = new java.util.concurrent.atomic.AtomicInteger(0);
+        int newsCount = 0, disclosureCount = 0;
         Set<String> seen = new LinkedHashSet<>();
         List<NewsArticle> rawNews = new ArrayList<>();
         List<NewsArticle> rawDisclosures = new ArrayList<>();
@@ -188,11 +189,11 @@ public class DailyBriefingSnapshotFactory {
                             : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                                     .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
                 } catch (Exception exception) {
-                    excluded++;
+                    excluded.incrementAndGet();
                     continue;
                 }
             }
-            if (!article.isAiAnalysisAllowed() || analysis == null) { excluded++; continue; }
+            if (!article.isAiAnalysisAllowed() || analysis == null) { excluded.incrementAndGet(); continue; }
             disclosureCount++;
             String id = "D" + disclosureCount;
             target.add(new BriefingEvidence(id, "DISCLOSURE", "CONTENT_ANALYSIS",
@@ -201,31 +202,35 @@ public class DailyBriefingSnapshotFactory {
                             "url", article.getUrl(), "source", article.getSource(), "publishedAt", article.getPublishedAt().toString())));
         }
 
-        List<NewsArticle> successfullyAnalyzedNews = new ArrayList<>();
-        for (NewsArticle article : candidateNews) {
-            if (successfullyAnalyzedNews.size() >= 5) break;
-            AiAnalysis analysis = article.getContentHash() == null ? null
-                    : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
-                            .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
-            if (analysis == null) {
-                try {
-                    if (article.isAiAnalysisAllowed()) {
-                        newsSummaryService.summarize(new AiSummaryRequest(article.getId(), "news-summary-v1"));
-                        analysis = article.getContentHash() == null ? null
-                                : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
-                                        .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
-                    }
-                } catch (Exception exception) {
-                    excluded++;
-                    continue;
+        List<NewsArticle> successfullyAnalyzedNews = java.util.Collections.synchronizedList(new ArrayList<>());
+        candidateNews.parallelStream().forEach(article -> {
+            if (successfullyAnalyzedNews.size() >= 5) return;
+            try {
+                AiAnalysis analysis = article.getContentHash() == null ? null
+                        : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
+                                .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
+                if (analysis == null && article.isAiAnalysisAllowed()) {
+                    newsSummaryService.summarize(new AiSummaryRequest(article.getId(), "news-summary-v1"));
+                    analysis = article.getContentHash() == null ? null
+                            : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
+                                    .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
                 }
+                if (article.isAiAnalysisAllowed() && analysis != null) {
+                    successfullyAnalyzedNews.add(article);
+                } else {
+                    excluded.incrementAndGet();
+                }
+            } catch (Exception exception) {
+                excluded.incrementAndGet();
             }
-            if (!article.isAiAnalysisAllowed() || analysis == null) { excluded++; continue; }
-            successfullyAnalyzedNews.add(article);
-        }
+        });
 
-        successfullyAnalyzedNews.sort(Comparator.comparing(NewsArticle::getPublishedAt));
-        for (NewsArticle article : successfullyAnalyzedNews) {
+        List<NewsArticle> finalNewsList = successfullyAnalyzedNews.stream()
+                .limit(5)
+                .sorted(Comparator.comparing(NewsArticle::getPublishedAt))
+                .collect(Collectors.toList());
+
+        for (NewsArticle article : finalNewsList) {
             AiAnalysis analysis = analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                     .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
             if (analysis == null) continue;
@@ -237,7 +242,7 @@ public class DailyBriefingSnapshotFactory {
                             "url", article.getUrl(), "source", article.getSource(), "publishedAt", article.getPublishedAt().toString())));
         }
 
-        return new ContentResult(newsCount, disclosureCount, excluded);
+        return new ContentResult(newsCount, disclosureCount, excluded.get());
     }
 
     private List<BriefingViewpoint> viewpoints(Result current, Result previous, BigDecimal priceChange,

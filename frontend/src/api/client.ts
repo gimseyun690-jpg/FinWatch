@@ -7,7 +7,7 @@ export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}
     const token = csrfToken()
     if (token) headers.set('X-XSRF-TOKEN', token)
   }
-  const timeoutSignal = AbortSignal.timeout(20_000)
+  const timeoutSignal = AbortSignal.timeout(60_000)
   const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal
 
   const response = await fetch(input, { ...init, headers, signal, credentials: 'same-origin' })
