@@ -32,6 +32,7 @@ import com.finwatch.ai.dto.DailyChangeBriefingInput.BriefingEvidence;
 import com.finwatch.ai.dto.DailyChangeBriefingInput.BriefingViewpoint;
 import com.finwatch.ai.repository.AiAnalysisRepository;
 import com.finwatch.data.sync.ExternalDataSyncService;
+import com.finwatch.news.service.NewsContentIngestionService;
 import com.finwatch.news.domain.NewsArticle;
 import com.finwatch.news.repository.NewsArticleRepository;
 import com.finwatch.stock.domain.MarketPrice;
@@ -59,18 +60,21 @@ public class DailyBriefingSnapshotFactory {
     private final AiDisclosureSummaryService disclosureSummaryService;
     private final AiProvider aiProvider;
     private final ExternalDataSyncService externalDataSyncService;
+    private final NewsContentIngestionService contentIngestionService;
 
     public DailyBriefingSnapshotFactory(StockRepository stocks, MarketPriceRepository prices,
             NewsArticleRepository news, AiAnalysisRepository analyses,
             TechnicalAnalysisCalculator calculator, ObjectMapper objectMapper,
             AiNewsSummaryService newsSummaryService, AiDisclosureSummaryService disclosureSummaryService,
-            AiProvider aiProvider, ExternalDataSyncService externalDataSyncService) {
+            AiProvider aiProvider, ExternalDataSyncService externalDataSyncService,
+            NewsContentIngestionService contentIngestionService) {
         this.stocks = stocks; this.prices = prices; this.news = news; this.analyses = analyses;
         this.calculator = calculator; this.objectMapper = objectMapper;
         this.newsSummaryService = newsSummaryService;
         this.disclosureSummaryService = disclosureSummaryService;
         this.aiProvider = aiProvider;
         this.externalDataSyncService = externalDataSyncService;
+        this.contentIngestionService = contentIngestionService;
     }
 
     public SnapshotBundle create(String requestedMarket, String requestedSymbol) {
@@ -204,7 +208,7 @@ public class DailyBriefingSnapshotFactory {
         List<NewsArticle> targetDisclosures = rawDisclosures;
         List<NewsArticle> candidateNews = new ArrayList<>();
 
-        if (rawNews.size() > 5) {
+        if (rawNews.size() > 4) {
             List<NewsItemForSelection> selectionItems = rawNews.stream()
                     .map(n -> new NewsItemForSelection(n.getId(), n.getTitle()))
                     .toList();
@@ -246,11 +250,19 @@ public class DailyBriefingSnapshotFactory {
 
         List<NewsArticle> successfullyAnalyzedNews = java.util.Collections.synchronizedList(new ArrayList<>());
         candidateNews.parallelStream().forEach(article -> {
-            if (successfullyAnalyzedNews.size() >= 5) return;
+            if (successfullyAnalyzedNews.size() >= 4) return;
             try {
+                // 1단계: 캐시된 분석 결과 확인
                 AiAnalysis analysis = article.getContentHash() == null ? null
                         : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                                 .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
+                // 2단계: 본문 없으면 크롤링으로 본문 확보
+                if (analysis == null && !article.isAiAnalysisAllowed() && article.isAiSummaryRequestAllowed()) {
+                    try {
+                        contentIngestionService.refreshForAiSummary(article.getId());
+                    } catch (Exception ignored) {}
+                }
+                // 3단계: 본문 있으면 AI 요약 실행
                 if (analysis == null && article.isAiAnalysisAllowed()) {
                     newsSummaryService.summarize(new AiSummaryRequest(article.getId(), "news-summary-v1"));
                     analysis = article.getContentHash() == null ? null
@@ -268,7 +280,7 @@ public class DailyBriefingSnapshotFactory {
         });
 
         List<NewsArticle> finalNewsList = successfullyAnalyzedNews.stream()
-                .limit(5)
+                .limit(4)
                 .sorted(Comparator.comparing(NewsArticle::getPublishedAt))
                 .collect(Collectors.toList());
 
