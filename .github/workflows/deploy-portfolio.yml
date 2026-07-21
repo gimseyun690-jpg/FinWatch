@@ -61,7 +61,7 @@ jobs:
       - name: Fetch Backend Logs and Status
         run: |
           echo "==== FETCHING BACKEND LOGS ===="
-          COMMAND="docker compose -f /opt/finwatch/current/deploy/compose.portfolio.yml --env-file /opt/finwatch/current/compose.env logs --tail=300 backend"
+          COMMAND="docker compose -f /opt/finwatch/current/deploy/compose.portfolio.yml --env-file /opt/finwatch/current/compose.env logs backend | grep -i -E 'exception|error|fail' | tail -n 150"
           command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters "commands=[$COMMAND]" --query Command.CommandId --output text)"
           aws ssm wait command-executed --command-id "$command_id" --instance-id "$INSTANCE_ID" || true
           aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query StandardOutputContent --output text
