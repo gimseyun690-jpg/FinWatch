@@ -120,7 +120,23 @@ nav a.active {
 .session-bootstrap strong { font-size: 12px; }
 .login-card { padding: 34px; }
 .login-brand { display: grid; justify-items: center; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
-.login-brand-logo { display: block; width: min(100%, 270px); filter: drop-shadow(0 10px 26px rgb(38 184 137 / 8%)); }
+.login-brand-logo {
+  display: block;
+  width: min(100%, 270px);
+  aspect-ratio: 270 / 215;
+  object-fit: cover;
+  object-position: top;
+  filter: drop-shadow(0 10px 26px rgb(38 184 137 / 8%));
+}
+.login-brand-subtext {
+  margin: 12px 0 0;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  opacity: 0.95;
+  text-align: center;
+}
 .login-heading { padding: 32px 0 22px; }
 .login-heading h1 { margin-bottom: 10px; font-size: 28px; }
 .login-heading > p:last-child { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.65; }
