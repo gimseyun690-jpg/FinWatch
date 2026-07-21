@@ -77,7 +77,7 @@ public class AiDailyChangeBriefingService {
     public DailyChangeBriefingResponse generate(DailyChangeBriefingRequest request) {
         long started = System.nanoTime();
         String promptVersion = promptVersion(request.promptVersion());
-        SnapshotBundle snapshot = snapshots.create(request.market(), request.symbol());
+        SnapshotBundle snapshot = snapshots.create(request.market(), request.symbol(), true);
         String key = cacheKey(snapshot, promptVersion);
         Optional<DailyChangeBriefingResponse> existing = findExisting(key, started, promptVersion);
         if (existing.isPresent()) return existing.get();
@@ -87,7 +87,7 @@ public class AiDailyChangeBriefingService {
 
     @Transactional(readOnly = true)
     public DailyChangeBriefingResponse latest(String market, String symbol) {
-        SnapshotBundle current = snapshots.create(market, symbol);
+        SnapshotBundle current = snapshots.create(market, symbol, false);
         AiDailyChangeBriefing entity = repository.findFirstByStockIdOrderByGeneratedAtDesc(current.stock().getId())
                 .orElseThrow(() -> new DailyBriefingException(HttpStatus.NOT_FOUND, "DAILY_BRIEFING_NOT_FOUND", "저장된 일일 변화 브리핑이 없습니다."));
         return response(entity, false, entity.getInputTokens(), entity.getOutputTokens(), entity.getEstimatedCost(),

@@ -77,14 +77,16 @@ public class DailyBriefingSnapshotFactory {
         this.contentIngestionService = contentIngestionService;
     }
 
-    public SnapshotBundle create(String requestedMarket, String requestedSymbol) {
+    public SnapshotBundle create(String requestedMarket, String requestedSymbol, boolean active) {
         String symbol = requestedSymbol.trim().toUpperCase(Locale.ROOT);
         String market = requestedMarket == null || requestedMarket.isBlank() ? null : requestedMarket.trim().toUpperCase(Locale.ROOT);
         Stock stock = findStock(market, symbol);
-        try {
-            externalDataSyncService.syncNewsOnly(stock);
-        } catch (Exception e) {
-            // Ignore ingestion errors to keep system resilient using existing db data
+        if (active) {
+            try {
+                externalDataSyncService.syncNewsOnly(stock);
+            } catch (Exception e) {
+                // Ignore ingestion errors to keep system resilient using existing db data
+            }
         }
         List<MarketPrice> series = prices.findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), "1D");
         if (series.size() < 61) throw new DailyBriefingException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -159,7 +161,7 @@ public class DailyBriefingSnapshotFactory {
         evidence.add(technical("T6", "VOLUME_CHANGE", currentVolumeRatio, previousVolumeRatio, currentVolumeRatio.subtract(previousVolumeRatio),
                 "거래량/20일 평균 " + number(previousVolumeRatio) + "배 → " + number(currentVolumeRatio) + "배", currentPrice, "VOLUME"));
 
-        ContentResult contents = contentEvidence(stock, previousPrice.getRecordedAt(), Instant.now(), evidence);
+        ContentResult contents = contentEvidence(stock, previousPrice.getRecordedAt(), Instant.now(), evidence, active);
         String freshness = freshness(currentPrice);
         evidence.add(new BriefingEvidence("Q1", "QUALITY", "DATA_QUALITY", null, null, null,
                 "가격 출처 " + currentPrice.getSource() + " · " + freshness + " · 분석 일봉 " + seriesForCalc.size() + "개",
@@ -184,7 +186,7 @@ public class DailyBriefingSnapshotFactory {
         return new SnapshotBundle(stock, input, sha256(input));
     }
 
-    private ContentResult contentEvidence(Stock stock, Instant fromExclusive, Instant toInclusive, List<BriefingEvidence> target) {
+    private ContentResult contentEvidence(Stock stock, Instant fromExclusive, Instant toInclusive, List<BriefingEvidence> target, boolean active) {
         List<NewsArticle> articles = news.findAllByStockMarketAndStockSymbolOrderByPublishedAtDesc(stock.getMarket(), stock.getSymbol()).stream()
                 .filter(item -> item.getPublishedAt().isAfter(fromExclusive) && !item.getPublishedAt().isAfter(toInclusive))
                 .toList();
@@ -228,7 +230,7 @@ public class DailyBriefingSnapshotFactory {
             AiAnalysis analysis = article.getContentHash() == null ? null
                     : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                             .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
-            if (analysis == null) {
+            if (analysis == null && active) {
                 try {
                     disclosureSummaryService.summarize(new AiDisclosureSummaryRequest(article.getId(), "news-summary-v1"));
                     analysis = article.getContentHash() == null ? null
@@ -258,14 +260,14 @@ public class DailyBriefingSnapshotFactory {
                                 .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
                 // 2단계: 본문 없으면 크롤링 후 DB에서 최신 엔티티 재조회
                 NewsArticle article = originalArticle;
-                if (analysis == null && !originalArticle.isAiAnalysisAllowed() && originalArticle.isAiSummaryRequestAllowed()) {
+                if (analysis == null && active && !originalArticle.isAiAnalysisAllowed() && originalArticle.isAiSummaryRequestAllowed()) {
                     try {
                         contentIngestionService.refreshForAiSummary(originalArticle.getId());
                         article = news.findById(originalArticle.getId()).orElse(originalArticle);
                     } catch (Exception ignored) {}
                 }
                 // 3단계: 본문 있으면 AI 요약 실행
-                if (analysis == null && article.isAiAnalysisAllowed()) {
+                if (analysis == null && active && article.isAiAnalysisAllowed()) {
                     newsSummaryService.summarize(new AiSummaryRequest(article.getId(), "news-summary-v1"));
                     analysis = article.getContentHash() == null ? null
                             : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
