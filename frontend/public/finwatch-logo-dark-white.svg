@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 240" role="img" aria-labelledby="title desc">
   <title id="title">FinWatch logo for dark backgrounds</title>
   <desc id="desc">FinWatch market monitoring logo.</desc>
   <defs>
@@ -11,5 +11,4 @@
     <path d="M429 207l30-11-3 32z" fill="#48DDA9"/>
   </g>
   <text x="330" y="195" fill="#F2F6F7" font-family="Inter, Pretendard, Arial, sans-serif" font-size="124" font-weight="750" letter-spacing="-6">Fin<tspan fill="#33D19D">Watch</tspan></text>
-  <text x="338" y="244" fill="#FFFFFF" font-family="Pretendard, Arial, sans-serif" font-size="28" font-weight="600" letter-spacing="-1">투자를 더 스마트하게, 정보를 한눈에</text>
 </svg>

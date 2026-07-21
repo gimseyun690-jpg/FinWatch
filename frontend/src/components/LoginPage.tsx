@@ -62,8 +62,13 @@ export function LoginPage({ apiState, returnTo, oauthError }: Props) {
     <main className="login-shell">
       <section className="login-card card">
         <div className="login-brand">
-          <img className="login-brand-logo" src="/finwatch-logo-dark.png" alt="FinWatch" />
+          <img className="login-brand-logo" src="/finwatch-logo-dark-white.svg" alt="FinWatch" />
           <p className="login-brand-subtext">투자를 더 스마트하게, 정보를 한눈에</p>
+        </div>
+
+        <div className="login-heading">
+          <h1>FinWatch 시작하기</h1>
+          <p>안전한 소셜 인증으로 간편하게 대시보드를 시작하세요.</p>
         </div>
 
         <div className="kakao-login-section">

@@ -123,9 +123,6 @@ nav a.active {
 .login-brand-logo {
   display: block;
   width: min(100%, 270px);
-  aspect-ratio: 270 / 215;
-  object-fit: cover;
-  object-position: top;
   filter: drop-shadow(0 10px 26px rgb(38 184 137 / 8%));
 }
 .login-brand-subtext {
