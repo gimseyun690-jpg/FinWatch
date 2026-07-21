@@ -122,7 +122,8 @@ nav a.active {
 .login-brand { display: grid; justify-items: center; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
 .login-brand-logo {
   display: block;
-  width: min(100%, 270px);
+  width: min(100%, 340px);
+  margin: 0 auto;
   filter: drop-shadow(0 10px 26px rgb(38 184 137 / 8%));
 }
 .login-brand-subtext {
