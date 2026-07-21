@@ -112,6 +112,16 @@ public class ExternalDataSyncService {
         }
     }
 
+    public com.finwatch.data.provider.ProviderResponses.Quote fetchLiveQuote(Stock stock) {
+        if (dataMode == DataMode.DEMO) return null;
+        if ("KRX".equalsIgnoreCase(stock.getMarket())) {
+            return kisMarketDataClient.getDomesticQuote(stock.getSymbol());
+        } else if (isUsMarket(stock.getMarket())) {
+            return finnhubMarketDataClient.quote(stock.getSymbol());
+        }
+        return null;
+    }
+
     private DataSyncResponse sync(List<Stock> stocks) {
         Instant startedAt = Instant.now();
         List<StockSyncResult> results = new ArrayList<>();

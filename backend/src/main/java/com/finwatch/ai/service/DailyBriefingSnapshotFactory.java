@@ -86,14 +86,56 @@ public class DailyBriefingSnapshotFactory {
         if (series.size() < 61) throw new DailyBriefingException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "BRIEFING_BASELINE_UNAVAILABLE", "전일 변화 브리핑에는 완성 일봉이 최소 61개 필요합니다.");
         validate(series);
-        MarketPrice currentPrice = series.getLast();
-        MarketPrice previousPrice = series.get(series.size() - 2);
+
+        ZoneId zone = "KRX".equals(stock.getMarket()) ? ZoneId.of("Asia/Seoul") : ZoneId.of("America/New_York");
+        LocalDate today = Instant.now().atZone(zone).toLocalDate();
+        MarketPrice dbLast = series.getLast();
+        LocalDate dbLastDate = dbLast.getRecordedAt().atZone(zone).toLocalDate();
+
+        // 오늘 자 완성 일봉이 없으면 실시간 시세로 가상 일봉(현시점 일봉) 생성
+        MarketPrice currentPrice;
+        MarketPrice previousPrice;
+        List<MarketPrice> seriesForCalc;
+        if (!dbLastDate.isBefore(today)) {
+            // 오늘 자 완성 일봉이 DB에 있음 (장 마감 후)
+            currentPrice = dbLast;
+            previousPrice = series.get(series.size() - 2);
+            seriesForCalc = series;
+        } else {
+            // 장중: 실시간 시세로 가상 일봉 생성
+            com.finwatch.data.provider.ProviderResponses.Quote liveQuote = null;
+            try {
+                liveQuote = externalDataSyncService.fetchLiveQuote(stock);
+            } catch (Exception ignored) {}
+
+            if (liveQuote != null && liveQuote.price() != null) {
+                // 실시간 가격으로 가상 일봉 빌드 (open/high/low 는 현재가로 대체)
+                Instant now = Instant.now();
+                MarketPrice virtualBar = MarketPrice.create(
+                        stock, "1D",
+                        liveQuote.price(), liveQuote.price(), liveQuote.price(), liveQuote.price(),
+                        liveQuote.volume() != null ? liveQuote.volume() : BigDecimal.ZERO,
+                        now, liveQuote.providerId() != null ? liveQuote.providerId() + "-live" : "live");
+                currentPrice = virtualBar;
+                previousPrice = dbLast;
+                // 기술 지표 계산용 series: DB 전체 + 가상 일봉
+                List<MarketPrice> extended = new ArrayList<>(series);
+                extended.add(virtualBar);
+                seriesForCalc = extended;
+            } else {
+                // 실시간 조회 실패 시 DB 데이터로 폴백
+                currentPrice = dbLast;
+                previousPrice = series.get(series.size() - 2);
+                seriesForCalc = series;
+            }
+        }
+
         if (currentPrice.getRecordedAt().isAfter(Instant.now().plus(Duration.ofDays(2)))) {
             throw new DailyBriefingException(HttpStatus.UNPROCESSABLE_ENTITY, "BRIEFING_INPUT_INVALID", "미래 시각의 일봉은 브리핑에 사용할 수 없습니다.");
         }
 
-        Result current = calculator.calculateMarket(candles(series));
-        Result previous = calculator.calculateMarket(candles(series.subList(0, series.size() - 1)));
+        Result current = calculator.calculateMarket(candles(seriesForCalc));
+        Result previous = calculator.calculateMarket(candles(seriesForCalc.subList(0, seriesForCalc.size() - 1)));
         BigDecimal priceChange = currentPrice.getClosePrice().subtract(previousPrice.getClosePrice());
         BigDecimal priceChangeRate = percent(priceChange, previousPrice.getClosePrice());
         List<BriefingEvidence> evidence = new ArrayList<>();
@@ -116,7 +158,7 @@ public class DailyBriefingSnapshotFactory {
         ContentResult contents = contentEvidence(stock, previousPrice.getRecordedAt(), Instant.now(), evidence);
         String freshness = freshness(currentPrice);
         evidence.add(new BriefingEvidence("Q1", "QUALITY", "DATA_QUALITY", null, null, null,
-                "가격 출처 " + currentPrice.getSource() + " · " + freshness + " · 분석 일봉 " + series.size() + "개",
+                "가격 출처 " + currentPrice.getSource() + " · " + freshness + " · 분석 일봉 " + seriesForCalc.size() + "개",
                 Map.of("type", "DATA_QUALITY", "source", currentPrice.getSource(), "time", currentPrice.getRecordedAt().toString())));
 
         List<BriefingViewpoint> viewpoints = viewpoints(current, previous, priceChange, currentVolumeRatio, contents, evidence);
@@ -128,7 +170,7 @@ public class DailyBriefingSnapshotFactory {
         if (contents.newsCount() == 0) limitations.add("비교 구간에 의미 판단 가능한 신규 뉴스가 없습니다.");
         if (contents.disclosureCount() == 0) limitations.add("비교 구간에 의미 판단 가능한 신규 공시가 없습니다.");
 
-        ZoneId zone = "KRX".equals(stock.getMarket()) ? ZoneId.of("Asia/Seoul") : ZoneId.of("America/New_York");
+        // zone is already declared above for today's date detection
         LocalDate currentDate = currentPrice.getRecordedAt().atZone(zone).toLocalDate();
         LocalDate previousDate = previousPrice.getRecordedAt().atZone(zone).toLocalDate();
         DailyChangeBriefingInput input = new DailyChangeBriefingInput(stock.getMarket(), stock.getSymbol(), stock.getCurrency(),
