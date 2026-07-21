@@ -19,12 +19,13 @@ permissions:
 jobs:
   get-logs:
     runs-on: ubuntu-latest
+    environment: portfolio
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
     steps:
       - name: Configure short-lived AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.0
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -36,6 +37,7 @@ jobs:
           aws logs filter-log-events \
             --log-group-name "${{ github.event.inputs.log_group }}" \
             --limit "${{ github.event.inputs.limit }}" \
+            --filter-pattern "ERROR" \
             --query "events[*].[timestamp, message]" \
             --output text > logs.txt
           cat logs.txt
