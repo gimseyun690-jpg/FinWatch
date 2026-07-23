@@ -111,9 +111,11 @@ public class AiNewsSummaryService {
 
         Optional<AiSummaryCacheValue> cached = cacheStore.get(cacheKey);
         if (cached.isPresent()) {
-            AiAnalysis analysis = aiAnalysisRepository.findById(cached.get().analysisId())
-                    .orElseThrow(() -> new IllegalStateException("캐시 원본 분석을 찾을 수 없습니다."));
-            return cachedResponse(cached.get(), analysis, promptVersion, elapsedMillis(startedAt));
+            Optional<AiAnalysis> analysis = aiAnalysisRepository.findById(cached.get().analysisId());
+            if (analysis.isPresent()) {
+                return cachedResponse(cached.get(), analysis.get(), promptVersion, elapsedMillis(startedAt));
+            }
+            cacheStore.delete(cacheKey);
         }
 
         Optional<AiAnalysis> persisted = aiAnalysisRepository
@@ -128,9 +130,11 @@ public class AiNewsSummaryService {
         return singleFlight.execute(cacheKey, () -> {
             Optional<AiSummaryCacheValue> afterWaitCache = cacheStore.get(cacheKey);
             if (afterWaitCache.isPresent()) {
-                AiAnalysis analysis = aiAnalysisRepository.findById(afterWaitCache.get().analysisId())
-                        .orElseThrow(() -> new IllegalStateException("캐시 원본 분석을 찾을 수 없습니다."));
-                return cachedResponse(afterWaitCache.get(), analysis, promptVersion, elapsedMillis(startedAt));
+                Optional<AiAnalysis> analysis = aiAnalysisRepository.findById(afterWaitCache.get().analysisId());
+                if (analysis.isPresent()) {
+                    return cachedResponse(afterWaitCache.get(), analysis.get(), promptVersion, elapsedMillis(startedAt));
+                }
+                cacheStore.delete(cacheKey);
             }
             Optional<AiAnalysis> afterWaitDb = aiAnalysisRepository
                     .findByNewsIdAndFeatureTypeAndPromptVersionAndContentHash(news.getId(), FEATURE_TYPE, promptVersion, contentHash);

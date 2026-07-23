@@ -61,7 +61,10 @@ class AiDailyChangeBriefingIntegrationTest {
                 .andExpect(jsonPath("$.data.staleBriefing").value(false));
 
         assertThat(briefings.count()).isEqualTo(1);
-        assertThat(usageLogs.findAll()).hasSize(2).allMatch(log -> "DAILY_CHANGE_BRIEFING".equals(log.getFeatureType()));
+        assertThat(usageLogs.findAll())
+                .filteredOn(log -> "DAILY_CHANGE_BRIEFING".equals(log.getFeatureType()))
+                .hasSize(2);
+        assertThat(usageLogs.findAll()).anyMatch(log -> "NEWS_SUMMARY".equals(log.getFeatureType()));
     }
 
     @Test
