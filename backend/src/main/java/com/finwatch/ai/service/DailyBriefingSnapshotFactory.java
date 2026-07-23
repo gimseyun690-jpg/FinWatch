@@ -11,7 +11,6 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -47,7 +46,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class DailyBriefingSnapshotFactory {
-    static final String INPUT_VERSION = "daily-briefing-input-v1";
+    static final String INPUT_VERSION = "daily-briefing-input-v2-news-fixed";
     static final String CALCULATION_VERSION = "technical-v2-wilder";
 
     private final StockRepository stocks;
@@ -212,14 +211,14 @@ public class DailyBriefingSnapshotFactory {
 
         if (rawNews.size() > 4) {
             List<NewsItemForSelection> selectionItems = rawNews.stream()
-                    .map(n -> new NewsItemForSelection(n.getId(), n.getTitle()))
+                    .map(item -> new NewsItemForSelection(item.getId(), item.getTitle()))
                     .toList();
             try {
                 List<Long> selectedIds = aiProvider.selectImportantNews(stock.getName(), selectionItems, 10);
                 for (Long id : selectedIds) {
-                    rawNews.stream().filter(n -> n.getId().equals(id)).findFirst().ifPresent(candidateNews::add);
+                    rawNews.stream().filter(item -> item.getId().equals(id)).findFirst().ifPresent(candidateNews::add);
                 }
-            } catch (Exception e) {
+            } catch (Exception exception) {
                 candidateNews = rawNews.stream().limit(10).collect(Collectors.toList());
             }
         } else {
@@ -232,7 +231,7 @@ public class DailyBriefingSnapshotFactory {
                             .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
             if (analysis == null && active) {
                 try {
-                    disclosureSummaryService.summarize(new AiDisclosureSummaryRequest(article.getId(), "news-summary-v1"));
+                    disclosureSummaryService.summarize(new AiDisclosureSummaryRequest(article.getId(), null));
                     analysis = article.getContentHash() == null ? null
                             : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                                     .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
@@ -250,25 +249,24 @@ public class DailyBriefingSnapshotFactory {
                             "url", article.getUrl(), "source", article.getSource(), "publishedAt", article.getPublishedAt().toString())));
         }
 
-        List<NewsArticle> successfullyAnalyzedNews = java.util.Collections.synchronizedList(new ArrayList<>());
-        candidateNews.stream().forEach(originalArticle -> {
-            if (successfullyAnalyzedNews.size() >= 4) return;
+        List<NewsArticle> successfullyAnalyzedNews = new ArrayList<>();
+        for (NewsArticle originalArticle : candidateNews) {
+            if (successfullyAnalyzedNews.size() >= 4) break;
             try {
-                // 1단계: 캐시된 분석 결과 확인
                 AiAnalysis analysis = originalArticle.getContentHash() == null ? null
                         : analyses.findAllByNewsIdAndContentHash(originalArticle.getId(), originalArticle.getContentHash()).stream()
                                 .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
-                // 2단계: 본문 없으면 크롤링 후 DB에서 최신 엔티티 재조회
                 NewsArticle article = originalArticle;
                 if (analysis == null && active && !originalArticle.isAiAnalysisAllowed() && originalArticle.isAiSummaryRequestAllowed()) {
                     try {
                         contentIngestionService.refreshForAiSummary(originalArticle.getId());
                         article = news.findById(originalArticle.getId()).orElse(originalArticle);
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                        // The article remains metadata-only and will be counted as excluded below.
+                    }
                 }
-                // 3단계: 본문 있으면 AI 요약 실행
                 if (analysis == null && active && article.isAiAnalysisAllowed()) {
-                    newsSummaryService.summarize(new AiSummaryRequest(article.getId(), "news-summary-v1"));
+                    newsSummaryService.summarize(new AiSummaryRequest(article.getId(), null));
                     analysis = article.getContentHash() == null ? null
                             : analyses.findAllByNewsIdAndContentHash(article.getId(), article.getContentHash()).stream()
                                     .max(Comparator.comparing(AiAnalysis::getGeneratedAt)).orElse(null);
@@ -281,7 +279,7 @@ public class DailyBriefingSnapshotFactory {
             } catch (Exception exception) {
                 excluded.incrementAndGet();
             }
-        });
+        }
 
         List<NewsArticle> finalNewsList = successfullyAnalyzedNews.stream()
                 .limit(4)

@@ -126,6 +126,22 @@ const metadataOnlyNewsSummary = {
   keywords: ['HBM', '차세대 메모리', '설비 투자'],
 }
 
+const lowerNews = {
+  ...metadataOnlyNews,
+  id: 602,
+  title: '차세대 HBM 고객 인증과 공급 일정 점검',
+  url: 'https://example.com/news/hbm-certification',
+  publishedAt: '2026-07-12T06:00:00Z',
+}
+
+const lowerNewsSummary = {
+  ...metadataOnlyNewsSummary,
+  analysisId: 803,
+  newsId: lowerNews.id,
+  summary: '차세대 HBM 고객 인증 단계와 향후 공급 일정을 핵심 내용으로 정리했습니다.',
+  keyPoints: ['고객 인증 단계 점검', '향후 공급 일정', '양산 전환 시점 확인'],
+}
+
 const prices = Array.from({ length: 90 }, (_, index) => {
   const close = 2380000 + index * 3800 + Math.round(Math.sin(index / 4) * 18000)
   return {
@@ -351,9 +367,10 @@ async function mockApi(page: Page) {
     } else if (path === '/api/v1/ai/disclosure-summaries' && request.method() === 'POST') {
       body = response(disclosureSummary)
     } else if (path === '/api/v1/stocks/KRX/000660/news') {
-      body = response([metadataOnlyNews])
+      body = response([metadataOnlyNews, lowerNews])
     } else if (path === '/api/v1/ai/news-summaries' && request.method() === 'POST') {
-      body = response(metadataOnlyNewsSummary)
+      const requestedNewsId = (request.postDataJSON() as { newsId?: number } | null)?.newsId
+      body = response(requestedNewsId === lowerNews.id ? lowerNewsSummary : metadataOnlyNewsSummary)
     } else if (path === '/api/v1/content-feed') {
       const pageNumber = Number(url.searchParams.get('page') ?? 0)
       const size = Number(url.searchParams.get('size') ?? 20)
@@ -460,7 +477,7 @@ async function mockApi(page: Page) {
           { id: 'T3', domain: 'TECHNICAL', kind: 'RSI_CHANGE', currentValue: '68.4', previousValue: '65.2', delta: '3.2', displayValue: 'RSI14 65.2 → 68.4', sourceRef: { type: 'CHART_INDICATOR', target: 'RSI' } },
           { id: 'Q1', domain: 'QUALITY', kind: 'DATA_QUALITY', currentValue: null, previousValue: null, delta: null, displayValue: '가격 출처 DEMO', sourceRef: { type: 'DATA_QUALITY', source: 'DEMO' } },
         ],
-        audit: { sources: { TECHNICAL: ['CHART_INDICATOR'], QUALITY: ['DEMO'] }, latestRecordedAt: now, calculationVersion: 'technical-v2-wilder', briefingInputVersion: 'daily-briefing-input-v1', promptVersion: 'daily-change-briefing-v1', modelName: 'mock-daily-v1', evidenceCount: 3, excludedContentCount: 0, cacheHit: false, inputTokens: 420, outputTokens: 180, estimatedCost: 0, savedEstimatedCost: 0, costCurrency: 'USD', responseTimeMs: 21, generatedAt: now },
+        audit: { sources: { TECHNICAL: ['CHART_INDICATOR'], QUALITY: ['DEMO'] }, latestRecordedAt: now, calculationVersion: 'technical-v2-wilder', briefingInputVersion: 'daily-briefing-input-v2-news-fixed', promptVersion: 'daily-change-briefing-v2-news-fixed', modelName: 'mock-daily-v1', evidenceCount: 3, excludedContentCount: 0, cacheHit: false, inputTokens: 420, outputTokens: 180, estimatedCost: 0, savedEstimatedCost: 0, costCurrency: 'USD', responseTimeMs: 21, generatedAt: now },
         staleBriefing: false, disclaimer: 'AI 브리핑은 투자 권유가 아닌 정보 정리 결과입니다.',
       })
     } else if (path === '/api/v1/admin/data/sync') {
@@ -496,8 +513,11 @@ async function mockApi(page: Page) {
 
 async function login(page: Page, role: 'ADMIN' | 'USER' = 'ADMIN') {
   requestedAuthRoles.set(page, role)
+  await page.addInitScript((showAdminDetails) => {
+    localStorage.setItem('finwatch.ui.admin-details', showAdminDetails ? 'true' : 'false')
+  }, role === 'ADMIN')
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '투자 정보 대시보드 로그인' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'FinWatch 시작하기' })).toBeVisible()
   await page.getByRole('button', { name: '카카오 로그인', exact: true }).click()
   await expect(page.getByRole('heading', { name: '개인 투자자용 메인 대시보드' })).toBeVisible()
 }
@@ -688,12 +708,13 @@ test('daily change briefing exposes viewpoint conflicts, evidence and audit meta
 
   await page.getByRole('button', { name: '오늘의 변화 생성' }).click()
   await expect(page.locator('.daily-briefing-card')).toContainText('상승 흐름과 과열 주의 신호')
-  await expect(page.locator('.daily-briefing-card')).toContainText('관점 충돌')
+  await expect(page.locator('.daily-briefing-card')).toContainText('지표 혼조')
   await expect(page.locator('.viewpoint-matrix')).toContainText('주의')
+  await expect(page.locator('.viewpoint-matrix')).toContainText('뉴스')
   await page.getByText('검증 근거 3개 보기').click()
   await expect(page.locator('.briefing-evidence')).toContainText('T1 · 기술')
   await page.getByText('AI 감사 정보').click()
-  await expect(page.locator('.briefing-audit')).toContainText('daily-change-briefing-v1')
+  await expect(page.locator('.briefing-audit')).toContainText('daily-change-briefing-v2-news-fixed')
 })
 
 test('global search selects a canonical market and restores every detail context', async ({ page }) => {
@@ -746,29 +767,25 @@ test('official disclosure can fetch its source and render a Gemini summary', asy
   await expect(panel.locator('.cache-badge')).toHaveText('CACHE MISS')
 })
 
-test('metadata-only news with an http source can fetch the original and render a Gemini summary', async ({ page }) => {
+test('clicking a lower news item immediately renders its Gemini summary on the right', async ({ page }) => {
   await login(page)
   await page.goto('/stocks/KRX/000660/news')
 
   const newsPanel = page.locator('.ai-news-card')
-  await expect(newsPanel.getByRole('heading', { name: 'AI 뉴스 분석' })).toBeVisible()
-  await expect(newsPanel.getByText(metadataOnlyNews.title)).toBeVisible()
+  await expect(newsPanel.getByRole('heading', { name: 'AI 뉴스 요약' })).toBeVisible()
+  await expect(newsPanel.getByText(lowerNews.title)).toBeVisible()
   await expect(newsPanel.getByText(/원문 링크 · 요청 시 원문 수집/).first()).toBeVisible()
-  const sourceLink = newsPanel.getByRole('link', { name: /원문 보기/ }).first()
-  await expect(sourceLink).toHaveAttribute('href', metadataOnlyNews.url)
 
   const requestPromise = page.waitForRequest((request) => (
     new URL(request.url()).pathname === '/api/v1/ai/news-summaries'
       && request.method() === 'POST'
   ))
-  const summarizeButton = newsPanel.getByRole('button', { name: 'Gemini 뉴스 요약' })
-  await expect(summarizeButton).toBeEnabled()
-  await summarizeButton.click()
+  await newsPanel.getByRole('button', { name: new RegExp(lowerNews.title) }).click()
   const summaryRequest = await requestPromise
-  expect(summaryRequest.postDataJSON()).toEqual({ newsId: metadataOnlyNews.id })
+  expect(summaryRequest.postDataJSON()).toEqual({ newsId: lowerNews.id })
 
-  await expect(newsPanel.locator('.summary-result')).toContainText('원문을 요청 시 수집해 HBM 생산 확대')
-  await expect(newsPanel.getByRole('link', { name: /분석 원문 보기/ })).toHaveAttribute('href', metadataOnlyNews.url)
+  await expect(newsPanel.locator('.summary-result')).toContainText('차세대 HBM 고객 인증 단계')
+  await expect(newsPanel.locator('.summary-result').getByRole('link', { name: /원문 보기/ })).toHaveAttribute('href', lowerNews.url)
   await expect(newsPanel.locator('.cache-badge')).toHaveText(/CACHE MISS/)
 })
 
@@ -785,7 +802,7 @@ test('route shell preserves active navigation and collapsed sidebar preference',
 
   await page.getByRole('link', { name: '뉴스', exact: true }).first().click()
   await expect(page).toHaveURL(/\/news$/)
-  await expect(page.getByRole('heading', { name: 'AI 뉴스 분석' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'AI 뉴스 요약' })).toBeVisible()
   await expect(page.getByRole('link', { name: '뉴스', exact: true }).first()).toHaveAttribute('aria-current', 'page')
 
   await page.getByRole('link', { name: '공시', exact: true }).first().click()
@@ -852,7 +869,7 @@ test('legacy hash URLs and direct routes resolve to their canonical screens', as
   await login(page)
   await page.goto('/#news')
   await expect(page).toHaveURL(/\/news$/)
-  await expect(page.getByRole('heading', { name: 'AI 뉴스 분석' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'AI 뉴스 요약' })).toBeVisible()
 
   await page.goto('/not-a-finwatch-route')
   await expect(page.getByRole('heading', { name: '요청한 화면을 찾을 수 없습니다.' })).toBeVisible()

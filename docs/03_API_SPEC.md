@@ -574,7 +574,7 @@ GET /content-feed?kind=ALL&market=KRX&symbol=005930&period=1M&analysis=AI_ALLOWE
 
 ## 8.2 근거 기반 일일 변화 브리핑 — 구현됨
 
-- `POST /ai/daily-change-briefings`: 최신·직전 완성 일봉과 비교 구간 뉴스·공시를 서버가 재조회하여 브리핑을 생성하거나 캐시에서 반환한다.
+- `POST /ai/daily-change-briefings`: 최신·직전 완성 일봉과 비교 구간 뉴스·공시를 서버가 재조회하여 브리핑을 생성하거나 캐시에서 반환한다. 뉴스·공시 요약은 각 기능의 활성 프롬프트 버전을 사용한다.
 - `GET /stocks/{symbol}/daily-change-briefings/latest`: 저장된 최신 브리핑을 모델 호출 없이 조회한다.
 
 생성 요청은 `symbol`과 선택적인 `promptVersion`만 받는다. 응답은 거래일·baseline 상태, 정량 변화, 관점 매트릭스, 일치·충돌, `T/N/D/Q` evidence와 모델·버전·토큰·비용·캐시 감사 정보를 포함한다.

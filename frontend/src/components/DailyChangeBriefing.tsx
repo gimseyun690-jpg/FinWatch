@@ -28,7 +28,13 @@ export function DailyChangeBriefing({ market, symbol, onUsageRecorded }: Props) 
     setBriefing(null); setError(''); setInitialLoading(true); setLoading(false)
     void getLatestDailyBriefing(market, symbol, controller.signal)
       .then((value) => {
-        if (!controller.signal.aborted && currentStockKeyRef.current === stockKey) setBriefing(value)
+        if (controller.signal.aborted || currentStockKeyRef.current !== stockKey) return
+        if (value?.staleBriefing) {
+          setBriefing(null)
+          setError('브리핑 기준이 변경되었습니다. 현재 근거로 다시 생성해 주세요.')
+          return
+        }
+        setBriefing(value)
       })
       .catch((caught: unknown) => {
         if (controller.signal.aborted || currentStockKeyRef.current !== stockKey) return

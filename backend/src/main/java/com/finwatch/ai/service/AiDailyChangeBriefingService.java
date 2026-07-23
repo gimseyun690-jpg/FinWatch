@@ -62,7 +62,7 @@ public class AiDailyChangeBriefingService {
             DailyBriefingResponseValidator validator, AiDailyChangeBriefingRepository repository,
             AiUsageLogRepository usageLogs, AiUsageLogWriter usageLogWriter, DailyBriefingCacheStore cache,
             AiCostCalculator costs, AiSingleFlight singleFlight, AiRequestGuard requestGuard, ObjectMapper objectMapper,
-            @Value("${app.ai.daily-briefing-prompt-version:daily-change-briefing-v1}") String activePromptVersion,
+            @Value("${app.ai.daily-briefing-prompt-version:daily-change-briefing-v2-news-fixed}") String activePromptVersion,
             @Value("${app.ai.daily-briefing-allowed-prompt-versions:}") String allowedPromptVersions,
             @Value("${app.ai.daily-briefing-cache-ttl:24h}") Duration cacheTtl) {
         this.snapshots = snapshots; this.provider = provider; this.validator = validator; this.repository = repository;

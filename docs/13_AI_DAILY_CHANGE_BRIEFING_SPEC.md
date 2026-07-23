@@ -1,13 +1,13 @@
 # FinWatch 근거 기반 일일 변화 브리핑 명세
 
-상태: v1.0 MVP 구현
-기준일: 2026-07-14
+상태: v2.0 구현
+기준일: 2026-07-24
 기능 유형: `DAILY_CHANGE_BRIEFING`
-활성 프롬프트: `daily-change-briefing-v1`
+활성 프롬프트: `daily-change-briefing-v2-news-fixed`
 
 ## 1. 제품 목적과 차별화
 
-일일 변화 브리핑은 종목을 추천하거나 목표주가를 만드는 기능이 아니다. 사용자가 전일 대비 무엇이 변했고 기술지표·뉴스·공시가 어디에서 일치하거나 충돌하는지 검증 가능한 근거로 확인하도록 돕는다.
+일일 변화 브리핑은 종목을 추천하거나 목표주가를 만드는 기능이 아니다. 사용자가 전일 대비 무엇이 변했고 기술지표·뉴스·공시가 어디에서 일치하거나 충돌하는지 검증 가능한 근거로 확인하도록 돕는다. 종목 탐색에서 선택 즉시 생성한 검증된 뉴스 분석은 브리핑의 `N` 근거로 재사용할 수 있다.
 
 ```text
 기존 정보 서비스
@@ -87,7 +87,7 @@ symbol 요청
 → 최신·직전 완성 일봉과 기술지표 스냅샷 조회
 → 정량 delta와 변화 이벤트 계산
 → 비교 구간의 허용된 뉴스·공시 분석 조회
-→ T/N/D evidence 생성
+→ T/N/D/Q evidence 생성
 → 관점 매트릭스 서버 결정
 → inputHash·cacheKey 계산
 → Redis/DB 조회
@@ -130,7 +130,7 @@ Gemini 장애 시 기존 차트, 기술지표, 뉴스와 공시 목록은 계속
 
 ## 6. 뉴스·공시 재사용 정책
 
-브리핑은 원문을 다시 Gemini에 보내지 않고 기존 `NEWS_SUMMARY`의 검증된 구조화 분석과 근거 segment를 재사용한다.
+브리핑은 원문을 다시 Gemini에 보내지 않고 기존 `NEWS_SUMMARY`의 검증된 구조화 분석과 근거 segment를 재사용한다. 새 분석이 필요하면 하드코딩된 과거 버전이 아니라 현재 활성 뉴스 프롬프트 버전을 사용한다.
 
 - `aiAnalysisAllowed=true`이고 성공 분석이 있는 콘텐츠만 의미 근거로 사용한다.
 - `METADATA_ONLY`는 제목·출처·게시 시각만 표시할 수 있고 의미 판단 근거로 사용하지 않는다.
@@ -246,7 +246,7 @@ headline과 changeSummary도 최소 하나의 서버 evidence와 연결되도록
 ```json
 {
   "symbol": "000660",
-  "promptVersion": "daily-change-briefing-v1"
+  "promptVersion": "daily-change-briefing-v2-news-fixed"
 }
 ```
 
@@ -277,8 +277,8 @@ headline과 changeSummary도 최소 하나의 서버 evidence와 연결되도록
     "disclosureSources": ["OPENDART"],
     "latestRecordedAt": "2026-07-14T06:00:00Z",
     "calculationVersion": "technical-v2-wilder",
-    "briefingInputVersion": "daily-briefing-input-v1",
-    "promptVersion": "daily-change-briefing-v1",
+    "briefingInputVersion": "daily-briefing-input-v2-news-fixed",
+    "promptVersion": "daily-change-briefing-v2-news-fixed",
     "modelName": "configured-model",
     "evidenceCount": 9,
     "excludedContentCount": 1,
@@ -432,7 +432,7 @@ API 키, 전체 프롬프트, 원문 전문과 내부 서버 경로는 표시하
 - 평균 evidence 수·제외 콘텐츠 수
 - 고비용 브리핑 목록
 
-브리핑은 하위 뉴스 분석을 재사용하므로 하위 분석의 과거 비용을 현재 브리핑 비용에 중복 합산하지 않는다. 이번 요청에서 새로 발생한 Gemini 호출만 실제 비용으로 기록한다.
+브리핑은 하위 뉴스·공시 분석을 재사용하므로 하위 분석의 과거 비용을 현재 브리핑 비용에 중복 합산하지 않는다. 이번 요청에서 새로 발생한 Gemini 호출만 실제 비용으로 기록한다.
 
 ## 18. 구현 순서
 
@@ -440,7 +440,7 @@ API 키, 전체 프롬프트, 원문 전문과 내부 서버 경로는 표시하
 2. 비교 구간 뉴스·공시 분석 조회와 중복 제거
 3. T/N/D/Q evidence와 관점 매트릭스 정책
 4. canonical inputHash와 DB migration
-5. Mock·Gemini `daily-change-briefing-v1` 구조화 계약
+5. Mock·Gemini `daily-change-briefing-v2-news-fixed` 구조화 계약
 6. 근거·수치·인과·금지 출력 검증
 7. Redis/DB cache, single-flight와 사용량 로그
 8. 생성·최신 조회 API

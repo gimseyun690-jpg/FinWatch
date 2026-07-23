@@ -130,18 +130,20 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
     }
   }, [market, newsRequestVersion, stockKey, symbol, watchlistMode])
 
-  function selectNews(newsId: number) {
+  function selectNews(article: NewsArticle) {
     summaryRequestRef.current?.abort()
     summaryRequestRef.current = null
     setSummarizing(false)
-    setSelectedId(newsId)
+    setSelectedId(article.id)
     setSummary(null)
     setSummaryError('')
+    void requestSummary(article)
   }
 
-  async function requestSummary() {
-    if (selectedId == null || selectedArticle == null) return
-    if (!selectedArticle.aiAnalysisAllowed && safeExternalUrl(selectedArticle.url) == null) {
+  async function requestSummary(articleOverride?: NewsArticle) {
+    const requestedArticle = articleOverride ?? selectedArticle
+    if (requestedArticle == null) return
+    if (!requestedArticle.aiAnalysisAllowed && safeExternalUrl(requestedArticle.url) == null) {
       setSummaryError('안전한 http(s) 원문 주소가 없어 원문 수집과 AI 요약을 시작할 수 없습니다.')
       return
     }
@@ -150,7 +152,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
     const controller = new AbortController()
     summaryRequestRef.current = controller
     const requestedStockKey = stockKey
-    const requestedNewsId = selectedId
+    const requestedNewsId = requestedArticle.id
     setSummarizing(true)
     setSummaryError('')
     try {
@@ -164,10 +166,11 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
     } catch (caught: unknown) {
       if (controller.signal.aborted || currentStockKeyRef.current !== requestedStockKey) return
       const detail = caught instanceof Error ? ` ${caught.message}` : ''
+      const keepsExistingSummary = articleOverride == null && summary != null
       setSummaryError(
-        summary == null
-          ? `원문 수집 또는 AI 요약에 실패했습니다. 원문 사이트의 접근 제한이나 본문 부족 여부를 확인해 주세요.${detail}`
-          : `새 원문 수집·AI 요약 요청에 실패해 마지막 성공 결과를 유지하고 있습니다.${detail}`,
+        keepsExistingSummary
+          ? `새 원문 수집·AI 요약 요청에 실패해 마지막 성공 결과를 유지하고 있습니다.${detail}`
+          : `원문 수집 또는 AI 요약에 실패했습니다. 원문 사이트의 접근 제한이나 본문 부족 여부를 확인해 주세요.${detail}`,
       )
     } finally {
       if (isCurrentRequest(controller, summaryRequestRef.current)) {
@@ -211,7 +214,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                 <button
                   type="button"
                   className={isSelected ? 'selected' : ''}
-                  onClick={() => selectNews(article.id)}
+                  onClick={() => selectNews(article)}
                 >
                   <strong>
                     {watchlistMode && articleStockName && <span style={{ marginRight: '6px', color: '#29d4c9', fontWeight: 'bold' }}>{articleStockName}</span>}{article.title}
@@ -245,7 +248,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                         {summaryError && <p className="request-error" role="alert">{summaryError}</p>}
                         <button
                           type="button"
-                          onClick={requestSummary}
+                          onClick={() => void requestSummary()}
                           disabled={selectedId == null || summarizing || !summaryRequestAvailable}
                         >
                           {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'AI 뉴스 요약' : '원문 주소 확인 필요'}
@@ -257,7 +260,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                         article={selectedArticle}
                         errorMessage={summaryError}
                         summarizing={summarizing}
-                        onRetry={requestSummary}
+                        onRetry={() => void requestSummary()}
                         showAdminDetails={showAdminDetails}
                       />
                     )}
@@ -291,7 +294,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                 {summaryError && <p className="request-error" role="alert">{summaryError}</p>}
                 <button
                   type="button"
-                  onClick={requestSummary}
+                  onClick={() => void requestSummary()}
                   disabled={selectedId == null || summarizing || !summaryRequestAvailable}
                 >
                   {summarizing ? '원문 수집·분석 중…' : selectedArticle == null ? '뉴스 없음' : summaryRequestAvailable ? 'AI 뉴스 요약' : '원문 주소 확인 필요'}
@@ -303,7 +306,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
                 article={selectedArticle}
                 errorMessage={summaryError}
                 summarizing={summarizing}
-                onRetry={requestSummary}
+                onRetry={() => void requestSummary()}
                 showAdminDetails={showAdminDetails}
               />
             )}

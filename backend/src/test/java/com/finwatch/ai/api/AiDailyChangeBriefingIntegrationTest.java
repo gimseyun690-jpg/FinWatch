@@ -1,6 +1,7 @@
 package com.finwatch.ai.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -32,7 +33,7 @@ class AiDailyChangeBriefingIntegrationTest {
     @Test
     void createsEvidenceBasedBriefingThenUsesCacheAndLatestEndpoint() throws Exception {
         String body = """
-                {"market":"KRX","symbol":"000660","promptVersion":"daily-change-briefing-v1"}
+                {"market":"KRX","symbol":"000660","promptVersion":"daily-change-briefing-v2-news-fixed"}
                 """;
         mockMvc.perform(post("/api/v1/ai/daily-change-briefings").with(jwt())
                         .contentType(MediaType.APPLICATION_JSON).content(body))
@@ -41,6 +42,9 @@ class AiDailyChangeBriefingIntegrationTest {
                 .andExpect(jsonPath("$.data.baselineStatus").value("AVAILABLE"))
                 .andExpect(jsonPath("$.data.evidence[0].id").value("T1"))
                 .andExpect(jsonPath("$.data.viewpoints.length()").value(7))
+                .andExpect(jsonPath("$.data.viewpoints[*].viewpoint", hasItem("NEWS")))
+                .andExpect(jsonPath("$.data.evidence[*].id", hasItem("N1")))
+                .andExpect(jsonPath("$.data.audit.briefingInputVersion").value("daily-briefing-input-v2-news-fixed"))
                 .andExpect(jsonPath("$.data.audit.cacheHit").value(false))
                 .andExpect(jsonPath("$.data.audit.inputTokens").isNumber())
                 .andExpect(jsonPath("$.data.dataLimitations[0]").value(org.hamcrest.Matchers.containsString("DEMO")));

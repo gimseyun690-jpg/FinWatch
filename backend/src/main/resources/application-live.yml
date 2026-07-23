@@ -19,7 +19,7 @@ app:
     provider: gemini
     prompt-version: ${AI_PROMPT_VERSION:news-analysis-live-v1}
     technical-prompt-version: ${AI_TECHNICAL_PROMPT_VERSION:technical-explanation-live-v1}
-    daily-briefing-prompt-version: ${AI_DAILY_BRIEFING_PROMPT_VERSION:daily-change-briefing-live-v1}
+    daily-briefing-prompt-version: ${AI_DAILY_BRIEFING_PROMPT_VERSION:daily-change-briefing-live-v2-news-fixed}
     gemini:
       api-key: ${GEMINI_API_KEY}
   news-content:

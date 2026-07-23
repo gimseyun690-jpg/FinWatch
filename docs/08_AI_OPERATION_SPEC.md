@@ -549,4 +549,4 @@ estimatedCost = inputCost + outputCost
 
 ## 14. DAILY_CHANGE_BRIEFING 확장 계약
 
-`DAILY_CHANGE_BRIEFING`은 구현 상태다. 서버가 계산한 직전·최신 완성 일봉 delta와 이미 검증된 뉴스·공시 분석만 Gemini가 설명한다. 기술·뉴스·공시를 하나의 매수·매도 점수로 합치거나 근거 없는 인과관계, 목표주가와 직접 매매 명령을 생성해서는 안 된다. 상세 기준은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`다.
+`DAILY_CHANGE_BRIEFING`은 구현 상태다. 서버가 계산한 직전·최신 완성 일봉 delta와 이미 검증된 뉴스·공시 분석만 Gemini가 설명한다. 브리핑이 온디맨드로 뉴스·공시 요약을 보완할 때는 하드코딩된 과거 버전 대신 각 요약 기능의 활성 프롬프트 버전을 사용한다. 기술·뉴스·공시를 하나의 매수·매도 점수로 합치거나 근거 없는 인과관계, 목표주가와 직접 매매 명령을 생성해서는 안 된다. 상세 기준은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`다.
