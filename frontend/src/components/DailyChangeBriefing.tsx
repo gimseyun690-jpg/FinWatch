@@ -97,21 +97,9 @@ export function DailyChangeBriefing({ market, symbol, onUsageRecorded }: Props) 
         <section className="briefing-headline">
           <div className="briefing-headline-meta">
             <p className="eyebrow">AI 종합 판단</p>
-            <EvidenceChips
-              ids={briefing.headlineEvidenceIds}
-              availableEvidenceIds={availableEvidenceIds}
-              onSelect={revealEvidence}
-              label="결론 근거"
-            />
           </div>
           <h3>{briefing.headline}</h3>
           <p>{briefing.changeSummary}</p>
-          <EvidenceChips
-            ids={briefing.changeSummaryEvidenceIds}
-            availableEvidenceIds={availableEvidenceIds}
-            onSelect={revealEvidence}
-            label="변화 요약 근거"
-          />
         </section>
 
         <div className="viewpoint-matrix">

@@ -708,6 +708,9 @@ test('daily change briefing exposes viewpoint conflicts, evidence and audit meta
 
   await page.getByRole('button', { name: '오늘의 변화 생성' }).click()
   await expect(page.locator('.daily-briefing-card')).toContainText('상승 흐름과 과열 주의 신호')
+  const headline = page.locator('.briefing-headline')
+  await expect(headline.locator('[aria-label="결론 근거"]')).toHaveCount(0)
+  await expect(headline.locator('[aria-label="변화 요약 근거"]')).toHaveCount(0)
   await expect(page.locator('.daily-briefing-card')).toContainText('지표 혼조')
   await expect(page.locator('.viewpoint-matrix')).toContainText('주의')
   await expect(page.locator('.viewpoint-matrix')).toContainText('뉴스')
