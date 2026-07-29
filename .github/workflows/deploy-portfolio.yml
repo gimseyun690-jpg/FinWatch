@@ -120,7 +120,15 @@ jobs:
               exit 1
             }
             critical="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageTag=${{ steps.release.outputs.sha }} --query 'imageScanFindings.findingSeverityCounts.CRITICAL || `0`' --output text)"
-            test "$critical" = 0
+            if [[ "$critical" != 0 ]]; then
+              echo "ECR found $critical critical vulnerabilities in $repository:${{ steps.release.outputs.sha }}." >&2
+              aws ecr describe-image-scan-findings \
+                --repository-name "$repository" \
+                --image-id imageTag=${{ steps.release.outputs.sha }} \
+                --query 'imageScanFindings.findings[?severity==`CRITICAL`].[name,uri]' \
+                --output table >&2
+              exit 1
+            fi
           done
 
       - name: Publish deployment bundle
