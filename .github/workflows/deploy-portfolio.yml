@@ -93,29 +93,38 @@ jobs:
       - name: Require ECR image scan without critical findings
         shell: bash
         run: |
+          registry="$(cut -d/ -f1 <<<"${{ steps.release.outputs.backend_image }}")"
+          registry_token="$(aws ecr get-authorization-token --query authorizationData[0].authorizationToken --output text)"
           for repository in "$BACKEND_REPOSITORY" "$FRONTEND_REPOSITORY"; do
+            index_manifest="$(curl --fail --silent --show-error \
+              --header "Authorization: Basic $registry_token" \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+              "https://$registry/v2/$repository/manifests/${{ steps.release.outputs.sha }}")"
+            image_digest="$(jq -er \
+              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")][0].digest' \
+              <<<"$index_manifest")"
             status=''
             description=''
             for attempt in $(seq 1 30); do
               scan_status="$(aws ecr describe-image-scan-findings \
                 --repository-name "$repository" \
-                --image-id imageTag=${{ steps.release.outputs.sha }} \
+                --image-id imageDigest="$image_digest" \
                 --query '[imageScanStatus.status,imageScanStatus.description]' \
                 --output text 2>&1 || true)"
               status="$(awk '{print $1}' <<<"$scan_status")"
               description="$(cut -f2- <<<"$scan_status")"
               [[ "$status" == COMPLETE ]] && break
               if [[ "$status" == FAILED || "$status" == UNSUPPORTED_IMAGE || "$status" == LIMIT_EXCEEDED || "$status" == FINDINGS_UNAVAILABLE ]]; then
-                echo "ECR scan failed for $repository:${{ steps.release.outputs.sha }}: $status · $description" >&2
+                echo "ECR scan failed for $repository ($image_digest): $status · $description" >&2
                 exit 1
               fi
               sleep 10
             done
             [[ "$status" == COMPLETE ]] || {
-              echo "ECR scan did not complete for $repository:${{ steps.release.outputs.sha }}: $status · $description" >&2
+              echo "ECR scan did not complete for $repository ($image_digest): $status · $description" >&2
               exit 1
             }
-            critical="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageTag=${{ steps.release.outputs.sha }} --query 'imageScanFindings.findingSeverityCounts.CRITICAL || `0`' --output text)"
+            critical="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageDigest="$image_digest" --query 'imageScanFindings.findingSeverityCounts.CRITICAL || `0`' --output text)"
             test "$critical" = 0
           done
 
