@@ -48,7 +48,8 @@ combined="$(jq -cn \
   --argjson redis "$redis_secret" \
   --argjson providers "$provider_secret" \
   --arg appVersion "$APP_VERSION" '
-    $defaults * $parameters
+    {KIS_ENV: "prod", KIS_DOMESTIC_MARKET_CODE: "UN"}
+    * $defaults * $parameters
     * {DB_USERNAME: $database.username, DB_PASSWORD: $database.password}
     * $jwt * $redis * $providers
     * {APP_VERSION: $appVersion}
