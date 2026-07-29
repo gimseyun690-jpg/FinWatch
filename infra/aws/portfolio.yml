@@ -570,7 +570,7 @@ Resources:
       Name: !Sub '/${ProjectName}/${EnvironmentName}/RUNTIME_DEFAULTS'
       Type: String
       Value: !Sub >-
-        {"SPRING_PROFILES_ACTIVE":"portfolio","APP_VERSION":"bootstrap","DATA_MODE":"LIVE","AI_PROVIDER":"gemini","DEMO_USERS_ENABLED":"false","SESSION_COOKIE_SECURE":"true","REDIS_HOST":"redis","REDIS_PORT":"6379","AWS_REGION":"${AWS::Region}","PUBLIC_HOST":"${PublicHost}","BACKEND_LOG_GROUP":"${BackendLogGroup}","NGINX_LOG_GROUP":"${NginxLogGroup}","REDIS_LOG_GROUP":"${RedisLogGroup}","REDIS_IMAGE":"${RedisImage}","CERTBOT_IMAGE":"${CertbotImage}"}
+        {"SPRING_PROFILES_ACTIVE":"portfolio","APP_VERSION":"bootstrap","DATA_MODE":"LIVE","AI_PROVIDER":"gemini","DEMO_USERS_ENABLED":"false","SESSION_COOKIE_SECURE":"true","KIS_ENV":"prod","KIS_DOMESTIC_MARKET_CODE":"UN","REDIS_HOST":"redis","REDIS_PORT":"6379","AWS_REGION":"${AWS::Region}","PUBLIC_HOST":"${PublicHost}","BACKEND_LOG_GROUP":"${BackendLogGroup}","NGINX_LOG_GROUP":"${NginxLogGroup}","REDIS_LOG_GROUP":"${RedisLogGroup}","REDIS_IMAGE":"${RedisImage}","CERTBOT_IMAGE":"${CertbotImage}"}
 
   AlarmTopic:
     Type: AWS::SNS::Topic

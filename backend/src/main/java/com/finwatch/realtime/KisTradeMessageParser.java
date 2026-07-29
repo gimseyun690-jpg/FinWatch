@@ -13,7 +13,6 @@ import java.util.List;
 
 public final class KisTradeMessageParser {
 
-    private static final String TRADE_TR_ID = "H0STCNT0";
     private static final int FIELD_COUNT = 46;
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter DATE = DateTimeFormatter.BASIC_ISO_DATE;
@@ -27,16 +26,21 @@ public final class KisTradeMessageParser {
             return List.of();
         }
         String[] envelope = message.split("\\|", 4);
-        if (envelope.length != 4 || !TRADE_TR_ID.equals(envelope[1])) {
+        if (envelope.length != 4) {
             return List.of();
         }
+        var domesticMarket = com.finwatch.data.provider.KisDomesticMarket.fromRealtimeTrId(envelope[1]);
+        if (domesticMarket == null) {
+            return List.of();
+        }
+        int fieldCount = FIELD_COUNT;
         int recordCount = integer(envelope[2], 1);
         String[] values = envelope[3].split("\\^", -1);
-        int availableRecords = values.length / FIELD_COUNT;
+        int availableRecords = values.length / fieldCount;
         int count = Math.min(Math.max(recordCount, 1), availableRecords);
         List<LiveQuote> quotes = new ArrayList<>(count);
         for (int record = 0; record < count; record++) {
-            int offset = record * FIELD_COUNT;
+            int offset = record * fieldCount;
             String symbol = values[offset].trim();
             BigDecimal price = decimal(values[offset + 2]);
             if (symbol.isBlank() || price.signum() <= 0) {
@@ -54,7 +58,7 @@ public final class KisTradeMessageParser {
                     decimal(values[offset + 13]),
                     "KRW",
                     timestamp(values[offset + 33], values[offset + 1]),
-                    "KIS_WS",
+                    domesticMarket.websocketSource(),
                     "LIVE"));
         }
         return List.copyOf(quotes);

@@ -464,6 +464,16 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 자동 검증 상태(2026-07-15): `/api/v1/content-feed`의 인증, filter, 기간, page/size, sort whitelist, 안정적 tie-breaker, AI 상태, 기존 종목 뉴스 API 회귀를 자동화했다. H2 기반 전체 백엔드 132개 테스트는 `AI_PROVIDER=mock`에서 통과했다. 프런트는 production build·lint, 기존 기능 포함 Playwright 13개와 production PWA offline 1개를 자동화했다. PostgreSQL 17/Redis 8 컨테이너 테스트에는 V18 인덱스 존재 여부와 100,000건 warm p95 300ms 목표 검증을 추가했으며 Docker 엔진이 가능한 환경에서 실행한다.
 
+### AC-16 KRX+NXT 통합 국내 시세
+
+1. 국내 현재가와 일봉 REST 요청은 기본값 `FID_COND_MRKT_DIV_CODE=UN`을 사용한다.
+2. 국내 WebSocket은 기본값 `H0UNCNT0`을 구독하며 KRX `H0STCNT0`, NXT `H0NXCNT0`, 통합 체결 메시지를 모두 정상 파싱한다.
+3. KRX·NXT 체결은 동일 종목 키 `KRX:{symbol}`로 합쳐지고 관심종목·보유종목이 거래소별로 중복 생성되지 않는다.
+4. UI는 통합 시세를 `KIS · KRX+NXT 통합`으로 표시하며 실시간 중에는 `KRX+NXT TICK`을 표시한다.
+5. 운영 환경은 `KIS_ENV=prod`, `KIS_DOMESTIC_MARKET_CODE=UN`을 명시하고 공급자 자격증명과 이용 권한을 배포 전 확인한다.
+
+판정: REST 시장 코드, WebSocket TR별 파서, 내부 종목 키, 출처 표시와 운영 환경 기본값을 자동 검증한다. 실제 프리·애프터마켓 체결 smoke는 NXT 영업시간과 실전 KIS 자격증명이 있는 배포 환경에서 수행한다.
+
 ## 14. 결함 심각도와 인수 판정
 
 | 등급 | 예 | 인수 처리 |
@@ -475,7 +485,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 MVP 합격 조건:
 
-1. AC-00~AC-15 중 MVP scope에 포함된 모든 시나리오가 통과한다.
+1. AC-00~AC-16 중 MVP scope에 포함된 모든 시나리오가 통과한다.
 2. Blocker·Critical·미승인 Major가 0건이다.
 3. PR/release 품질 게이트와 운영 체크리스트가 통과한다.
 4. 모든 배포 전 게이트 TBD가 값·책임자·검증 증적을 갖는다.

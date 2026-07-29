@@ -21,6 +21,7 @@ import type {
 import type { IntradayCandle, LiveQuote } from '../types/realtime'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { InteractiveStockChart } from './InteractiveStockChart'
+import { isUnifiedDomesticSource, marketSourceLabel } from '../utils/marketSource'
 
 type DetailState = {
   stock: CanonicalStockDetail
@@ -320,6 +321,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
         ? 'DELAYED'
         : 'REFERENCE'
   const dataSource = effectiveLiveQuote?.source ?? stock.source ?? catalogStock.historySource ?? detail.source
+  const dataSourceLabel = marketSourceLabel(dataSource)
   const chartFreshness: DataStatus = interval === '1m' && hasIntradayCandles
     ? 'LIVE'
     : priceSource.toUpperCase() === 'DEMO'
@@ -330,13 +332,13 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
     <section className="stock-detail" id="stock-detail" aria-labelledby="stock-detail-title">
       <div className="detail-title-row">
         <div>
-          {showAdminDetails && <p className="eyebrow">STOCK DETAIL · {dataSource}</p>}
+          {showAdminDetails && <p className="eyebrow">STOCK DETAIL · {dataSourceLabel}</p>}
           <h2 id="stock-detail-title">{stock.name} {headingLabel ?? (technical == null ? '실제 시세 차트' : '기술적 분석')}</h2>
           <p className="stock-trust-meta">
             <span>{stock.symbol}</span>
             <span>{stock.market}</span>
             <span>{stock.currency}</span>
-            {showAdminDetails && <span>{dataSource}</span>}
+            {showAdminDetails && <span>{dataSourceLabel}</span>}
             <time dateTime={stock.asOf}>기준 {new Date(stock.asOf).toLocaleString('ko-KR')}</time>
             {showAdminDetails && <DataStatusBadge status={dataStatus} />}
           </p>
@@ -354,7 +356,14 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
         <article className="card price-chart-card">
           <div className="quote-row">
             <div>
-              <span>현재가</span>
+              <span>
+                현재가
+                {streaming && (
+                  <em className="live-tick-badge">
+                    <i />{isUnifiedDomesticSource(dataSource) ? 'KRX+NXT TICK' : 'TICK'}
+                  </em>
+                )}
+              </span>
               <strong>{formatMoney(stock.price, stock.currency)}</strong>
             </div>
             <div className={changeClass}>

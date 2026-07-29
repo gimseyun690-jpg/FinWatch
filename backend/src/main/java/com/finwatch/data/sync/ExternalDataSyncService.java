@@ -42,6 +42,7 @@ public class ExternalDataSyncService {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final ZoneId NEW_YORK = ZoneId.of("America/New_York");
     private static final LocalTime KRX_CLOSE = LocalTime.of(15, 30);
+    private static final LocalTime NXT_CLOSE = LocalTime.of(20, 0);
     private static final LocalTime US_CLOSE = LocalTime.of(16, 0);
     private static final int MARKET_LOOKBACK_DAYS = 5 * 366;
     private static final int NEWS_LOOKBACK_DAYS = 30;
@@ -173,9 +174,18 @@ public class ExternalDataSyncService {
             LocalDate today = LocalDate.now(SEOUL);
             var series = kisMarketDataClient
                     .getDomesticDailyBars(stock.getSymbol(), today.minusDays(MARKET_LOOKBACK_DAYS), today);
-            return persistBars(stock, series.items(), "KIS", SEOUL, KRX_CLOSE);
+            var domesticMarket = kisMarketDataClient.domesticMarket();
+            return persistBars(
+                    stock,
+                    series.items(),
+                    domesticMarket == null ? "KIS" : domesticMarket.persistenceSource(),
+                    SEOUL,
+                    domesticMarket != null && domesticMarket.includesNxt() ? NXT_CLOSE : KRX_CLOSE);
         } catch (ProviderException exception) {
-            return ProviderSyncResult.fallback("KIS", fallbackMessage(exception));
+            var domesticMarket = kisMarketDataClient.domesticMarket();
+            return ProviderSyncResult.fallback(
+                    domesticMarket == null ? "KIS" : domesticMarket.persistenceSource(),
+                    fallbackMessage(exception));
         }
     }
 

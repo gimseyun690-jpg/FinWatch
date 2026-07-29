@@ -8,6 +8,7 @@ import type { WatchlistItem } from '../types/watchlist'
 import type { LiveQuote } from '../types/realtime'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
+import { isUnifiedDomesticSource, marketSourceLabel } from '../utils/marketSource'
 
 type Props = {
   selectedStock: StockRef
@@ -267,7 +268,13 @@ export function WatchlistPanel({
             return (
               <article className={`card stock-card ${stockKey(selectedStock) === key ? 'selected' : ''} ${streaming ? 'live' : ''}`} key={stock.id}>
                 <button className="stock-card-main" type="button" onClick={() => onSelect({ market: stock.market, symbol: stock.symbol })}>
-                  <span className="card-heading"><span>{stock.name}</span><small>{stock.market}</small></span>
+                  <span className="card-heading">
+                    <span>{stock.name}</span>
+                    <small>
+                      {stock.market}
+                      {stock.market === 'KRX' && isUnifiedDomesticSource(quoteSource) ? ' · NXT 통합' : ''}
+                    </small>
+                  </span>
                   <strong>{price == null ? '데이터 준비 중' : formatMoney(price, stock.currency)}</strong>
                   {changeRate == null ? (
                     <span className="watchlist-data-state">현재가 수집 대기</span>
@@ -276,12 +283,15 @@ export function WatchlistPanel({
                       {changeRate >= 0 ? '+' : ''}{changeRate.toFixed(2)}%
                     </span>
                   )}
-                  {showAdminDetails && (
-                    <span className="quote-trust-row">
+                  <span className="quote-trust-row">
+                    <small className="market-venue-label">{marketSourceLabel(quoteSource)}</small>
+                    {showAdminDetails && (
+                      <>
                       <DataStatusBadge status={dataStatus} detail={quoteSource} />
                       {quoteAsOf && <small>기준 {new Date(quoteAsOf).toLocaleTimeString('ko-KR')}</small>}
-                    </span>
-                  )}
+                      </>
+                    )}
+                  </span>
                 </button>
                 <button
                   className={`remove-watchlist${confirmRemoveKey === key ? ' confirm' : ''}`}

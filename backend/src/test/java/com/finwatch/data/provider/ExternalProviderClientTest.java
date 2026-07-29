@@ -37,6 +37,7 @@ class ExternalProviderClientTest {
         server.createContext("/uapi/domestic-stock/v1/quotations/inquire-price", exchange -> {
             assertThat(exchange.getRequestHeaders().getFirst("authorization")).isEqualTo("Bearer fixture-token");
             assertThat(exchange.getRequestHeaders().getFirst("tr_id")).isEqualTo("FHKST01010100");
+            assertThat(exchange.getRequestURI().getRawQuery()).contains("FID_COND_MRKT_DIV_CODE=UN");
             respond(exchange, 200, """
                     {"rt_cd":"0","msg_cd":"MCA00000","output":{
                       "stck_prpr":"85000","prdy_vrss":"1200","prdy_ctrt":"1.43","acml_vol":"12345678"
@@ -46,6 +47,7 @@ class ExternalProviderClientTest {
         server.createContext("/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice", exchange -> {
             dailyBarCalls.incrementAndGet();
             assertThat(exchange.getRequestHeaders().getFirst("tr_id")).isEqualTo("FHKST03010100");
+            assertThat(exchange.getRequestURI().getRawQuery()).contains("FID_COND_MRKT_DIV_CODE=UN");
             respond(exchange, 200, """
                     {"rt_cd":"0","output2":[
                       {"stck_bsop_date":"20260712","stck_oprc":"84000","stck_hgpr":"86000","stck_lwpr":"83500","stck_clpr":"85000","acml_vol":"1000"},
@@ -119,7 +121,8 @@ class ExternalProviderClientTest {
     @Test
     void kisNormalizesQuoteAndBarsAndReusesAccessToken() {
         KisMarketDataClient client = new KisMarketDataClient(
-                "app-key", "app-secret", "paper", baseUrl, baseUrl, java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
+                "app-key", "app-secret", "paper", baseUrl, baseUrl, "UN",
+                java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
 
         Quote quote = client.getDomesticQuote("005930");
         BarSeries bars = client.getDomesticDailyBars(
@@ -127,7 +130,8 @@ class ExternalProviderClientTest {
 
         assertThat(quote.price()).isEqualByComparingTo("85000");
         assertThat(quote.changeRate()).isEqualByComparingTo("1.43");
-        assertThat(quote.providerId()).isEqualTo("kis");
+        assertThat(quote.providerId()).isEqualTo("kis-unified");
+        assertThat(bars.providerId()).isEqualTo("kis-unified");
         assertThat(bars.items()).hasSize(2);
         assertThat(bars.items().getFirst().sessionDate()).isEqualTo(LocalDate.of(2026, 7, 11));
         assertThat(tokenCalls).hasValue(1);
@@ -136,7 +140,8 @@ class ExternalProviderClientTest {
     @Test
     void kisSplitsLongHistoryIntoProviderSafeDateWindows() {
         KisMarketDataClient client = new KisMarketDataClient(
-                "app-key", "app-secret", "paper", baseUrl, baseUrl, java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
+                "app-key", "app-secret", "paper", baseUrl, baseUrl, "UN",
+                java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
 
         BarSeries bars = client.getDomesticDailyBars(
                 "005930", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 7, 13));
@@ -150,7 +155,8 @@ class ExternalProviderClientTest {
     @Test
     void kisNormalizesOverseasDailyBarsForUsFallback() {
         KisMarketDataClient client = new KisMarketDataClient(
-                "app-key", "app-secret", "paper", baseUrl, baseUrl, java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
+                "app-key", "app-secret", "paper", baseUrl, baseUrl, "UN",
+                java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(2));
 
         BarSeries bars = client.getOverseasDailyBars(
                 "NASDAQ", "MSFT", LocalDate.of(2026, 7, 12), LocalDate.of(2026, 7, 13));

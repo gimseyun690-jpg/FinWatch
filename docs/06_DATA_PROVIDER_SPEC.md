@@ -21,7 +21,7 @@ FinWatch는 거래 체결용 시세 시스템이 아니다. 화면에 표시하�
 ### 현재 구현
 
 - `DATA_MODE=DEMO`에서는 Flyway 데모 데이터만 사용하고 `LIVE`에서는 KIS 국내·해외 일봉과 NAVER API HUB·Finnhub 뉴스를 온디맨드 동기화한다.
-- KIS REST 현재가와 `H0STCNT0` 국내 체결, Finnhub Quote와 trade WebSocket을 서버에서 구독한다.
+- KIS REST KRX+NXT 통합 현재가와 `H0UNCNT0` 국내 통합 체결, Finnhub Quote와 trade WebSocket을 서버에서 구독한다.
 - 실시간 틱은 별도 DB 행을 계속 만들지 않고 인메모리 허브의 종목별 최신 값만 교체한다. 종목·관심종목 REST 응답도 유효한 허브 값을 우선한다.
 - 브라우저는 `/ws/quotes`에서 연결 직후 snapshot과 이후 quote/status 이벤트를 받고 자동 재연결한다.
 - 가격 이력은 DB의 실제 `1D`를 사용하고 `1W`·`1M`은 거래소 현지 주·월 경계로 서버에서 집계한다. 선택 종목의 최신 캔들 close/high/low는 수신 틱으로 보정한다.
@@ -94,7 +94,7 @@ DG-0부터 DG-4까지 통과하기 전에는 운영 환경에서 `LIVE` 모드�
 
 | 내부 ID | 공급자 | 확정 용도 | 사용하지 않는 용도 |
 |---|---|---|---|
-| `kis` | 한국투자증권 KIS Open API | KRX 현재가·일봉 OHLCV·`H0STCNT0` 실시간 체결, 미국 일봉 OHLCV fallback | 미국 실시간 체결, 뉴스, 주문·자동매매 |
+| `kis` | 한국투자증권 KIS Open API | KRX+NXT 통합 현재가·일봉 OHLCV·`H0UNCNT0` 실시간 체결, 미국 일봉 OHLCV fallback | 미국 실시간 체결, 뉴스, 주문·자동매매 |
 | `naver-api-hub` | NAVER API HUB 뉴스 검색 | 국내 종목 뉴스 발견, 제목·description·원문 URL·발행 시각 | 언론사 본문 전문 제공 |
 | `finnhub` | Finnhub Quote / Stock Candles / WebSocket / Company News | 미국 현재가·계정 권한 범위의 일봉·실시간 체결과 미국 종목 뉴스 발견 | KRX 시세, 언론사 본문 전문 제공 |
 | `opendart` | 금융감독원 Open DART | 국내 기업 공시 목록·원문과 구조화 재무·주요공시 | 일반 언론 뉴스 |
@@ -113,7 +113,7 @@ AI 공급자는 `GeminiAiProvider`, 개발·테스트 대역은 `MockAiProvider`
 실시간 전달은 다음 구조로 고정한다.
 
 ```text
-KIS H0STCNT0 WebSocket + Finnhub trade WebSocket
+KIS H0UNCNT0 KRX+NXT 통합 WebSocket + Finnhub trade WebSocket
   -> Spring Boot provider adapters
   -> in-memory latest quote hub
   -> FinWatch /ws/quotes
@@ -540,6 +540,7 @@ app:
 |---|---|---|
 | KIS | `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_HTS_ID` | 서버 Secret, REST·WebSocket 인증 |
 | KIS | `KIS_ENV` | `paper` 또는 `prod`; 시세 PoC는 가능한 범위에서 모의·테스트 환경 우선 |
+| KIS | `KIS_DOMESTIC_MARKET_CODE` | `J`=KRX, `NX`=NXT, `UN`=KRX+NXT 통합; FinWatch 운영 기본값은 `UN` |
 | NAVER API HUB | `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET` | 각각 `X-NCP-APIGW-API-KEY-ID`, `X-NCP-APIGW-API-KEY` 헤더로 서버에서 전송 |
 | Finnhub | `FINNHUB_API_KEY` | 서버 Secret; Quote·trade WebSocket·뉴스 API에 사용 |
 | 실시간 | `REALTIME_ENABLED`, `REALTIME_RECONNECT_MAX_DELAY` | LIVE 스트림 활성화와 지수 백오프 최대 지연 |
@@ -557,7 +558,7 @@ US_DISCLOSURE_PROVIDER=sec-edgar
 AI_PROVIDER=gemini
 ```
 
-KIS 국내 체결 TR은 공식 샘플의 `H0STCNT0`, Finnhub는 `wss://ws.finnhub.io?token=...` trade 구독을 사용한다. 호출 제한과 공개 표시 권한은 발급 계정 약관을 운영 배포 전에 다시 확인하며 포털의 Secret이나 계좌정보를 문서·Fixture에 저장하지 않는다.
+KIS 국내 REST 시세는 `FID_COND_MRKT_DIV_CODE`에 위 시장 코드를 전달한다. 실시간 체결 TR은 KRX `H0STCNT0`, NXT `H0NXCNT0`, 통합 `H0UNCNT0`을 사용한다. NXT는 KRX 상장 종목의 대체거래소이므로 FinWatch 내부 종목 키는 계속 `KRX:{symbol}`로 유지하고, 데이터 출처를 `KIS_KRX`, `KIS_NXT`, `KIS_UNIFIED`로 구분한다. 운영 기본값 `UN`은 프리마켓·정규장·애프터마켓을 하나의 종목 스트림으로 연결한다. Finnhub는 `wss://ws.finnhub.io?token=...` trade 구독을 사용한다. 호출 제한과 공개 표시 권한은 발급 계정 약관을 운영 배포 전에 다시 확인하며 포털의 Secret이나 계좌정보를 문서·Fixture에 저장하지 않는다.
 
 공급자별 `BASE_URL`, `API_KEY`, 호출 한도와 계정 ID는 어댑터 전용 namespace로 둔다. 호출 한도에는 임의 기본값을 두지 않고 DG-3에서 확인한 계약값을 `LIVE` 필수 설정으로 등록한다. 실제 키는 로컬 사용자 환경변수 또는 배포 플랫폼 Secret에 저장하고 Git, 프런트엔드, 이미지와 일반 로그에 넣지 않는다. 운영 키는 최소 권한으로 발급하고 개발·스테이징·운영을 분리하며 회전 일자를 기록한다.
 

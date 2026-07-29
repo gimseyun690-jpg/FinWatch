@@ -87,24 +87,42 @@ jobs:
       - name: Require ECR image scan without critical findings
         shell: bash
         run: |
+          registry="$(cut -d/ -f1 <<<"${{ steps.release.outputs.backend_image }}")"
           for repository in "$BACKEND_REPOSITORY" "$FRONTEND_REPOSITORY"; do
-            index_manifest="$(aws ecr batch-get-image \
+            image_ref="$registry/$repository:${{ steps.release.outputs.sha }}"
+            index_manifest="$(docker buildx imagetools inspect --raw "$image_ref")"
+            image_digest="$(jq -er '
+              if .mediaType == "application/vnd.oci.image.index.v1+json"
+                or .mediaType == "application/vnd.docker.distribution.manifest.list.v2+json"
+              then [.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")][0].digest
+              else empty
+              end
+            ' <<<"$index_manifest")" || {
+              echo "Could not resolve the linux/amd64 image manifest for $image_ref." >&2
+              jq -r '.manifests[]? | [.digest, .platform.os, .platform.architecture] | @tsv' <<<"$index_manifest" >&2
+              exit 1
+            }
+          status=''
+          description=''
+          for attempt in $(seq 1 30); do
+            scan_status="$(aws ecr describe-image-scan-findings \
               --repository-name "$repository" \
-              --image-ids imageTag=${{ steps.release.outputs.sha }} \
-              --accepted-media-types application/vnd.oci.image.index.v1+json \
-              --query 'images[0].imageManifest' \
-              --output text)"
-            image_digest="$(jq -er \
-              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")][0].digest' \
-              <<<"$index_manifest")"
-            status=''
-            for attempt in $(seq 1 30); do
-              status="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageDigest="$image_digest" --query imageScanStatus.status --output text 2>/dev/null || true)"
-              [[ "$status" == COMPLETE ]] && break
-              [[ "$status" == FAILED ]] && exit 1
-              sleep 10
-            done
-            [[ "$status" == COMPLETE ]] || { echo "ECR scan did not complete for $repository ($image_digest)." >&2; exit 1; }
+              --image-id imageDigest="$image_digest" \
+              --query '[imageScanStatus.status,imageScanStatus.description]' \
+              --output text 2>/dev/null || true)"
+            status="$(awk '{print $1}' <<<"$scan_status")"
+            description="$(cut -f2- <<<"$scan_status")"
+            [[ "$status" == COMPLETE ]] && break
+            if [[ "$status" == FAILED || "$status" == UNSUPPORTED_IMAGE || "$status" == LIMIT_EXCEEDED || "$status" == FINDINGS_UNAVAILABLE ]]; then
+              echo "ECR scan failed for $repository ($image_digest): $status · $description" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          [[ "$status" == COMPLETE ]] || {
+            echo "ECR scan did not complete for $repository ($image_digest): $status · $description" >&2
+            exit 1
+          }
             critical="$(aws ecr describe-image-scan-findings --repository-name "$repository" --image-id imageDigest="$image_digest" --query 'imageScanFindings.findingSeverityCounts.CRITICAL || `0`' --output text)"
             test "$critical" = 0
           done

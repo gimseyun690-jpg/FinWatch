@@ -24,6 +24,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import com.finwatch.data.provider.KisMarketDataClient;
+import com.finwatch.data.provider.KisDomesticMarket;
 import com.finwatch.data.provider.ProviderRestClientFactory;
 
 import tools.jackson.databind.ObjectMapper;
@@ -32,7 +33,6 @@ import tools.jackson.databind.ObjectMapper;
 public class KisRealtimeClient {
 
     private static final String PROVIDER = "KIS";
-    private static final String TRADE_TR_ID = "H0STCNT0";
 
     private final String appKey;
     private final String appSecret;
@@ -43,6 +43,7 @@ public class KisRealtimeClient {
     private final HttpClient websocketClient;
     private final ObjectMapper objectMapper;
     private final KisMarketDataClient marketDataClient;
+    private final KisDomesticMarket domesticMarket;
     private final RealtimeQuoteHub hub;
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
@@ -82,6 +83,9 @@ public class KisRealtimeClient {
         this.websocketClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
         this.objectMapper = objectMapper;
         this.marketDataClient = marketDataClient;
+        this.domesticMarket = marketDataClient.domesticMarket() == null
+                ? KisDomesticMarket.KRX
+                : marketDataClient.domesticMarket();
         this.hub = hub;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "kis-realtime");
@@ -171,7 +175,7 @@ public class KisRealtimeClient {
                         quote.volume(),
                         quote.currency(),
                         quote.fetchedAt(),
-                        "KIS_REST",
+                        domesticMarket.restSource(),
                         "SNAPSHOT"));
             } catch (RuntimeException exception) {
                 hub.updateProvider(PROVIDER, "DEGRADED", "초기 현재가 조회 실패: " + safeMessage(exception));
@@ -184,7 +188,10 @@ public class KisRealtimeClient {
             return;
         }
         try {
-            hub.updateProvider(PROVIDER, reconnectAttempts.get() == 0 ? "CONNECTING" : "RECONNECTING", "KIS 체결 스트림 연결 중");
+            hub.updateProvider(
+                    PROVIDER,
+                    reconnectAttempts.get() == 0 ? "CONNECTING" : "RECONNECTING",
+                    "KIS " + domesticMarket.displayName() + " 체결 스트림 연결 중");
             String approvalKey = approvalKey();
             websocketClient.newWebSocketBuilder()
                     .connectTimeout(connectTimeout)
@@ -255,7 +262,7 @@ public class KisRealtimeClient {
                         "tr_type", type,
                         "content-type", "utf-8"),
                 "body", Map.of("input", Map.of(
-                        "tr_id", TRADE_TR_ID,
+                        "tr_id", domesticMarket.realtimeTrId(),
                         "tr_key", symbol))));
     }
 
@@ -312,7 +319,7 @@ public class KisRealtimeClient {
     private String connectionMessage(int subscriptionCount) {
         return subscriptionCount == 0
                 ? "KIS 연결됨 · 구독 종목 없음"
-                : subscriptionCount + "개 KRX 종목 체결 구독 중";
+                : subscriptionCount + "개 " + domesticMarket.displayName() + " 종목 체결 구독 중";
     }
 
     private final class Listener implements WebSocket.Listener {

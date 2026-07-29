@@ -221,7 +221,8 @@ public class StockDataLoadService {
             String provider;
             if ("KRX".equalsIgnoreCase(stock.getMarket())) {
                 quote = kisMarketDataClient.getDomesticQuote(stock.getSymbol());
-                provider = "KIS";
+                var domesticMarket = kisMarketDataClient.domesticMarket();
+                provider = domesticMarket == null ? "KIS" : domesticMarket.persistenceSource();
             } else {
                 quote = finnhubMarketDataClient.quote(stock.getSymbol());
                 provider = "FINNHUB";

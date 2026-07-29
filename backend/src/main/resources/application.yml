@@ -73,6 +73,7 @@ app:
       app-secret: ${KIS_APP_SECRET:}
       hts-id: ${KIS_HTS_ID:}
       environment: ${KIS_ENV:paper}
+      domestic-market-code: ${KIS_DOMESTIC_MARKET_CODE:UN}
       prod-base-url: ${KIS_PROD_BASE_URL:https://openapi.koreainvestment.com:9443}
       paper-base-url: ${KIS_PAPER_BASE_URL:https://openapivts.koreainvestment.com:29443}
       prod-websocket-url: ${KIS_PROD_WEBSOCKET_URL:ws://ops.koreainvestment.com:21000}

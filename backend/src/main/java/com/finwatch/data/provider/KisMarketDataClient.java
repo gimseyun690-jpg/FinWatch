@@ -41,6 +41,7 @@ public class KisMarketDataClient {
     private final RestClient restClient;
     private final String appKey;
     private final String appSecret;
+    private final KisDomesticMarket domesticMarket;
     private final Object requestThrottle = new Object();
     private long nextRequestAtNanos;
     private volatile AccessToken cachedToken;
@@ -51,12 +52,18 @@ public class KisMarketDataClient {
             @Value("${app.data.kis.environment:paper}") String environment,
             @Value("${app.data.kis.prod-base-url}") String prodBaseUrl,
             @Value("${app.data.kis.paper-base-url}") String paperBaseUrl,
+            @Value("${app.data.kis.domestic-market-code:UN}") String domesticMarketCode,
             @Value("${app.data.connect-timeout:3s}") Duration connectTimeout,
             @Value("${app.data.read-timeout:10s}") Duration readTimeout) {
         this.appKey = appKey;
         this.appSecret = appSecret;
+        this.domesticMarket = KisDomesticMarket.fromCode(domesticMarketCode);
         String baseUrl = "prod".equalsIgnoreCase(environment) ? prodBaseUrl : paperBaseUrl;
         this.restClient = ProviderRestClientFactory.create(baseUrl, connectTimeout, readTimeout);
+    }
+
+    public KisDomesticMarket domesticMarket() {
+        return domesticMarket;
     }
 
     public Quote getDomesticQuote(String symbol) {
@@ -64,7 +71,7 @@ public class KisMarketDataClient {
         Map<String, Object> response = get(
                 "/uapi/domestic-stock/v1/quotations/inquire-price",
                 "FHKST01010100",
-                Map.of("FID_COND_MRKT_DIV_CODE", "J", "FID_INPUT_ISCD", symbol));
+                Map.of("FID_COND_MRKT_DIV_CODE", domesticMarket.restCode(), "FID_INPUT_ISCD", symbol));
         Map<String, Object> output = objectMap(response.get("output"));
         return new Quote(
                 symbol,
@@ -73,7 +80,7 @@ public class KisMarketDataClient {
                 decimal(output, "prdy_ctrt"),
                 decimal(output, "acml_vol"),
                 "KRW",
-                "kis",
+                domesticMarket.providerId(),
                 Instant.now());
     }
 
@@ -108,7 +115,12 @@ public class KisMarketDataClient {
             }
             chunkEnd = chunkStart.minusDays(1);
         }
-        return new BarSeries(symbol, "1D", "kis", Instant.now(), List.copyOf(barsByDate.values()));
+        return new BarSeries(
+                symbol,
+                "1D",
+                domesticMarket.providerId(),
+                Instant.now(),
+                List.copyOf(barsByDate.values()));
     }
 
     public BarSeries getOverseasDailyBars(
@@ -159,7 +171,7 @@ public class KisMarketDataClient {
                 "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
                 "FHKST03010100",
                 Map.of(
-                        "FID_COND_MRKT_DIV_CODE", "J",
+                        "FID_COND_MRKT_DIV_CODE", domesticMarket.restCode(),
                         "FID_INPUT_ISCD", symbol,
                         "FID_INPUT_DATE_1", from.format(BASIC_DATE),
                         "FID_INPUT_DATE_2", to.format(BASIC_DATE),
