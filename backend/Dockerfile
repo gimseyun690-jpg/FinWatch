@@ -9,7 +9,7 @@ RUN chmod +x gradlew && ./gradlew dependencies --no-daemon
 COPY backend/src ./src
 RUN ./gradlew bootJar --no-daemon -ParchiveFileName=finwatch-api.jar
 
-FROM eclipse-temurin:21-jre-jammy AS runtime
+FROM eclipse-temurin:21-jre-alpine AS runtime
 ARG APP_VERSION=dev
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="FinWatch API" \
@@ -17,11 +17,9 @@ LABEL org.opencontainers.image.title="FinWatch API" \
       org.opencontainers.image.revision="$VCS_REF" \
       org.opencontainers.image.source="https://github.com/gimseyun690-jpg/FinWatch"
 
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 10001 finwatch \
-    && useradd --system --uid 10001 --gid finwatch --home-dir /app --shell /usr/sbin/nologin finwatch
+RUN apk add --no-cache ca-certificates curl \
+    && addgroup -S -g 10001 finwatch \
+    && adduser -S -D -H -u 10001 -G finwatch finwatch
 
 WORKDIR /app
 COPY --from=build --chown=finwatch:finwatch /workspace/backend/build/libs/finwatch-api.jar /app/finwatch-api.jar
