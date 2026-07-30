@@ -6,9 +6,8 @@ import { addWatchlist, getWatchlist, removeWatchlist } from '../api/watchlists'
 import type { StockCatalogItem, StockRef } from '../types/stock'
 import type { WatchlistItem } from '../types/watchlist'
 import type { LiveQuote } from '../types/realtime'
-import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
+import { DataStatusBadge } from './DataStatusBadge'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
-import { isUnifiedDomesticSource, marketSourceLabel } from '../utils/marketSource'
 
 type Props = {
   selectedStock: StockRef
@@ -252,28 +251,12 @@ export function WatchlistPanel({
             const price = liveQuote?.price ?? stock.price
             const changeRate = liveQuote?.changeRate ?? stock.changeRate
             const key = stockKey(stock)
-            const dataStatus: DataStatus = streaming
-              ? 'LIVE'
-              : liveQuote
-                ? 'DELAYED'
-                : stock.dataAvailability === 'READY'
-                  ? stock.source?.toUpperCase() === 'DEMO' ? 'DEMO' : 'REFERENCE'
-                  : stock.dataAvailability === 'METADATA_ONLY'
-                    ? 'METADATA_ONLY'
-                    : stock.dataAvailability === 'UNAVAILABLE'
-                      ? 'UNAVAILABLE'
-                      : 'PARTIAL'
-            const quoteSource = liveQuote?.source ?? stock.source ?? (stock.dataAvailability === 'READY' ? '저장 시세' : '동기화 대기')
-            const quoteAsOf = liveQuote?.asOf ?? stock.asOf
             return (
               <article className={`card stock-card ${stockKey(selectedStock) === key ? 'selected' : ''} ${streaming ? 'live' : ''}`} key={stock.id}>
                 <button className="stock-card-main" type="button" onClick={() => onSelect({ market: stock.market, symbol: stock.symbol })}>
                   <span className="card-heading">
                     <span>{stock.name}</span>
-                    <small>
-                      {stock.market}
-                      {stock.market === 'KRX' && isUnifiedDomesticSource(quoteSource) ? ' · NXT 통합' : ''}
-                    </small>
+                    <small>{stock.market}</small>
                   </span>
                   <strong>{price == null ? '데이터 준비 중' : formatMoney(price, stock.currency)}</strong>
                   {changeRate == null ? (
@@ -283,15 +266,6 @@ export function WatchlistPanel({
                       {changeRate >= 0 ? '+' : ''}{changeRate.toFixed(2)}%
                     </span>
                   )}
-                  <span className="quote-trust-row">
-                    <small className="market-venue-label">{marketSourceLabel(quoteSource)}</small>
-                    {showAdminDetails && (
-                      <>
-                      <DataStatusBadge status={dataStatus} detail={quoteSource} />
-                      {quoteAsOf && <small>기준 {new Date(quoteAsOf).toLocaleTimeString('ko-KR')}</small>}
-                      </>
-                    )}
-                  </span>
                 </button>
                 <button
                   className={`remove-watchlist${confirmRemoveKey === key ? ' confirm' : ''}`}

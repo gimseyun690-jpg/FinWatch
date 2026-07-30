@@ -21,7 +21,7 @@ import type {
 import type { IntradayCandle, LiveQuote } from '../types/realtime'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { InteractiveStockChart } from './InteractiveStockChart'
-import { isUnifiedDomesticSource, marketSourceLabel } from '../utils/marketSource'
+import { marketSourceLabel } from '../utils/marketSource'
 
 type DetailState = {
   stock: CanonicalStockDetail
@@ -360,7 +360,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
                 현재가
                 {streaming && (
                   <em className="live-tick-badge">
-                    <i />{isUnifiedDomesticSource(dataSource) ? 'KRX+NXT TICK' : 'TICK'}
+                    <i />TICK
                   </em>
                 )}
               </span>
