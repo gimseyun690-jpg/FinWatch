@@ -279,47 +279,27 @@ public class MockAiProvider implements AiProvider {
     }
 
     private String getMoney(TechnicalEvidence evidence, String key, String currency) {
-        String val = evidence.values().get(key);
-        if (val == null) return "—";
-        try {
-            double d = Double.parseDouble(val);
-            return String.format("%,.0f", d) + ("USD".equalsIgnoreCase(currency) ? "$" : "원");
-        } catch (Exception e) {
-            return val;
-        }
+        return evidenceValue(evidence, key) + ("USD".equalsIgnoreCase(currency) ? "$" : "원");
     }
 
     private String getPercent(TechnicalEvidence evidence, String key) {
-        String val = evidence.values().get(key);
-        if (val == null) return "0.00";
-        try {
-            double d = Double.parseDouble(val);
-            return String.format("%.2f", d);
-        } catch (Exception e) {
-            return val;
-        }
+        return evidenceValue(evidence, key);
     }
 
     private String getNumber(TechnicalEvidence evidence, String key) {
-        String val = evidence.values().get(key);
-        if (val == null) return "0";
-        try {
-            double d = Double.parseDouble(val);
-            return String.format("%,.0f", d);
-        } catch (Exception e) {
-            return val;
-        }
+        return evidenceValue(evidence, key);
     }
 
     private String getFloat(TechnicalEvidence evidence, String key) {
-        String val = evidence.values().get(key);
-        if (val == null) return "0.0";
-        try {
-            double d = Double.parseDouble(val);
-            return String.format("%,.1f", d);
-        } catch (Exception e) {
-            return val;
+        return evidenceValue(evidence, key);
+    }
+
+    private String evidenceValue(TechnicalEvidence evidence, String key) {
+        String value = evidence.values().get(key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(evidence.indicator() + "." + key + " 근거가 없습니다.");
         }
+        return value;
     }
 
     @Override

@@ -20,7 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.finwatch.ai.repository.AiDailyChangeBriefingRepository;
 import com.finwatch.ai.repository.AiUsageLogRepository;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.ai.provider=mock")
 @AutoConfigureMockMvc
 @ActiveProfiles("demo")
 class AiDailyChangeBriefingIntegrationTest {

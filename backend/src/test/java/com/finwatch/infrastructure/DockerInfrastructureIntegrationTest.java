@@ -69,7 +69,7 @@ class DockerInfrastructureIntegrationTest {
         }
 
         assertThat(flyway.info().current()).isNotNull();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("19");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("20");
         assertThat(flyway.validateWithResult().validationSuccessful).isTrue();
 
         try (Connection connection = dataSource.getConnection();

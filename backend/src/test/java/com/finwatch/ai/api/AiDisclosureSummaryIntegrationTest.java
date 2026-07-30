@@ -27,7 +27,7 @@ import com.finwatch.news.domain.NewsArticle;
 import com.finwatch.news.repository.NewsArticleRepository;
 import com.finwatch.stock.repository.StockRepository;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.ai.provider=mock")
 @AutoConfigureMockMvc
 @ActiveProfiles("demo")
 @Transactional

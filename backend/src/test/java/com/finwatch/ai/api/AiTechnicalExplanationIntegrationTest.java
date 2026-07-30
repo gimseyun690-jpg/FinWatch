@@ -31,7 +31,7 @@ import com.finwatch.stock.repository.StockRepository;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.ai.provider=mock")
 @AutoConfigureMockMvc
 @ActiveProfiles("demo")
 class AiTechnicalExplanationIntegrationTest {
