@@ -3,12 +3,13 @@ import { NavLink, Outlet, useLocation } from 'react-router'
 import { getUsdKrw } from '../api/fx'
 import { getAlerts, setAlertStatus } from '../api/alerts'
 import type { AppRouteContext } from '../app/context'
-import type { FxRate } from '../types/fx'
+import type { FxRate, RealtimeFxRate } from '../types/fx'
 import type { PriceAlert } from '../types/alert'
 import { GlobalStockSearch } from './GlobalStockSearch'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { Icon, type IconName } from './Icon'
 import { PwaInstallButton } from './PwaInstallButton'
+import { mergeRealtimeFxRate, validRealtimeRate } from '../utils/realtimeFx'
 
 type Props = { context: AppRouteContext }
 
@@ -42,17 +43,54 @@ function routeTitle(pathname: string) {
   return 'FinWatch'
 }
 
-function CompactFxTicker() {
+function CompactFxTicker({ realtimeRate }: { realtimeRate: RealtimeFxRate | null }) {
   const [rate, setRate] = useState<FxRate | null>(null)
   const [failed, setFailed] = useState(false)
+  const realtimeRateRef = useRef(realtimeRate)
 
   useEffect(() => {
-    const controller = new AbortController()
-    getUsdKrw(controller.signal).then((nextRate) => {
-      setRate(nextRate)
-      setFailed(false)
-    }).catch(() => setFailed(true))
-    return () => controller.abort()
+    realtimeRateRef.current = realtimeRate
+    if (!validRealtimeRate(realtimeRate)) return
+    setRate((current) => mergeRealtimeFxRate(current, realtimeRate))
+    setFailed(false)
+  }, [realtimeRate])
+
+  useEffect(() => {
+    let active = true
+    let inFlight = false
+    let controller: AbortController | null = null
+
+    const refresh = () => {
+      if (!active || inFlight || document.visibilityState !== 'visible' || !navigator.onLine) return
+      inFlight = true
+      controller = new AbortController()
+      getUsdKrw(controller.signal).then((nextRate) => {
+        if (!active) return
+        setRate(mergeRealtimeFxRate(nextRate, realtimeRateRef.current))
+        setFailed(false)
+      }).catch((reason: unknown) => {
+        if (!active || (reason instanceof DOMException && reason.name === 'AbortError')) return
+        setFailed(true)
+      }).finally(() => {
+        inFlight = false
+      })
+    }
+
+    refresh()
+    const interval = window.setInterval(refresh, 30_000)
+    const resume = () => refresh()
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    window.addEventListener('online', resume)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      window.removeEventListener('online', resume)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      controller?.abort()
+    }
   }, [])
 
   return (
@@ -60,7 +98,7 @@ function CompactFxTicker() {
       <small>USD/KRW</small>
       <strong>{rate ? rate.rate.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) : '—'}</strong>
       {rate?.changeRate != null && <em className={rate.changeRate >= 0 ? 'up' : 'down'}>{rate.changeRate > 0 ? '+' : ''}{rate.changeRate.toFixed(2)}%</em>}
-      <DataStatusBadge className="compact-fx-badge" status={rate ? compactFxStatus(rate) : failed ? 'UNAVAILABLE' : 'PARTIAL'} />
+      <DataStatusBadge className="compact-fx-badge" status={rate ? failed ? 'STALE' : compactFxStatus(rate) : failed ? 'UNAVAILABLE' : 'PARTIAL'} />
     </span>
   )
 }
@@ -97,6 +135,7 @@ export function AppShell({ context }: Props) {
   const drawerRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement>(null)
+  const drawerLocationRef = useRef(`${location.pathname}${location.search}`)
   const title = routeTitle(location.pathname)
 
   const statusText = context.apiState === 'checking' ? 'API 확인 중' : context.apiState === 'connected' ? 'API 연결됨' : 'API 연결 끊김'
@@ -174,7 +213,12 @@ export function AppShell({ context }: Props) {
     })
   }, [location.pathname])
 
-  useEffect(() => setDrawerOpen(false), [location.pathname, location.search])
+  useEffect(() => {
+    const nextLocation = `${location.pathname}${location.search}`
+    if (drawerLocationRef.current === nextLocation) return
+    drawerLocationRef.current = nextLocation
+    setDrawerOpen(false)
+  }, [location.pathname, location.search])
 
   useEffect(() => {
     const handleOnline = () => setOnline(true)
@@ -276,7 +320,7 @@ export function AppShell({ context }: Props) {
             <div className="page-context"><small>현재 화면</small><strong>{title}</strong></div>
             <GlobalStockSearch selectedStock={context.selectedStock} onSelect={context.selectStock} />
             <div className="shell-statuses" role="status" aria-live="polite">
-              <CompactFxTicker />
+              <CompactFxTicker realtimeRate={context.realtimeFxRate} />
               {context.showAdminDetails && (
                 <>
                   <span className={`api-status ${context.apiState}`} title={statusText}><span className="status-dot" aria-hidden="true" /><b>{statusText}</b></span>

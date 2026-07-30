@@ -10,6 +10,10 @@ public interface FxRateProvider {
     FxQuote latest(String baseCurrency, String quoteCurrency);
     List<FxBar> history(String baseCurrency, String quoteCurrency, Instant from, Instant to);
 
+    default String historyRateType() {
+        return "DELAYED";
+    }
+
     record FxQuote(
             String baseCurrency,
             String quoteCurrency,

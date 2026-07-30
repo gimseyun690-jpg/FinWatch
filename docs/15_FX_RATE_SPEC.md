@@ -37,12 +37,13 @@ API·DB·UI에서 역수 표기를 섞지 않는다. `KRW/USD`가 필요하면 �
 
 ## 3. 공급자 결정
 
-MVP 공급자 체인은 Finnhub Forex 우선, Frankfurter 일일 기준환율 fallback으로 확정한다.
+MVP 공급자 체인은 공급자 시각이 있는 Finnhub Forex WebSocket 체결, Finnhub REST 기준값, Frankfurter 일일 기준환율 순으로 확정한다.
 
-- 지원 통화쌍 목록 또는 symbol metadata를 먼저 확인해 provider symbol을 매핑한다.
-- provider symbol을 추측해 하드코딩하지 않는다.
+- WebSocket은 공식 공급자 식별자 `OANDA:USD_KRW`를 설정값으로 사용하며 운영 환경에서 재정의할 수 있다.
+- 공급자 timestamp가 없는 메시지, 미래 시각 또는 2분을 초과한 틱은 LIVE로 채택하지 않는다.
+- Finnhub REST rate처럼 공급자 시장 시각이 없는 응답은 서버 조회 시각을 `fetchedAt`으로만 기록하고 `REFERENCE`로 표시한다.
 - quote와 candle 사용 가능 여부는 발급 계정의 권한·요금제 PoC로 검증한다.
-- 문서 참고: [Finnhub Forex Rates](https://finnhub.io/docs/api/forex-rates), [Finnhub Forex Candles](https://finnhub.io/docs/api/forex-candles)
+- 문서 참고: [Finnhub WebSocket Trades](https://finnhub.io/docs/api/websocket-trades), [Finnhub Forex Rates](https://finnhub.io/docs/api/forex-rates), [Finnhub Forex Candles](https://finnhub.io/docs/api/forex-candles)
 
 Finnhub 계정에서 USD/KRW rate/candle 권한이 거절되면 `api.frankfurter.dev`의 일일 reference rate와 기간별 reference rate를 사용한다. 이 fallback은 `source=FRANKFURTER`, `rateType=REFERENCE`로 표시하며 일중 체결·호가 또는 실시간 환율처럼 표현하지 않는다. 두 공급자가 모두 실패하면 기존 마지막 검증값을 상태와 함께 보여주거나 환산 합계를 숨기며, 임의 상수 환율을 LIVE 화면에 사용하지 않는다.
 
@@ -91,8 +92,8 @@ Finnhub 계정에서 USD/KRW rate/candle 권한이 거절되면 `api.frankfurter
     "previousClose": 1378.20,
     "change": 4.30,
     "changeRate": 0.31,
-    "rateType": "DELAYED",
-    "source": "FINNHUB",
+    "rateType": "LIVE",
+    "source": "FINNHUB_WS",
     "asOf": "2026-07-14T06:00:00Z",
     "fetchedAt": "2026-07-14T06:00:08Z",
     "freshness": "FRESH"
@@ -115,6 +116,28 @@ Finnhub 계정에서 USD/KRW rate/candle 권한이 거절되면 `api.frankfurter
 `GET /api/v1/market/fx-rates/pairs`
 
 MVP는 USD/KRW만 활성화한다. 지원하지 않는 pair는 빈 값이 아니라 `404 FX_PAIR_NOT_SUPPORTED`를 반환한다.
+
+### 5.4 실시간 WebSocket 이벤트
+
+인증 브라우저는 주식 시세와 같은 `WS /ws/quotes` 연결에서 USD/KRW를 수신한다. 연결 직후 현재 유효한 환율 snapshot이 있으면 전송하고 이후 공급자 시각이 더 최신인 체결만 게시한다.
+
+```json
+{
+  "type": "fx",
+  "data": {
+    "baseCurrency": "USD",
+    "quoteCurrency": "KRW",
+    "rate": 1382.50,
+    "rateType": "LIVE",
+    "source": "FINNHUB_WS",
+    "providerSymbol": "OANDA:USD_KRW",
+    "asOf": "2026-07-30T06:00:00Z",
+    "fetchedAt": "2026-07-30T06:00:01Z"
+  }
+}
+```
+
+프런트는 `USD/KRW` canonical pair 하나의 최신 event만 수용한다. `asOf`가 같거나 오래된 이벤트는 무시하고, 일반 사용자에게는 원시 `source`·`providerSymbol`을 표시하지 않는다.
 
 ## 6. 포트폴리오 환산 계약
 
@@ -212,6 +235,8 @@ UNIQUE `(base_currency, quote_currency, source, as_of)`. 최신 조회용 `(base
 - 최신 환율 Redis key: `fx:latest:{base}:{quote}:{source}`
 - 이력 key: `fx:history:{base}:{quote}:{period}:{interval}:{source}`
 - 장중 quote TTL 목표 30~60초, reference rate는 다음 영업일 갱신까지 사용
+- 브라우저는 `/ws/quotes`의 `fx` 이벤트를 우선 적용하고 상단 ticker·환율 상세·포트폴리오가 같은 실시간 상태를 공유
+- WebSocket 값이 없을 때 REST 최신 조회를 초기값·복구 경로로 사용하며, visible·online 상태의 제한된 재조회 실패 시 마지막 정상값을 stale로 유지
 - 동일 pair 동시 MISS는 single-flight로 외부 호출 한 번만 수행
 - 외부 장애 시 마지막 검증 DB 값을 freshness와 함께 반환
 - 환율 장애가 주식 원통화 가격·차트·포트폴리오 조회를 막아서는 안 됨
@@ -222,7 +247,7 @@ UNIQUE `(base_currency, quote_currency, source, as_of)`. 최신 조회용 `(base
 ### 대시보드
 
 - 상단 시장 요약 영역에 `USD/KRW 1,382.50 · +0.31%` 표시
-- LIVE/지연/기준환율 badge, source와 기준시각 제공
+- 일반 화면은 LIVE/지연/기준환율 상태와 기준시각을 간결하게 표시하고, source·providerSymbol·수집시각은 관리자 진단에서만 제공
 - 클릭하면 `1W·1M·3M·1Y` 미니 환율 차트 표시
 - 상승·하락을 색상만이 아니라 부호·텍스트로 구분
 
@@ -237,6 +262,7 @@ UNIQUE `(base_currency, quote_currency, source, as_of)`. 최신 조회용 `(base
 - 기존 KRW·USD 통화별 카드 유지
 - `현재 환율 기준 총 평가액` KRW 카드 추가
 - 환율과 asOf를 카드 바로 아래 표시
+- 실시간 `fx` 이벤트가 오면 USD 보유의 KRW 환산 평가액·자산배분 도넛을 같은 환율로 제자리 갱신
 - 매수 환율이 없으면 `원화 손익 계산 불가 — 매수 당시 환율 필요` 표시
 - stale·reference 환율을 실시간으로 표현하지 않음
 
@@ -265,7 +291,7 @@ MVP에서 Gemini는 환율을 예측하지 않는다. 환율은 서버가 제공
 ## 12. 구현 순서
 
 1. `FxRateProvider` 중립 인터페이스와 fixture
-2. Finnhub pair discovery·quote·candle 어댑터 계약 테스트
+2. Finnhub WebSocket provider timestamp·quote·candle 어댑터 계약 테스트
 3. Frankfurter reference 최신·이력 fallback과 계약 테스트
 4. `exchange_rates` migration과 저장·품질 검증
 5. 최신·이력 API와 Redis/DB fallback·single-flight
@@ -278,7 +304,8 @@ MVP에서 Gemini는 환율을 예측하지 않는다. 환율은 서버가 제공
 ## 13. 인수 조건
 
 - [ ] USD/KRW의 방향과 단위가 API·DB·UI·계산에서 동일하다.
-- [ ] 환율 카드에 rate, 등락, rateType, source, asOf와 freshness가 표시된다.
+- [ ] 일반 환율 카드에 rate, 등락, rateType, asOf와 freshness가 표시되고 source·providerSymbol은 관리자 진단에서 확인된다.
+- [ ] 공급자 timestamp가 있는 Finnhub 체결만 `/ws/quotes`의 `fx` LIVE 이벤트로 게시되고 오래된 이벤트는 화면 상태를 되돌리지 않는다.
 - [ ] 미국 주식 원통화 USD 값은 보존되고 KRW 보조값과 혼동되지 않는다.
 - [ ] 고정 fixture에서 USD 평가액의 KRW 환산과 반올림 결과가 일치한다.
 - [ ] 혼합 포트폴리오의 통합 현재 평가액은 같은 환율 스냅샷으로 계산된다.

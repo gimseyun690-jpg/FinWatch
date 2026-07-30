@@ -1,12 +1,12 @@
 # FinWatch AI 운영 상세 명세
 
-상태: v0.2
-기준일: 2026-07-14
-범위: NEWS_SUMMARY·TECHNICAL_EXPLANATION·DAILY_CHANGE_BRIEFING의 입력, 프롬프트, AI 공급자, 결과 검증, 캐시, 사용량·비용, 오류·안전
+상태: v0.3
+기준일: 2026-07-30
+범위: NEWS_SUMMARY·TECHNICAL_EXPLANATION·DAILY_CHANGE_BRIEFING·PORTFOLIO_EVALUATION의 입력, 프롬프트, AI 공급자, 결과 검증, 캐시, 사용량·비용, 오류·안전
 
 ## 1. 목적과 현재 상태
 
-이 문서는 01_REQUIREMENTS.md의 U-08·U-10과 A-01부터 A-06, 02_ARCHITECTURE.md의 AI 흐름, 03_API_SPEC.md의 AI·관리자 API를 실제 구현 가능한 운영 계약으로 구체화한다.
+이 문서는 01_REQUIREMENTS.md의 U-08·U-10·U-11·U-15와 A-01부터 A-06, 02_ARCHITECTURE.md의 AI 흐름, 03_API_SPEC.md의 AI·관리자 API를 실제 구현 가능한 운영 계약으로 구체화한다.
 
 | 영역 | 현재 상태 | 비고 |
 |---|---|---|
@@ -24,6 +24,7 @@
 | 사용자 호출 제한·일일 비용 한도 | 구현 | 사용자 key별 분당 요청 수와 서비스 일일 USD 비용 차단, 환경변수 설정 |
 | AI 기술지표 해설 | 구현 | 서버 계산 스냅샷·근거 ID 기반 설명 |
 | AI 일일 변화 브리핑 | 구현 | 직전 거래일 대비 변화와 기술·뉴스·공시 관점 매트릭스 |
+| AI 포트폴리오 구성 평가 | 구현 | 인증 사용자 서버 포트폴리오·15분 창·P/C/FX/H 근거 기반 설명 |
 
 “현재 동작”은 코드 기준 사실이며, “필수 보강”은 운영 배포 전에 구현해야 할 계약이다.
 
@@ -73,7 +74,31 @@ POST /api/v1/ai/news-summaries는 인증된 USER와 ADMIN이 사용할 수 있�
   -> 반환
 ~~~
 
-현재 구현에는 “단일 호출 구간 진입 및 재확인”과 “구조화 결과 검증” 단계가 없다.
+현재 네 AI 기능은 기능별 입력 스냅샷·캐시 키·영속 결과를 사용하되 같은 `AiSingleFlight`, 비용 계산, 요청 한도와 사용량 로그 정책을 공유한다.
+
+### 2.3 포트폴리오 구성 평가 API
+
+`POST /api/v1/ai/portfolio-evaluations`는 인증된 USER와 ADMIN이 자신의 포트폴리오에 대해서만 사용할 수 있다.
+
+```json
+{
+  "promptVersion": "portfolio-evaluation-v1"
+}
+```
+
+`promptVersion`은 생략할 수 있다. 보유 종목·수량·가격·비중·수익률은 요청으로 받지 않고 인증 principal의 `userId`로 서버 포트폴리오를 다시 조회한다.
+
+```text
+인증 userId로 포트폴리오 조회
+  -> 보유 없음: 422 AI_PORTFOLIO_EMPTY
+  -> 실시간 가격·검증 환율 기반 KRW 평가
+  -> 15분 windowStartedAt, positionsHash, inputHash 생성
+  -> 사용자 + 보유 구성 + 창 + promptVersion 캐시/DB 조회
+     |- HIT: 토큰·실제 비용 0, 원 비용을 절감액으로 기록
+     `- MISS: Gemini/Mock 호출
+              -> evidence ID·수치·금지 권고 검증
+              -> V20 평가 저장 + 캐시 + 사용량 로그
+```
 
 ## 3. 뉴스 입력 전처리
 
@@ -177,13 +202,22 @@ NewsTextPreprocessor는 다음 순서로 처리한다.
 
 ### 5.1 공통 인터페이스
 
-AiProvider 입력:
+`AiProvider`는 네 기능을 하나의 공급자 경계로 격리한다.
+
+- `summarize`: 뉴스 분석
+- `explainTechnical`: 기술지표 해설
+- `generateDailyBriefing`: 일일 변화 브리핑
+- `evaluatePortfolio`: 포트폴리오 구성 평가
+
+각 메서드는 기능별 구조화 입력과 `promptVersion`을 받고 `modelName`, 기능별 결과, `inputTokens`, `outputTokens`를 반환한다. 공급자 구현은 예외 대신 불완전한 성공 객체를 반환해서는 안 되며, 서비스는 저장 전에 기능별 서버 검증을 다시 수행한다.
+
+NEWS_SUMMARY 입력:
 
 - title
 - preprocessedContent
 - promptVersion
 
-AiProviderResult 출력:
+NEWS_SUMMARY 출력:
 
 - modelName
 - summary
@@ -193,7 +227,7 @@ AiProviderResult 출력:
 - inputTokens
 - outputTokens
 
-공급자 구현은 예외 대신 불완전한 성공 객체를 반환해서는 안 된다. 서비스는 저장 전에 5.4의 공통 검증을 다시 수행한다.
+기술지표·브리핑·포트폴리오의 상세 필드와 근거 검증은 각각 13·14·15절의 확장 계약을 따른다.
 
 ### 5.2 Mock 공급자
 
@@ -285,6 +319,18 @@ ai:news-analysis:{newsId}:{contentHash}:{promptVersion}
 ```
 
 같은 `newsId`라도 본문 hash가 바뀌면 이전 분석을 최신 기사 분석으로 반환하지 않는다. 구조화 응답은 `news-analysis-v2`로 버전을 올려 이전 캐시와 분리한다.
+
+포트폴리오 구성 평가는 다음 키와 저장 계층을 사용한다.
+
+```text
+ai:portfolio-evaluation:{userId}:{positionsHash}:{windowStartedAt}:{promptVersion}
+```
+
+- `positionsHash`는 보유 종목·수량·평균 매수가·매수 환율·보유 갱신시각의 정규화 식별값이다.
+- `windowStartedAt`은 UTC 기준 15분 창 시작이며 평가액·비중 변화를 같은 창에서 재사용한다.
+- Redis/메모리 TTL 기본값은 15분이다.
+- Redis MISS여도 V20 `ai_portfolio_evaluations.cache_key`가 있으면 DB 결과를 복구한다.
+- 보유 구성이 바뀌면 positionsHash가 달라지고, 다음 요청은 별도 평가·캐시를 사용한다.
 
 ### 6.2 HIT 판정
 
@@ -388,15 +434,15 @@ MISS 모델 호출:
 
 ### 8.2 실패 로그
 
-필수 보강 후, 인증·기본 요청 파싱 전에 거절된 요청을 제외한 모든 AI 처리 실패는 status=FAILED 로그를 남긴다.
+인증·기본 요청 파싱 전에 거절된 요청을 제외한 모든 AI 처리 실패는 status=FAILED 로그를 남긴다.
 
 실패 로그 최소 필드:
 
 - requestId
 - userId
-- featureType=NEWS_SUMMARY
-- targetType=NEWS
-- targetId=newsId
+- featureType: NEWS_SUMMARY / TECHNICAL_EXPLANATION / DAILY_CHANGE_BRIEFING / PORTFOLIO_EVALUATION
+- targetType: NEWS / STOCK / PORTFOLIO
+- targetId: newsId / stockId / 인증 userId
 - promptVersion
 - modelName, 확인 가능한 경우
 - cacheHit=false
@@ -405,7 +451,8 @@ MISS 모델 호출:
 - 확인 가능한 토큰·비용, 없으면 0
 - createdAt
 
-현재 AiUsageLog 엔티티는 error_code 필드 매핑과 실패 생성 메서드, user 관계가 없으므로 구현이 필요하다.
+V20 이후 성공 포트폴리오 로그는 `portfolio_evaluation_id` FK를 연결하고, 실패 로그는 결과 FK 없이 `featureType=PORTFOLIO_EVALUATION`, `targetType=PORTFOLIO`, `targetId=userId`를 기록한다.
+계정 삭제 시에는 이 기능의 로그에서 `user_id`, `target_id`, `portfolio_evaluation_id`를 제거한 뒤 사용자별 평가 결과를 삭제해 보유 구성과 계정 식별자가 남지 않게 한다.
 
 ### 8.3 요청 ID와 보안 로그
 
@@ -450,8 +497,11 @@ estimatedCost = inputCost + outputCost
 7. estimatedCost와 savedEstimatedCost는 각 로그 합계다.
 8. averageResponseTimeMs는 범위 내 로그의 단순 평균이며 요청이 없으면 0.00이다.
 9. 토큰은 HIT에서 0이므로 실제 모델 호출 로그의 토큰만 합산된다.
+10. 기능별 집계는 `PORTFOLIO_EVALUATION`을 네 번째 기능으로 분리하며 기존 세 기능과 비용·HIT를 합쳐 표시하지 않는다.
 
 실패 로그를 구현할 때 requestCount, modelCallCount와 평균 응답시간에 어떤 실패를 포함하는지 관리자 응답에 successCount와 failedCount를 추가해 명확히 해야 한다.
+
+일반 사용자 결과 화면은 결론·근거·한계·기준시각을 제공하되 원시 공급자명, 모델명, 프롬프트 버전, 토큰과 내부 수집 채널을 반복 노출하지 않는다. 이 운영 메타데이터와 공급자 진단은 ADMIN 화면에서 조회한다.
 
 ## 10. 한도와 안전
 
@@ -510,6 +560,10 @@ estimatedCost = inputCost + outputCost
 - HIT 응답은 원 modelName과 generatedAt을 유지한다.
 - 비용 계산은 설정 단가 공식과 소수 8자리 반올림에 일치한다.
 - USER는 AI 요약을 호출할 수 있지만 /admin/ai/**에는 403, ADMIN은 관리자 지표를 조회할 수 있다.
+- 인증 사용자의 포트폴리오 평가만 생성하며 요청 본문으로 다른 사용자나 임의 보유 비중을 지정할 수 없다.
+- 같은 사용자·positionsHash·15분 창·프롬프트 버전의 두 번째 포트폴리오 평가는 HIT이고 실제 토큰·비용은 0이다.
+- 포트폴리오 결과의 모든 수치 문장과 핵심 판단은 서버가 만든 `P/C/FX/H` evidence로 추적된다.
+- 빈 포트폴리오는 공급자 호출 없이 422 `AI_PORTFOLIO_EMPTY`다.
 
 ### 11.2 운영 보강 완료 기준
 
@@ -550,3 +604,19 @@ estimatedCost = inputCost + outputCost
 ## 14. DAILY_CHANGE_BRIEFING 확장 계약
 
 `DAILY_CHANGE_BRIEFING`은 구현 상태다. 서버가 계산한 직전·최신 완성 일봉 delta와 이미 검증된 뉴스·공시 분석만 Gemini가 설명한다. 브리핑이 온디맨드로 뉴스·공시 요약을 보완할 때는 하드코딩된 과거 버전 대신 각 요약 기능의 활성 프롬프트 버전을 사용한다. 기술·뉴스·공시를 하나의 매수·매도 점수로 합치거나 근거 없는 인과관계, 목표주가와 직접 매매 명령을 생성해서는 안 된다. 상세 기준은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`다.
+
+## 15. PORTFOLIO_EVALUATION 확장 계약
+
+`PORTFOLIO_EVALUATION`은 구현 상태이며 네 번째 AI 운영 기능이다.
+
+- 입력 소유권: JWT의 `userId`로 `PortfolioService`를 호출하며 클라이언트가 holdings·weights·returnRate를 제출하지 않는다.
+- 결정론적 계산: KRW 기준 평가액, 최대 종목 비중, 상위 3개 비중, HHI, 통화별 노출, 기준통화 손익·수익률을 서버가 계산한다.
+- 분류: HHI가 없으면 `INCOMPLETE`, 1,500 미만은 `DIVERSIFIED`, 2,500 이하는 `MODERATE_CONCENTRATION`, 그보다 크면 `HIGH_CONCENTRATION`이다.
+- 입력 제한: AI 공급자에는 평가액 상위 20개 종목만 전달하되 HHI와 집중도는 전체 보유 종목으로 계산하고 이 제한을 `dataLimitations`에 남긴다.
+- 근거: `P1` 포트폴리오 합계, `C1` 집중도, `FX1` 통화 노출, `H1..Hn` 종목별 비중·수익률을 사용한다.
+- 출력: headline·summary, diversification·concentration·currencyExposure·performanceContext, strengths·riskFactors·reviewPoints, dataLimitations를 구조화한다.
+- 검증: 존재하지 않는 evidence, 입력값에서 추적할 수 없는 숫자, 미래 가격·목표가·수익률 예측, 직접 매수·매도·교체 권고를 `AI_RESPONSE_INVALID`로 거절한다.
+- 캐시·영속화: `positionsHash + 15분 windowStartedAt + promptVersion`을 포함한 키로 Redis/메모리와 `ai_portfolio_evaluations`를 재사용한다.
+- 사용량: MISS는 원 토큰·비용, HIT는 토큰·실제 비용 0과 원 생성 예상 비용만 절감액으로 기록하며 `portfolio_evaluation_id` FK를 연결한다.
+- UI: 환산이 완전할 때의 자산배분 도넛과 AI 평가가 같은 서버 계산 규칙을 사용한다. 환산이 불완전하면 부분 비중을 전체 구성처럼 표시하지 않고 AI에도 데이터 한계를 전달한다.
+- 안전: 결과는 구성 점검용 참고 정보이며 투자 권유가 아니다.

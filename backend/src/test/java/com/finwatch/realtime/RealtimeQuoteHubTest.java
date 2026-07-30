@@ -45,6 +45,30 @@ class RealtimeQuoteHubTest {
                 .containsExactly("KRX:DUP", "NASDAQ:DUP");
     }
 
+    @Test
+    void keepsNewestFxRateAndBroadcastsOnlyAcceptedProviderTime() {
+        RealtimeQuoteHub hub = new RealtimeQuoteHub();
+        var events = new ArrayList<RealtimeEvent>();
+        hub.addListener(events::add);
+        Instant fetchedAt = Instant.parse("2026-07-30T03:00:02Z");
+        Instant newestTime = fetchedAt.minusSeconds(1);
+
+        hub.publish(fxRate("1382.50", newestTime, fetchedAt));
+        hub.publish(fxRate("1200", newestTime.minusSeconds(1), fetchedAt));
+        hub.publish(fxRate("1400", fetchedAt.plusSeconds(301), fetchedAt));
+
+        assertThat(hub.findFx("usd", "krw")).get()
+                .extracting(RealtimeFxRate::rate)
+                .isEqualTo(new BigDecimal("1382.50"));
+        assertThat(hub.fxSnapshot()).singleElement()
+                .extracting(RealtimeFxRate::canonicalKey)
+                .isEqualTo("USD/KRW");
+        assertThat(events).singleElement().satisfies(event -> {
+            assertThat(event.type()).isEqualTo("fx");
+            assertThat(event.data()).isInstanceOf(RealtimeFxRate.class);
+        });
+    }
+
     private LiveQuote quote(String symbol, String price, Instant asOf) {
         return quote("KRX", symbol, price, asOf);
     }
@@ -61,5 +85,17 @@ class RealtimeQuoteHubTest {
                 asOf,
                 "TEST",
                 "LIVE");
+    }
+
+    private RealtimeFxRate fxRate(String rate, Instant asOf, Instant fetchedAt) {
+        return new RealtimeFxRate(
+                "usd",
+                "krw",
+                new BigDecimal(rate),
+                "live",
+                "finnhub_ws",
+                "oanda:usd_krw",
+                asOf,
+                fetchedAt);
     }
 }

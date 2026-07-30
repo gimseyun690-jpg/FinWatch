@@ -70,7 +70,8 @@ public class FinnhubFxRateProvider implements FxRateProvider {
                     .body(Map.class);
             BigDecimal rate = extractRate(response, baseCurrency, quoteCurrency);
             Instant fetchedAt = Instant.now();
-            return new FxQuote(baseCurrency, quoteCurrency, rate, "REFERENCE", discoverSymbol(baseCurrency, quoteCurrency), fetchedAt, fetchedAt);
+            String providerSymbol = exchange + ":" + baseCurrency + "_" + quoteCurrency;
+            return new FxQuote(baseCurrency, quoteCurrency, rate, "REFERENCE", providerSymbol, fetchedAt, fetchedAt);
         } catch (RestClientResponseException exception) {
             throw mapHttp(exception);
         } catch (ResourceAccessException exception) {

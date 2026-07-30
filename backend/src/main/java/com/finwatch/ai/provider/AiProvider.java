@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.finwatch.ai.dto.TechnicalExplanationInput;
 import com.finwatch.ai.dto.DailyChangeBriefingInput;
+import com.finwatch.ai.dto.PortfolioEvaluationInput;
 
 public interface AiProvider {
 
@@ -19,6 +20,10 @@ public interface AiProvider {
 
     DailyBriefingResult generateDailyBriefing(
             DailyChangeBriefingInput input,
+            String promptVersion);
+
+    PortfolioEvaluationResult evaluatePortfolio(
+            PortfolioEvaluationInput input,
             String promptVersion);
 
     record AiProviderResult(
@@ -65,6 +70,23 @@ public interface AiProvider {
             List<DailyBriefingStatement> unchangedContext,
             List<DailyBriefingStatement> alignedViews,
             List<DailyBriefingStatement> conflictingViews,
+            List<String> dataLimitations,
+            int inputTokens,
+            int outputTokens) { }
+
+    record PortfolioEvaluationStatement(String text, List<String> evidenceIds) { }
+
+    record PortfolioEvaluationResult(
+            String modelName,
+            String headline,
+            String summary,
+            PortfolioEvaluationStatement diversification,
+            PortfolioEvaluationStatement concentration,
+            PortfolioEvaluationStatement currencyExposure,
+            PortfolioEvaluationStatement performanceContext,
+            List<PortfolioEvaluationStatement> strengths,
+            List<PortfolioEvaluationStatement> riskFactors,
+            List<PortfolioEvaluationStatement> reviewPoints,
             List<String> dataLimitations,
             int inputTokens,
             int outputTokens) { }

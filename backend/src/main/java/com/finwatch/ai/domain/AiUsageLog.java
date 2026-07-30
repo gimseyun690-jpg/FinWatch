@@ -36,6 +36,10 @@ public class AiUsageLog {
     @JoinColumn(name = "daily_briefing_id")
     private AiDailyChangeBriefing dailyBriefing;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "portfolio_evaluation_id")
+    private AiPortfolioEvaluation portfolioEvaluation;
+
     @Column(name = "feature_type", nullable = false, length = 40)
     private String featureType;
 
@@ -184,6 +188,37 @@ public class AiUsageLog {
                 inputTokens, outputTokens, estimatedCost, savedEstimatedCost, cacheHit,
                 responseTimeMs, promptVersion, "SUCCESS", null);
         log.dailyBriefing = briefing;
+        return log;
+    }
+
+    public static AiUsageLog portfolioEvaluationSuccess(
+            String requestId,
+            AiPortfolioEvaluation evaluation,
+            String modelName,
+            Long userId,
+            int inputTokens,
+            int outputTokens,
+            BigDecimal estimatedCost,
+            BigDecimal savedEstimatedCost,
+            boolean cacheHit,
+            int responseTimeMs,
+            String promptVersion) {
+        AiUsageLog log = base(
+                requestId,
+                "PORTFOLIO_EVALUATION",
+                "PORTFOLIO",
+                userId,
+                modelName,
+                inputTokens,
+                outputTokens,
+                estimatedCost,
+                savedEstimatedCost,
+                cacheHit,
+                responseTimeMs,
+                promptVersion,
+                "SUCCESS",
+                null);
+        log.portfolioEvaluation = evaluation;
         return log;
     }
 

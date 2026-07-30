@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StockRef } from '../types/stock'
+import type { RealtimeFxRate } from '../types/fx'
 import type {
   LiveQuote,
   IntradayCandle,
@@ -11,8 +12,8 @@ import type {
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
 
 type RealtimeEvent = {
-  type: 'snapshot' | 'quote' | 'status' | 'candle' | 'candles' | 'subscription'
-  data: RealtimeSnapshot | LiveQuote | RealtimeProviderStatus | IntradayCandle | IntradayCandleSnapshot
+  type: 'snapshot' | 'quote' | 'status' | 'candle' | 'candles' | 'subscription' | 'fx'
+  data: RealtimeSnapshot | LiveQuote | RealtimeProviderStatus | IntradayCandle | IntradayCandleSnapshot | RealtimeFxRate
 }
 
 function mergeCandle(current: IntradayCandle[], candle: IntradayCandle) {
@@ -43,6 +44,7 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
   const [quotes, setQuotes] = useState<Record<string, LiveQuote>>({})
   const [providers, setProviders] = useState<Record<string, RealtimeProviderStatus>>({})
   const [intradayCandles, setIntradayCandles] = useState<Record<string, IntradayCandle[]>>({})
+  const [fxRate, setFxRate] = useState<RealtimeFxRate | null>(null)
   const [connection, setConnection] = useState<RealtimeConnectionState>('disconnected')
   const socketRef = useRef<WebSocket | null>(null)
   const selectedStockRef = useRef<StockRef | undefined>(selectedStock)
@@ -146,6 +148,15 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
             setProviders((current) => ({ ...current, [status.provider]: status }))
             return
           }
+          if (event.type === 'fx') {
+            const nextRate = event.data as RealtimeFxRate
+            setFxRate((current) => (
+              current != null && new Date(current.asOf) > new Date(nextRate.asOf)
+                ? current
+                : nextRate
+            ))
+            return
+          }
           if (event.type === 'candles') {
             const snapshot = event.data as IntradayCandleSnapshot
             const grouped = snapshot.candles.reduce<Record<string, IntradayCandle[]>>((current, candle) => {
@@ -193,5 +204,5 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
     [providers],
   )
 
-  return { quotes, providers, intradayCandles, connection, connectedProviders }
+  return { quotes, providers, intradayCandles, fxRate, connection, connectedProviders }
 }

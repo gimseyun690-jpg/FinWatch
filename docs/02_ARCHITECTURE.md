@@ -12,7 +12,7 @@
 ```text
 React TypeScript PWA
         |
-        | HTTPS / REST
+        | HTTPS / REST + authenticated WebSocket
         v
 Spring Boot API (modular monolith)
   |- Auth / User
@@ -20,6 +20,7 @@ Spring Boot API (modular monolith)
   |- Watchlist / Portfolio / Alert
   |- Technical Analysis
   |- News
+  |- FX / Realtime Hub
   |- AI Gateway
   |- Admin Metrics
   |
@@ -105,7 +106,7 @@ DB의 `ai_analyses`는 감사와 캐시 복구를 위한 영속 결과이며 Red
 
 계산식, 초기값, 신호 경계, 데이터 품질과 Lightweight Charts 기반 상세 차트 규칙은 `11_TECHNICAL_ANALYSIS_SPEC.md`를 따른다.
 
-계획된 AI 기술지표 해설은 결정론적 계산 뒤의 선택 기능으로 둔다. Gemini 장애가 차트와 기술지표 조회를 막아서는 안 된다.
+구현된 AI 기술지표 해설은 결정론적 계산 뒤의 선택 기능으로 둔다. Gemini 장애가 차트와 기술지표 조회를 막아서는 안 된다.
 
 ```text
 서버 계산 기술지표
@@ -121,11 +122,28 @@ Gemini는 추세·모멘텀·변동성·거래량과 충돌 신호를 설명할 
 
 구현된 일일 변화 브리핑은 이전·현재 기술 스냅샷의 서버 계산 delta와 기존 뉴스·공시 분석을 재사용한다. 사용자 선택 요약과 브리핑 모두 활성 뉴스 프롬프트 버전을 공유하므로 운영 버전이 달라도 검증된 분석을 정상 연결하며, 상세 계약은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
 
+구현된 네 번째 AI 기능인 포트폴리오 구성 평가는 인증된 사용자 ID로 서버 포트폴리오를 다시 조회한다. 클라이언트가 비중이나 수익률을 보내지 않으며, 서버가 15분 평가 창의 원화 평가액·최대/상위 3개 비중·HHI·통화 노출·성과 맥락과 `P/C/FX/H` evidence를 결정론적으로 만든다.
+
+```text
+인증 사용자 포트폴리오
+  -> 실시간 가격·검증 환율 기반 서버 평가
+  -> positionsHash + 15분 window + promptVersion
+  -> Redis/DB 조회
+     |- HIT: 기존 평가 + 절감 로그
+     `- MISS: Gemini/Mock 구조화 설명
+              -> 근거·수치·금지 권고 검증
+              -> ai_portfolio_evaluations + Redis + usage 로그
+```
+
+화면은 환산이 완전한 경우 같은 평가 스냅샷의 종목별 도넛을 표시하며, AI는 미래 가격·수익률·매수·매도·교체를 추천하지 않는다.
+
 구현된 종목 탐색 기능은 KRX·미국 전체 종목의 가벼운 마스터를 PostgreSQL에 동기화해 로컬 검색하고, 선택·관심·보유 종목만 시세·일봉·뉴스와 WebSocket 구독 대상으로 승격한다. 검색과 온디맨드 수집의 상세 계약은 `14_STOCK_DISCOVERY_SPEC.md`를 따른다.
 
-구현된 환율 기능은 Finnhub Forex를 우선 사용하고 계정 권한으로 거절되면 Frankfurter 일일 기준환율을 명시적인 `REFERENCE` fallback으로 사용한다. 검증된 USD/KRW 스냅샷은 DB·Redis에 저장하고, 주식 원통화 값과 환산값을 분리하며 환율 장애가 원통화 조회를 막지 않는 계약은 `15_FX_RATE_SPEC.md`를 따른다.
+구현된 환율 기능은 공급자 timestamp가 있는 Finnhub `OANDA:USD_KRW` WebSocket 체결을 `LIVE`로 수용해 인메모리 환율 저장소와 실시간 허브에 게시한다. `/ws/quotes`는 주식 이벤트와 함께 `type=fx` 이벤트를 인증 브라우저에 fan-out하고, 프런트의 공유 환율 상태가 상단 ticker와 포트폴리오 환산을 함께 갱신한다. 실시간 값이 없거나 2분을 넘으면 Finnhub REST 또는 Frankfurter 일일 기준환율을 명시적인 `REFERENCE` fallback으로 사용한다. 검증된 USD/KRW 스냅샷은 DB·Redis에 저장하고, 주식 원통화 값과 환산값을 분리하며 환율 장애가 원통화 조회를 막지 않는 계약은 `15_FX_RATE_SPEC.md`를 따른다.
 
-계획된 화면 구조 개편은 단일 `App.tsx` anchor 화면을 반응형 App Shell과 route outlet으로 분리한다. 뉴스·공시는 PostgreSQL 서버 pagination으로 조회하고 필터 상태는 URL에 보존하며 상세 계약은 `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md`를 따른다.
+구현된 화면 구조는 단일 `App.tsx` anchor 화면을 반응형 App Shell과 route outlet으로 분리한다. 뉴스·공시는 PostgreSQL 서버 pagination으로 조회하고 필터 상태는 URL에 보존하며 상세 계약은 `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md`를 따른다. 일반 사용자 화면은 가격·상태·기준시각을 우선하고 원시 공급자명·수집 채널·`TICK`·서버 세션 같은 진단 표시는 숨긴다. 공급자명과 상세 수집 상태는 관리자 진단 route에서만 제공한다.
+
+Lightweight Charts 인스턴스는 데이터 틱마다 재생성하지 않고 마지막 봉만 갱신한다. 전체화면 컨테이너는 세로 flex로 남은 viewport를 캔들 영역에 할당하며, 추세선·수평선 드래그는 `requestAnimationFrame`으로 DOM preview를 병합하고 pointer 종료 시 최종 데이터 좌표만 React 상태에 반영한다.
 
 ## 7. 데이터 공급자 경계
 
@@ -133,9 +151,9 @@ Gemini는 추세·모멘텀·변동성·거래량과 충돌 신호를 설명할 
 
 - `MarketDataProvider`: 종목, 현재가, 가격 이력
 - `NewsProvider`: 종목 관련 뉴스와 원문
-- `AiProvider`: 뉴스 분석과 기술지표 해설의 구조화 결과·토큰 사용량
+- `AiProvider`: 뉴스 분석, 기술지표 해설, 일일 변화 브리핑과 포트폴리오 구성 평가의 구조화 결과·토큰 사용량
 
-확정 조합은 KIS(국내 일봉·현재가·체결), Finnhub(미국 현재가·체결·뉴스 발견), NAVER API HUB(국내 뉴스 발견), Open DART·SEC EDGAR·기업 공식 출처(분석 가능한 전문), Gemini(AI 분석)다. 실시간 틱은 KIS/Finnhub 어댑터에서 인메모리 최신 시세 허브로 들어오고 `/ws/quotes`로 브라우저에 fan-out한다. 실제 키 없이도 고정 데모 데이터로 전체 시연 흐름을 유지한다. 수집·정규화·신선도·저작권·장애 처리 규칙은 `06_DATA_PROVIDER_SPEC.md`, AI 호출과 캐시 운영 규칙은 `08_AI_OPERATION_SPEC.md`를 따른다.
+확정 조합은 KIS(국내 일봉·현재가·체결), Finnhub(미국 현재가·체결·뉴스 발견·USD/KRW WebSocket), NAVER API HUB(국내 뉴스 발견), Frankfurter(USD/KRW reference fallback), Open DART·SEC EDGAR·기업 공식 출처(분석 가능한 전문), Gemini(AI 분석)다. 실시간 주식·환율 틱은 공급자 어댑터에서 인메모리 최신 허브로 들어오고 `/ws/quotes`로 브라우저에 fan-out한다. 실제 키 없이도 고정 데모 데이터로 전체 시연 흐름을 유지한다. 수집·정규화·신선도·저작권·장애 처리 규칙은 `06_DATA_PROVIDER_SPEC.md`, AI 호출과 캐시 운영 규칙은 `08_AI_OPERATION_SPEC.md`를 따른다.
 
 ## 8. 환경 구성
 

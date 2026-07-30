@@ -17,7 +17,7 @@
 
 ## 2. 현재 테스트 기준선
 
-2026-07-14 저장소 기준으로 백엔드 단위·통합·공급자 계약 테스트와 프런트 Playwright E2E를 함께 실행한다.
+2026-07-30 저장소 기준으로 백엔드 단위·통합·공급자 계약 테스트와 프런트 Playwright E2E·PWA 테스트를 함께 실행한다.
 
 | 범위 | 현재 자동 검증 |
 |---|---|
@@ -31,9 +31,11 @@
 | 관심종목 통합 | 사용자별 CRUD 격리, 중복·없는 삭제 1개 |
 | 실시간 시세 단위 | KIS 46필드 체결 파싱·부호, Finnhub trade 파싱, 오래된 틱 폐기 |
 | 실시간 1분 봉 | KIS 누적 거래량 delta, Finnhub 체결량 합산, REST snapshot 제외, OHLC와 limit 검증 |
-| 실시간 화면 E2E | snapshot·candles 수신, 공급자 2/2 상태, KIS 실시간 배지·TICK·현재가, 일봉/주봉/월봉/1분봉 전환 반영 |
+| 실시간 환율 단위·E2E | 공급자 timestamp 검증, 오래된 FX 틱 폐기, 신규 연결 최신값 복구, 헤더·환율·포트폴리오 동시 반영 |
+| 포트폴리오 AI 단위·통합·E2E | 서버 스냅샷·P/C/FX/H 근거·숫자/권고 검증·MISS/HIT·계정 삭제 익명화, 도넛·모바일·외부 구성 변경 무효화 |
+| 실시간 화면 E2E | snapshot·candles 수신, 연결 상태, 가격·최신 봉 제자리 갱신, 차트 인스턴스 유지, 일반 카드의 공급자·TICK 노이즈 미노출, 일봉/주봉/월봉/1분봉 전환 반영 |
 
-통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS 국내·해외 일봉, NAVER API HUB·Finnhub·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·WebSocket snapshot·candles·실시간 가격 표시·일봉/주봉/월봉/1분봉 전환·상세 차트·지표 설정 유지·전체 카탈로그 관심종목 검색·무제한 등록 계약·390px 모바일 overflow와 터치 크기를 검증한다. Testcontainers 테스트는 PostgreSQL 17의 Flyway V1~V17/JPA context와 Redis 8의 실제 직렬화·TTL을 검증한다. 로컬 LIVE smoke는 readiness, 로그인, 관심종목 canonical 등록·삭제, KIS 현재가·국내외 일봉, 주봉·월봉 집계, NAVER·Finnhub 뉴스, Open DART 공시, Frankfurter 환율 fallback과 Gemini 뉴스 요약을 점검한다. 실제 KIS WebSocket 연속 틱, 부하 테스트와 CI workflow는 별도 게이트로 남아 있다.
+통합 테스트는 `demo` 프로필의 H2, Mock AI와 메모리 cache를 사용한다. 별도 HTTP fixture로 KIS 국내·해외 일봉, NAVER API HUB·Finnhub·Frankfurter·Gemini 계약과 오류 정규화를 검증하며, Playwright E2E는 로그인·주식/FX WebSocket·실시간 제자리 갱신·일봉/주봉/월봉/1분봉·상세 차트·포트폴리오 도넛/AI·전체 카탈로그 관심종목 검색·390px 모바일 overflow를 검증한다. Testcontainers 테스트는 PostgreSQL 17의 Flyway V1~V20/JPA context와 Redis 8의 실제 직렬화·TTL을 검증한다. 로컬 LIVE smoke는 readiness, 로그인, 관심종목 canonical 등록·삭제, KIS 현재가·국내외 일봉, 주봉·월봉 집계, NAVER·Finnhub 뉴스, Open DART 공시, Finnhub WebSocket 환율과 `REFERENCE` fallback, Gemini 분석을 점검한다. 실제 시장 틱은 거래시간·공급자 권한에 따라 제출 시연 환경에서 다시 확인한다.
 
 따라서 현재 자동 테스트의 통과는 핵심 Vertical Slice의 회귀 신호이지만 AWS 운영 준비 완료를 의미하지 않는다.
 
@@ -449,8 +451,9 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 3. 환율이 없거나 stale이면 원통화 조회는 성공하지만 환산값은 null, `conversionComplete=false`이며 부분 합계를 전체처럼 표시하지 않는다.
 4. 매수 환율이 없으면 원화 매입원가·손익·환차손익이 null이고, 값이 있으면 명세 수식과 반올림에 맞는 평균 기반 근사치와 한계가 표시된다.
 5. 주말·휴일·429·공급자 장애·비정상 rate·동시 MISS에서 마지막 검증값, 상태, single-flight와 오류 계약이 지켜진다.
+6. 공급자 시각이 있고 최신인 USD/KRW 틱만 `/ws/quotes`의 `fx` LIVE 이벤트가 되며, 과거·동일 시각 이벤트는 최신 화면을 되돌리지 않는다.
 
-판정: `15_FX_RATE_SPEC.md`의 인수 조건을 모두 만족해야 한다. USD/KRW 방향·DB·캐시·포트폴리오 환산·DEMO 통합 경로와 Finnhub 우선·Frankfurter `REFERENCE` fallback을 구현했으며 2026-07-15 LIVE smoke에서 fallback 응답을 확인했다.
+판정: `15_FX_RATE_SPEC.md`의 인수 조건을 모두 만족해야 한다. USD/KRW 방향·DB·캐시·포트폴리오 환산·WebSocket LIVE 경로와 Finnhub REST·Frankfurter `REFERENCE` fallback을 구현했다. 실제 LIVE 틱 수신은 거래시간과 발급 계정 권한이 있는 운영 환경에서 재확인한다.
 
 ### AC-15 Sidebar 내비게이션과 뉴스·공시 서버 페이징
 
@@ -469,10 +472,22 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 1. 국내 현재가와 일봉 REST 요청은 기본값 `FID_COND_MRKT_DIV_CODE=UN`을 사용한다.
 2. 국내 WebSocket은 기본값 `H0UNCNT0`을 구독하며 KRX `H0STCNT0`, NXT `H0NXCNT0`, 통합 체결 메시지를 모두 정상 파싱한다.
 3. KRX·NXT 체결은 동일 종목 키 `KRX:{symbol}`로 합쳐지고 관심종목·보유종목이 거래소별로 중복 생성되지 않는다.
-4. UI는 통합 시세를 `KIS · KRX+NXT 통합`으로 표시하며 실시간 중에는 `KRX+NXT TICK`을 표시한다.
+4. 내부 시세는 KRX·NXT 통합 출처와 LIVE 상태를 보존하되 일반 사용자 카드에는 공급자 코드나 `TICK`을 반복 노출하지 않고 가격·등락을 제자리 갱신한다. 상세 진단 정보는 관리자·운영 화면에서 확인한다.
 5. 운영 환경은 `KIS_ENV=prod`, `KIS_DOMESTIC_MARKET_CODE=UN`을 명시하고 공급자 자격증명과 이용 권한을 배포 전 확인한다.
 
 판정: REST 시장 코드, WebSocket TR별 파서, 내부 종목 키, 출처 표시와 운영 환경 기본값을 자동 검증한다. 실제 프리·애프터마켓 체결 smoke는 NXT 영업시간과 실전 KIS 자격증명이 있는 배포 환경에서 수행한다.
+
+### AC-17 포트폴리오 자산배분과 AI 구성 평가
+
+1. 원화 환산이 완전한 포트폴리오는 종목별 평가 비중 합계가 100%인 원형 그래프와 범례를 표시하며, 상위 7개 밖의 종목은 `기타`로 합친다.
+2. 환율·가격이 없어 `conversionComplete=false`이면 부분 평가액으로 전체 비중 그래프를 만들지 않는다.
+3. AI 요청은 인증 사용자의 서버 포트폴리오를 다시 조회하고 분산도·집중도·통화 노출·성과 맥락을 실제 evidence ID로 연결한다.
+4. 동일 보유 구성·15분 평가 창의 두 번째 요청은 HIT이며 실제 토큰·비용 0, 원 생성 예상 비용은 절감액으로 기록된다.
+5. 존재하지 않는 근거, 입력에서 추적할 수 없는 숫자, 미래 가격·목표가·수익률 예측과 직접적인 매수·매도·교체 권고는 거부된다.
+6. 현재 탭의 추가·삭제뿐 아니라 주기·가시성 갱신에서 다른 탭의 보유 구성 변경이 발견돼도 이전 AI 결과를 지우고 재평가를 안내한다.
+7. 계정 삭제 시 사용자별 평가 결과는 삭제되고 관련 운영 로그의 사용자 ID·대상 ID·평가 FK는 익명화된다.
+
+판정: 빈 포트폴리오·스냅샷 계산·Gemini/Mock 구조·근거 숫자/권고 검증·MISS/HIT·사용량 로그·계정 삭제 통합 테스트와 원형 그래프·근거 drawer·구성 변경 무효화 Playwright 시나리오가 통과해야 한다.
 
 ## 14. 결함 심각도와 인수 판정
 
@@ -485,7 +500,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 MVP 합격 조건:
 
-1. AC-00~AC-16 중 MVP scope에 포함된 모든 시나리오가 통과한다.
+1. AC-00~AC-17 중 MVP scope에 포함된 모든 시나리오가 통과한다.
 2. Blocker·Critical·미승인 Major가 0건이다.
 3. PR/release 품질 게이트와 운영 체크리스트가 통과한다.
 4. 모든 배포 전 게이트 TBD가 값·책임자·검증 증적을 갖는다.

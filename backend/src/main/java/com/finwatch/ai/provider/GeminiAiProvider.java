@@ -17,8 +17,10 @@ import org.springframework.web.client.RestClientResponseException;
 
 import com.finwatch.ai.dto.TechnicalExplanationInput;
 import com.finwatch.ai.dto.DailyChangeBriefingInput;
+import com.finwatch.ai.dto.PortfolioEvaluationInput;
 import com.finwatch.ai.provider.AiProvider.TechnicalSignalExplanation;
 import com.finwatch.ai.provider.AiProvider.DailyBriefingStatement;
+import com.finwatch.ai.provider.AiProvider.PortfolioEvaluationStatement;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -214,6 +216,61 @@ public class GeminiAiProvider implements AiProvider {
                 mapDailyStatements(payload.newRisks()), mapDailyStatements(payload.unchangedContext()),
                 mapDailyStatements(payload.alignedViews()), mapDailyStatements(payload.conflictingViews()),
                 safeList(payload.dataLimitations()), inputTokens, outputTokens);
+    }
+
+    @Override
+    public PortfolioEvaluationResult evaluatePortfolio(
+            PortfolioEvaluationInput input,
+            String promptVersion) {
+        GeminiGenerateResponse response;
+        try {
+            response = restClient.post()
+                    .uri("/v1beta/models/{model}:generateContent", model)
+                    .header("x-goog-api-key", apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(portfolioEvaluationRequestBody(input, promptVersion))
+                    .retrieve()
+                    .body(GeminiGenerateResponse.class);
+        } catch (RestClientResponseException exception) {
+            throw mapUpstreamError(exception);
+        } catch (ResourceAccessException exception) {
+            throw new AiProviderException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "AI_PROVIDER_UNAVAILABLE",
+                    "Gemini API에 연결할 수 없습니다.",
+                    exception);
+        }
+        String responseText = responseText(response);
+        GeminiPortfolioEvaluationPayload payload;
+        try {
+            payload = objectMapper.readValue(responseText, GeminiPortfolioEvaluationPayload.class);
+        } catch (RuntimeException exception) {
+            throw new AiProviderException(
+                    HttpStatus.BAD_GATEWAY,
+                    "AI_RESPONSE_INVALID_JSON",
+                    "Gemini 포트폴리오 평가 응답을 JSON으로 해석할 수 없습니다.",
+                    exception);
+        }
+        UsageMetadata usage = response.usageMetadata();
+        int inputTokens = usage == null ? estimateTokens(input.toString()) : usage.promptTokenCount();
+        int outputTokens = usage == null ? estimateTokens(responseText) : usage.candidatesTokenCount();
+        String actualModel = response.modelVersion() == null || response.modelVersion().isBlank()
+                ? model
+                : response.modelVersion();
+        return new PortfolioEvaluationResult(
+                actualModel,
+                payload.headline(),
+                payload.summary(),
+                mapPortfolioStatement(payload.diversification()),
+                mapPortfolioStatement(payload.concentration()),
+                mapPortfolioStatement(payload.currencyExposure()),
+                mapPortfolioStatement(payload.performanceContext()),
+                mapPortfolioStatements(payload.strengths()),
+                mapPortfolioStatements(payload.riskFactors()),
+                mapPortfolioStatements(payload.reviewPoints()),
+                safeList(payload.dataLimitations()),
+                inputTokens,
+                outputTokens);
     }
 
     @Override
@@ -476,6 +533,90 @@ public class GeminiAiProvider implements AiProvider {
                         "temperature", 0.1, "maxOutputTokens", 1400));
     }
 
+    private Map<String, Object> portfolioEvaluationRequestBody(
+            PortfolioEvaluationInput input,
+            String promptVersion) {
+        String inputJson;
+        try {
+            inputJson = objectMapper.writeValueAsString(input);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("포트폴리오 평가 입력을 직렬화할 수 없습니다.", exception);
+        }
+        String prompt = """
+                당신은 포트폴리오 구성을 근거 중심으로 설명하는 한국어 금융 정보 도우미입니다.
+                DATA는 서버가 계산한 읽기 전용 평가 스냅샷입니다. 값을 다시 계산하거나 변경하지 마세요.
+                사용자를 식별하려고 하지 말고 DATA 밖의 자산이나 사실을 추측하지 마세요.
+                미래 가격·목표주가·수익률·확률을 예측하지 마세요.
+                특정 종목의 매수·매도·교체를 권하거나 종목을 추천하지 마세요.
+                모든 statement의 evidenceIds에는 DATA.evidence에 실제 존재하는 ID만 사용하세요.
+                환산 또는 손익이 불완전하면 단정적인 전체 비중·성과 평가를 피하고 한계를 명시하세요.
+                headline과 모든 설명은 자연스러운 한국어로 작성하세요.
+
+                프롬프트 버전: %s
+                <DATA>
+                %s
+                </DATA>
+                """.formatted(promptVersion, inputJson);
+        Map<String, Object> statement = Map.of(
+                "type", "OBJECT",
+                "properties", Map.of(
+                        "text", Map.of("type", "STRING"),
+                        "evidenceIds", Map.of(
+                                "type", "ARRAY",
+                                "items", Map.of("type", "STRING"))),
+                "required", List.of("text", "evidenceIds"));
+        Map<String, Object> properties = Map.ofEntries(
+                Map.entry("headline", Map.of("type", "STRING")),
+                Map.entry("summary", Map.of("type", "STRING")),
+                Map.entry("diversification", statement),
+                Map.entry("concentration", statement),
+                Map.entry("currencyExposure", statement),
+                Map.entry("performanceContext", statement),
+                Map.entry("strengths", Map.of("type", "ARRAY", "items", statement)),
+                Map.entry("riskFactors", Map.of("type", "ARRAY", "items", statement)),
+                Map.entry("reviewPoints", Map.of("type", "ARRAY", "items", statement)),
+                Map.entry("dataLimitations", Map.of(
+                        "type", "ARRAY",
+                        "items", Map.of("type", "STRING"))));
+        Map<String, Object> schema = Map.of(
+                "type", "OBJECT",
+                "properties", properties,
+                "required", List.of(
+                        "headline",
+                        "summary",
+                        "diversification",
+                        "concentration",
+                        "currencyExposure",
+                        "performanceContext",
+                        "strengths",
+                        "riskFactors",
+                        "reviewPoints",
+                        "dataLimitations"));
+        return Map.of(
+                "contents", List.of(Map.of(
+                        "role", "user",
+                        "parts", List.of(Map.of("text", prompt)))),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json",
+                        "responseSchema", schema,
+                        "temperature", 0.1,
+                        "maxOutputTokens", 1_200));
+    }
+
+    private PortfolioEvaluationStatement mapPortfolioStatement(GeminiPortfolioStatement value) {
+        if (value == null) return null;
+        return new PortfolioEvaluationStatement(value.text(), safeList(value.evidenceIds()));
+    }
+
+    private List<PortfolioEvaluationStatement> mapPortfolioStatements(
+            List<GeminiPortfolioStatement> values) {
+        if (values == null) return List.of();
+        return values.stream()
+                .filter(value -> value != null)
+                .map(this::mapPortfolioStatement)
+                .toList();
+    }
+
     private List<DailyBriefingStatement> mapDailyStatements(List<GeminiDailyStatement> values) {
         if (values == null) return List.of();
         return values.stream().filter(value -> value != null)
@@ -555,6 +696,22 @@ public class GeminiAiProvider implements AiProvider {
             List<String> dataLimitations) { }
 
     private record GeminiDailyStatement(String text, List<String> evidenceIds) { }
+
+    private record GeminiPortfolioEvaluationPayload(
+            String headline,
+            String summary,
+            GeminiPortfolioStatement diversification,
+            GeminiPortfolioStatement concentration,
+            GeminiPortfolioStatement currencyExposure,
+            GeminiPortfolioStatement performanceContext,
+            List<GeminiPortfolioStatement> strengths,
+            List<GeminiPortfolioStatement> riskFactors,
+            List<GeminiPortfolioStatement> reviewPoints,
+            List<String> dataLimitations) {
+    }
+
+    private record GeminiPortfolioStatement(String text, List<String> evidenceIds) {
+    }
 
     private record GeminiErrorEnvelope(GeminiError error) {
     }

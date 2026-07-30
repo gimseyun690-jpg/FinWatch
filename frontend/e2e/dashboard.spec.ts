@@ -480,6 +480,44 @@ async function mockApi(page: Page) {
         audit: { sources: { TECHNICAL: ['CHART_INDICATOR'], QUALITY: ['DEMO'] }, latestRecordedAt: now, calculationVersion: 'technical-v2-wilder', briefingInputVersion: 'daily-briefing-input-v2-news-fixed', promptVersion: 'daily-change-briefing-v2-news-fixed', modelName: 'mock-daily-v1', evidenceCount: 3, excludedContentCount: 0, cacheHit: false, inputTokens: 420, outputTokens: 180, estimatedCost: 0, savedEstimatedCost: 0, costCurrency: 'USD', responseTimeMs: 21, generatedAt: now },
         staleBriefing: false, disclaimer: 'AI 브리핑은 투자 권유가 아닌 정보 정리 결과입니다.',
       })
+    } else if (path === '/api/v1/ai/portfolio-evaluations' && request.method() === 'POST') {
+      body = response({
+        evaluationId: 1,
+        snapshotAt: now,
+        baseCurrency: 'KRW',
+        balanceStatus: 'HIGH_CONCENTRATION',
+        headline: '단일 종목 비중이 높아 구성 변화에 민감합니다.',
+        summary: '현재 포트폴리오는 한 종목으로 구성되어 해당 종목의 가격 변화가 전체 평가액에 직접 반영됩니다.',
+        diversification: { text: '보유 종목이 1개여서 종목 간 분산 효과가 없습니다.', evidenceIds: ['C1', 'H1'] },
+        concentration: { text: '최대 종목 비중과 상위 3종목 비중이 모두 100%입니다.', evidenceIds: ['C1'] },
+        currencyExposure: { text: '원화 자산 비중이 100%입니다.', evidenceIds: ['FX1'] },
+        performanceContext: { text: '기준통화 평가손익은 223,000원입니다.', evidenceIds: ['P1'] },
+        strengths: [{ text: '통화 환산 없이 평가 가능한 단순한 구조입니다.', evidenceIds: ['FX1'] }],
+        riskFactors: [{ text: '단일 종목 움직임이 전체 평가액에 그대로 반영됩니다.', evidenceIds: ['C1', 'H1'] }],
+        reviewPoints: [{ text: '종목 비중과 평가액 변화를 정기적으로 확인할 수 있습니다.', evidenceIds: ['C1', 'P1'] }],
+        dataLimitations: ['현재 시점의 평가 스냅샷이며 미래 수익을 예측하지 않습니다.'],
+        evidence: [
+          { id: 'P1', category: 'PORTFOLIO_TOTAL', values: { evaluationAmount: '2723000', profitLoss: '223000' }, displayValue: '평가액 2,723,000원 · 손익 223,000원' },
+          { id: 'C1', category: 'CONCENTRATION', values: { topPositionWeight: '100', hhi: '10000' }, displayValue: '최대 종목 100% · HHI 10000' },
+          { id: 'FX1', category: 'CURRENCY_EXPOSURE', values: { KRWWeight: '100' }, displayValue: 'KRW 100%' },
+          { id: 'H1', category: 'HOLDING', values: { symbol: '000660', weightPercent: '100' }, displayValue: 'SK하이닉스 · 비중 100%' },
+        ],
+        audit: {
+          inputHash: 'input-hash',
+          positionsHash: 'positions-hash',
+          promptVersion: 'portfolio-evaluation-v1',
+          modelName: 'mock-portfolio-v1',
+          cacheHit: false,
+          inputTokens: 460,
+          outputTokens: 210,
+          estimatedCost: 0,
+          savedEstimatedCost: 0,
+          costCurrency: 'USD',
+          responseTimeMs: 22,
+          generatedAt: now,
+        },
+        disclaimer: 'AI 평가는 투자 권유가 아닌 포트폴리오 구성 점검용 참고 정보입니다.',
+      })
     } else if (path === '/api/v1/admin/data/sync') {
       body = response({ mode: 'DEMO', startedAt: now, finishedAt: now, pricesImported: 0, newsImported: 0, stocks: [] })
     } else if (path === '/api/v1/portfolios') {
@@ -495,7 +533,10 @@ async function mockApi(page: Page) {
           id: 1, symbol: '000660', name: 'SK하이닉스', market: 'KRX', currency: 'KRW',
           quantity: 1, averagePurchasePrice: 2500000, latestPrice: 2723000, priceAsOf: now,
           priceSource: 'DEMO', purchaseAmount: 2500000, evaluationAmount: 2723000,
-          profitLoss: 223000, returnRate: 8.92, valuationStatus: 'VALUED', updatedAt: now,
+          profitLoss: 223000, returnRate: 8.92, convertedEvaluationAmount: 2723000,
+          convertedPurchaseAmount: 2500000, convertedProfitLoss: 223000, fxEffectApproximation: null,
+          averagePurchaseFxRate: null, purchaseFxBaseCurrency: null, purchaseFxQuoteCurrency: null,
+          valuationStatus: 'VALUED', updatedAt: now,
         }],
       })
     } else if (path === '/api/v1/alerts') {
@@ -538,8 +579,10 @@ test('desktop chart tools, indicator settings and drawings remain usable', async
   const bollinger = page.getByRole('button', { name: '볼린저(20,2)' })
   await bollinger.click()
   await expect(bollinger).toHaveAttribute('aria-pressed', 'true')
-  await page.getByRole('button', { name: 'MACD', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'MACD', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.mouse.move(0, 0)
+  const macd = page.locator('.chart-indicators button').filter({ hasText: /^MACD$/ })
+  await macd.click()
+  await expect(macd).toHaveAttribute('aria-pressed', 'true')
   const chartCanvas = page.locator('.interactive-chart-canvas')
   await chartCanvas.hover({ position: { x: 420, y: 160 } })
   await expect(page.locator('.chart-tooltip')).toContainText('MA20')
@@ -567,13 +610,80 @@ test('desktop chart tools, indicator settings and drawings remain usable', async
 
   await page.getByRole('button', { name: '1분봉', exact: true }).click()
   await expect(page.getByRole('img', { name: /000660 실시간 1분봉 캔들 및 거래량\(주\) 차트/ })).toBeVisible()
-  await expect(page.locator('.intraday-session-label')).toContainText('현재 서버 세션')
-  await expect(page.locator('.chart-data-meta')).toContainText('WebSocket · 실시간')
+  await expect(page.locator('.intraday-session-label')).toHaveCount(0)
+  await expect(page.locator('.chart-data-meta')).toContainText('실시간')
+  await expect(page.locator('.chart-data-meta')).not.toContainText('WebSocket')
   await expect(drawingLayer.locator('line.drawing-shape.trend')).toHaveCount(0)
 
   await page.reload()
   await expect(page.getByRole('button', { name: '볼린저(20,2)' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('button', { name: 'MACD', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.chart-indicators button').filter({ hasText: /^MACD$/ })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('fullscreen chart gives the plot the flexible viewport row without stretching the legend', async ({ page }) => {
+  await login(page, 'USER')
+  await page.goto('/stocks/KRX/000660/technical')
+
+  const shell = page.locator('.interactive-chart-shell')
+  const canvas = page.locator('.interactive-chart-canvas')
+  const canvasWrap = page.locator('.chart-canvas-wrap')
+  const legend = page.locator('.chart-legend')
+  await expect(canvas).toBeVisible()
+  await expect(canvas).toHaveAttribute('data-chart-instance', /\d+/)
+  const chartInstance = await canvas.getAttribute('data-chart-instance')
+  const viewport = page.viewportSize()
+  expect(chartInstance).toBeTruthy()
+  expect(viewport).not.toBeNull()
+
+  await page.getByRole('button', { name: '전체화면', exact: true }).click()
+  await expect(page.getByRole('button', { name: '전체화면 종료', exact: true })).toBeVisible()
+  await expect(shell).toHaveCSS('display', 'flex')
+  await expect(shell.locator('.chart-keyboard-drawing')).toBeHidden()
+
+  const layout = await Promise.all([
+    shell.boundingBox(),
+    legend.boundingBox(),
+    canvasWrap.boundingBox(),
+  ])
+  const [shellBox, legendBox, canvasBox] = layout
+  expect(shellBox).not.toBeNull()
+  expect(legendBox).not.toBeNull()
+  expect(canvasBox).not.toBeNull()
+  expect(shellBox!.height).toBeGreaterThan(viewport!.height * 0.9)
+  expect(legendBox!.height).toBeLessThan(140)
+  expect(canvasBox!.height).toBeGreaterThan(viewport!.height * 0.45)
+  expect(canvasBox!.y - (legendBox!.y + legendBox!.height)).toBeLessThan(4)
+  await expect(canvas).toHaveAttribute('data-chart-instance', chartInstance!)
+
+  await page.getByRole('button', { name: '전체화면 종료', exact: true }).click()
+  await expect(page.getByRole('button', { name: '전체화면', exact: true })).toBeVisible()
+})
+
+test('trend handle drag keeps a projected preview and commits the final anchor', async ({ page }) => {
+  await login(page)
+  await page.goto('/stocks/KRX/000660/technical')
+  await expect(page.locator('.interactive-chart-canvas')).toHaveAttribute('data-chart-instance', /\d+/)
+
+  await page.getByRole('button', { name: '추세선', exact: true }).click()
+  const drawingLayer = page.locator('.drawing-layer')
+  await drawingLayer.click({ position: { x: 180, y: 130 }, force: true })
+  await drawingLayer.click({ position: { x: 430, y: 220 }, force: true })
+  await expect(drawingLayer).toHaveAttribute('data-drawing-count', '1')
+  await expect(drawingLayer).toHaveAttribute('data-projected-count', '1')
+
+  const secondHandle = drawingLayer.locator('circle[data-anchor-index="1"]')
+  const initialHandleX = await secondHandle.getAttribute('cx')
+  const handleBox = await secondHandle.boundingBox()
+  expect(handleBox).not.toBeNull()
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2)
+  await page.mouse.down()
+  await expect(drawingLayer).toHaveClass(/drawing-dragging/)
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2 - 80, handleBox!.y + handleBox!.height / 2 - 30, { steps: 24 })
+  await expect(secondHandle).not.toHaveAttribute('cx', initialHandleX!)
+  const previewHandleX = await secondHandle.getAttribute('cx')
+  await page.mouse.up()
+  await expect(drawingLayer).not.toHaveClass(/drawing-dragging/)
+  await expect(secondHandle).toHaveAttribute('cx', previewHandleX!)
 })
 
 test('live quote updates the latest candle without recreating the chart', async ({ page }) => {
@@ -604,6 +714,7 @@ test('live quote updates the latest candle without recreating the chart', async 
   })
 
   await expect(page.locator('.price-chart-card .quote-row')).toContainText('₩2,751,000')
+  await expect(page.locator('.price-chart-card .quote-row')).not.toContainText('TICK')
   await expect(chart).toHaveAttribute('data-chart-instance', instanceBeforeTick!)
 })
 
@@ -677,7 +788,7 @@ test('mobile chart has no horizontal overflow and exposes touch-sized controls',
   await login(page)
   await page.goto('/stocks/KRX/000660/technical')
 
-  const atrButton = page.getByRole('button', { name: 'ATR', exact: true })
+  const atrButton = page.getByRole('button', { name: /^ATR\b/ })
   await atrButton.click()
   await expect(atrButton).toHaveAttribute('aria-pressed', 'true')
   const box = await atrButton.boundingBox()
@@ -693,7 +804,7 @@ test('technical AI explanation exposes evidence and audit metadata', async ({ pa
 
   await page.getByRole('button', { name: 'AI 기술 해설 실행' }).click()
   await expect(page.locator('.ai-technical-card .cache-badge')).toHaveText('CACHE MISS')
-  await expect(page.locator('.technical-ai-summary')).toContainText('추세와 모멘텀은 상승 우세')
+  await expect(page.locator('.signal-gauge-summary')).toContainText('추세와 모멘텀은 상승 우세')
   await expect(page.locator('.technical-signal-grid')).toContainText('I1')
   await expect(page.locator('.technical-limitations')).toContainText('DEMO 데이터')
 
@@ -720,6 +831,165 @@ test('daily change briefing exposes viewpoint conflicts, evidence and audit meta
   await expect(page.locator('.briefing-audit')).toContainText('daily-change-briefing-v2-news-fixed')
 })
 
+test('portfolio renders allocation donut and evidence-linked AI composition review', async ({ page }) => {
+  await login(page)
+  await page.goto('/portfolio')
+
+  const allocation = page.locator('.portfolio-allocation-card')
+  await expect(allocation.getByRole('heading', { name: '종목별 자산 비중' })).toBeVisible()
+  await expect(allocation.getByRole('img', { name: /SK하이닉스 100\.0%/ })).toBeVisible()
+  await expect(allocation).toContainText('₩2,750,000')
+
+  await page.getByRole('button', { name: 'AI 포트폴리오 평가' }).click()
+  const aiCard = page.locator('.portfolio-ai-card')
+  await expect(aiCard).toContainText('단일 종목 비중이 높아 구성 변화에 민감합니다.')
+  await expect(aiCard).toContainText('높은 집중')
+  await expect(aiCard.locator('.portfolio-ai-dimensions')).toContainText('통화 노출')
+  await expect(aiCard.locator('.cache-badge')).toHaveText('CACHE MISS')
+
+  await aiCard.getByRole('button', { name: 'C1' }).first().click()
+  await expect(aiCard.locator('.portfolio-ai-evidence')).toHaveAttribute('open', '')
+  await expect(aiCard.locator('[data-evidence-id="C1"]')).toContainText('최대 종목 100%')
+  await expect(aiCard.locator('.analysis-disclaimer')).toContainText('투자 권유가 아닌')
+
+  await page.getByRole('button', { name: 'SK하이닉스 보유 삭제' }).click()
+  await page.getByRole('button', { name: 'SK하이닉스 보유 삭제 확인' }).click()
+  await expect(aiCard.locator('.portfolio-ai-result')).toHaveCount(0)
+  await expect(aiCard).toContainText('보유 구성이 변경되어 이전 평가를 지웠습니다.')
+})
+
+test('portfolio refresh invalidates an AI review changed in another tab', async ({ page }) => {
+  let externallyChanged = false
+  await page.route('**/api/v1/portfolios', async (route) => {
+    if (!externallyChanged) {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response({
+        baseCurrency: 'KRW',
+        baseCurrencyTotalPurchaseAmount: null,
+        baseCurrencyTotalEvaluationAmount: null,
+        baseCurrencyProfitLoss: null,
+        baseCurrencyReturnRate: null,
+        conversionComplete: false,
+        profitLossComplete: false,
+        fxRates: [],
+        currencySummaries: [],
+        holdings: [],
+      })),
+    })
+  })
+
+  await login(page)
+  await page.goto('/portfolio')
+  await page.getByRole('button', { name: 'AI 포트폴리오 평가' }).click()
+  const aiCard = page.locator('.portfolio-ai-card')
+  await expect(aiCard.locator('.portfolio-ai-result')).toBeVisible()
+
+  externallyChanged = true
+  const refreshed = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === '/api/v1/portfolios'
+      && response.request().method() === 'GET'
+  ))
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await refreshed
+
+  await expect(aiCard.locator('.portfolio-ai-result')).toHaveCount(0)
+  await expect(aiCard).toContainText('보유 구성이 변경되어 이전 평가를 지웠습니다.')
+})
+
+test('provider-timestamped FX frames update the header and portfolio together', async ({ page }) => {
+  await login(page)
+  await page.getByRole('link', { name: '포트폴리오', exact: true }).first().click()
+  await expect(page).toHaveURL(/\/portfolio$/)
+
+  const asOf = new Date().toISOString()
+  const sendRealtime = realtimeSenders.get(page)
+  expect(sendRealtime).toBeDefined()
+  sendRealtime?.({
+    type: 'fx',
+    data: {
+      baseCurrency: 'USD',
+      quoteCurrency: 'KRW',
+      rate: 1401.25,
+      rateType: 'LIVE',
+      source: 'FINNHUB_WS',
+      providerSymbol: 'OANDA:USD_KRW',
+      asOf,
+      fetchedAt: asOf,
+    },
+  })
+
+  await expect(page.locator('.compact-fx')).toContainText('1,401.25')
+  await expect(page.locator('.base-currency-summary')).toContainText('USD/KRW 1,401.25')
+})
+
+test('portfolio donut groups smaller holdings and fits an intermediate mobile width', async ({ page }) => {
+  const amounts = [800000, 700000, 600000, 500000, 400000, 300000, 200000, 100000]
+  const total = amounts.reduce((sum, value) => sum + value, 0)
+  await page.route('**/api/v1/portfolios', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response({
+        baseCurrency: 'KRW',
+        baseCurrencyTotalPurchaseAmount: total,
+        baseCurrencyTotalEvaluationAmount: total,
+        baseCurrencyProfitLoss: 0,
+        baseCurrencyReturnRate: 0,
+        conversionComplete: true,
+        profitLossComplete: true,
+        fxRates: [{ pair: 'USD/KRW', rate: 1382.5, rateType: 'DEMO', source: 'DEMO', asOf: now, freshness: 'FRESH' }],
+        currencySummaries: [{
+          currency: 'KRW',
+          totalPurchaseAmount: total,
+          totalEvaluationAmount: total,
+          profitLoss: 0,
+          returnRate: 0,
+          valuationComplete: true,
+        }],
+        holdings: amounts.map((amount, index) => ({
+          id: index + 10,
+          symbol: `10000${index + 1}`,
+          name: `테스트 종목 ${index + 1}`,
+          market: 'KRX',
+          currency: 'KRW',
+          quantity: 1,
+          averagePurchasePrice: amount,
+          latestPrice: amount,
+          priceAsOf: now,
+          priceSource: 'DEMO',
+          purchaseAmount: amount,
+          evaluationAmount: amount,
+          profitLoss: 0,
+          returnRate: 0,
+          convertedEvaluationAmount: amount,
+          convertedPurchaseAmount: amount,
+          convertedProfitLoss: 0,
+          fxEffectApproximation: null,
+          averagePurchaseFxRate: null,
+          purchaseFxBaseCurrency: null,
+          purchaseFxQuoteCurrency: null,
+          valuationStatus: 'VALUED',
+          updatedAt: now,
+        })),
+      })),
+    })
+  })
+  await page.setViewportSize({ width: 568, height: 900 })
+  await login(page)
+  await page.goto('/portfolio')
+
+  const allocation = page.locator('.portfolio-allocation-card')
+  await expect(allocation).toContainText('기타 1종목')
+  await expect(allocation.getByRole('img', { name: /기타 1종목 2\.8%/ })).toBeVisible()
+  expect(await allocation.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
 test('global search selects a canonical market and restores every detail context', async ({ page }) => {
   await login(page)
 
@@ -729,13 +999,13 @@ test('global search selects a canonical market and restores every detail context
   await search.press('Enter')
 
   await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
-  await expect(page.getByRole('heading', { name: 'Apple 종목 개요' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Apple 기술적 분석' })).toBeVisible()
   await expect(page.getByRole('img', { name: /AAPL 3M 일봉 캔들 및 거래량\(주\) 차트/ })).toBeVisible()
   await page.getByRole('link', { name: '차트·기술분석' }).click()
   await expect(page.locator('.ai-technical-card')).toContainText('NASDAQ · AAPL')
 
   await page.goBack()
-  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
+  await expect(page).toHaveURL(/\/dashboard$/)
 })
 
 test('watchlist search adds a catalog stock beyond the four demo fixtures', async ({ page }) => {
@@ -747,7 +1017,6 @@ test('watchlist search adds a catalog stock beyond the four demo fixtures', asyn
   await expect(page.getByRole('button', { name: 'Apple 관심종목 추가' })).toBeVisible()
   await page.getByRole('button', { name: 'Apple 관심종목 추가' }).click()
 
-  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
   await page.goto('/watchlist')
   await expect(page.locator('.watchlist-title-row')).toContainText('2개 종목 · 개수 제한 없음')
   await expect(page.locator('.stock-card')).toHaveCount(2)
@@ -757,7 +1026,7 @@ test('official disclosure can fetch its source and render a Gemini summary', asy
   await login(page)
   await page.goto('/stocks/KRX/000660/disclosures')
 
-  const summarizeButton = page.getByRole('button', { name: 'Gemini 공시 요약' })
+  const summarizeButton = page.getByRole('button', { name: 'AI 공시 요약' })
   await summarizeButton.scrollIntoViewIfNeeded()
   await expect(summarizeButton).toBeVisible()
   await expect(page.locator('.disclosure-content-state')).toContainText('요약 시 원문 확보')
@@ -813,13 +1082,13 @@ test('route shell preserves active navigation and collapsed sidebar preference',
   await expect(page.getByRole('heading', { name: '기업 공시' })).toBeVisible()
 })
 
-test('navigation uses the shared SVG icon set and exposes financial data status labels', async ({ page }) => {
+test('navigation uses the shared SVG icon set while stock cards keep provider details quiet', async ({ page }) => {
   await login(page)
 
   const desktopLinks = page.locator('.desktop-sidebar .shell-nav-link')
   await expect(desktopLinks).toHaveCount(9)
   await expect(page.locator('.desktop-sidebar .shell-nav-link svg')).toHaveCount(9)
-  await expect(page.locator('.stock-card .data-status-badge').first()).toContainText(/실시간|지연|갱신 지연|일부 준비/)
+  await expect(page.locator('.stock-card .data-status-badge')).toHaveCount(0)
 
   await page.goto('/stocks/KRX/000660/technical')
   await expect(page.locator('.chart-data-meta .data-status-badge')).toBeVisible()

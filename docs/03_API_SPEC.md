@@ -250,7 +250,7 @@ GET /market/fx-rates/USD/KRW/history?period=1M&interval=1D
 GET /market/fx-rates/pairs
 ```
 
-환율 방향·출처·freshness, 포트폴리오 KRW 환산과 오류 계약은 `15_FX_RATE_SPEC.md`를 단일 상세 기준으로 한다.
+환율 방향·출처·freshness, 포트폴리오 KRW 환산과 오류 계약은 `15_FX_RATE_SPEC.md`를 단일 상세 기준으로 한다. LIVE 모드에서는 공급자 시각이 포함된 Finnhub WebSocket `OANDA:USD_KRW` 체결만 `rateType=LIVE`로 사용한다. 해당 스트림이 없거나 오래되면 Finnhub REST 또는 Frankfurter의 검증된 `REFERENCE` 값으로 내려가며, 화면은 visible·online 상태에서 30초마다 갱신하고 실패하면 마지막 정상값을 stale 상태로 유지한다.
 
 ### `GET /stocks/realtime`
 
@@ -283,7 +283,7 @@ GET /market/fx-rates/pairs
 
 ### `WS /ws/quotes`
 
-연결 직후 `snapshot`과 현재 장중 봉의 `candles`, 이후 변경마다 `quote`, `candle` 또는 `status` 이벤트를 전송한다. 프런트엔드는 지수 백오프로 자동 재연결하고 새 연결의 snapshot으로 상태를 복구한다. `sessionStatus=LIVE`만 `TICK`으로 표시하며 REST 초기값은 `SNAPSHOT`으로 구분한다.
+연결 직후 `snapshot`, 유효한 최신 USD/KRW가 있으면 별도 `fx`, 현재 장중 봉의 `candles`를 전송하고 이후 변경마다 `quote`, `candle`, `fx` 또는 `status` 이벤트를 전송한다. 프런트엔드는 지수 백오프로 자동 재연결하고 새 연결의 snapshot과 최신 `fx` 이벤트로 상태를 복구한다. `sessionStatus=LIVE`와 REST 초기값 `SNAPSHOT`은 내부 신선도·진단 상태로 구분하되, 일반 사용자 종목 카드에는 `TICK`이나 공급자 코드 같은 구현 상세를 반복 표시하지 않고 가격·등락·차트만 제자리 갱신한다.
 
 브라우저는 선택 종목이 바뀔 때 다음 메시지를 보낸다. 서버는 현재 세션 선택 종목을 최우선으로 두고 관심종목·보유종목·활성 알림을 합쳐 공급자별 구독 상한 안에서 동적으로 구독·해제한다.
 
@@ -426,6 +426,14 @@ ADMIN 전용 종목 마스터 동기화 API다. `provider`는 `KIS_MASTER` 또�
 ```
 
 포트폴리오 응답은 `totalPurchaseAmount`, `totalEvaluationAmount`, `profitLoss`, `returnRate`, `holdings`를 포함한다. 평가 가격은 인메모리 실시간 시세와 DB 최신 가격의 `asOf`를 비교해 더 새로운 값을 사용하며, 응답의 `priceSource`와 `priceAsOf`로 근거를 제공한다.
+
+화면은 `conversionComplete=true`이고 기준통화 평가액이 유효할 때 원화 환산 평가액 기준의 종목별 원형 자산배분 그래프를 표시한다. 상위 7개 종목과 나머지 합계만 시각화하며, 환산이 불완전하면 부분 합계를 전체 비중처럼 그리지 않는다.
+
+### `POST /ai/portfolio-evaluations` — 구현됨
+
+요청 본문은 선택적인 `promptVersion`만 받는다. 서버는 JWT 사용자의 최신 포트폴리오를 다시 조회해 원화 평가액, 상위 종목 비중, HHI, 통화 노출과 데이터 한계를 계산한다. 클라이언트가 보유 비중이나 수익률을 임의로 제출하지 않는다.
+
+응답은 `balanceStatus`, headline·summary, 분산도·집중도·통화 노출·성과 맥락, 강점·위험·정기 점검 항목, `P/C/FX/H` evidence와 모델·캐시·토큰·비용 감사 정보를 포함한다. 동일 보유 구성의 15분 평가 창은 Redis·DB에서 재사용하며 HIT는 실제 토큰·비용 0으로 기록한다. 존재하지 않는 근거 ID, 입력에서 추적할 수 없는 숫자, 목표가·수익률 예측과 직접적인 매수·매도·교체 권고는 거부한다.
 
 ## 6. 가격 알림
 

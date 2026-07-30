@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router'
 import type { AppRouteContext } from '../app/context'
 import { getUsdKrw, getUsdKrwHistory } from '../api/fx'
 import type { FxHistory, FxRate } from '../types/fx'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
+import { mergeRealtimeFxRate, validRealtimeRate } from '../utils/realtimeFx'
 
 const periods: FxHistory['period'][] = ['1W', '1M', '3M', '1Y']
 
 export function FxRatePanel() {
   const context = useOutletContext<AppRouteContext | null>()
   const showAdminDetails = context?.showAdminDetails ?? true
+  const realtimeRate = context?.realtimeFxRate ?? null
   const [rate, setRate] = useState<FxRate | null>(null)
   const [history, setHistory] = useState<FxHistory | null>(null)
   const [period, setPeriod] = useState<FxHistory['period']>('1M')
@@ -20,23 +22,56 @@ export function FxRatePanel() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [rateAttempt, setRateAttempt] = useState(0)
   const [historyAttempt, setHistoryAttempt] = useState(0)
+  const realtimeRateRef = useRef(realtimeRate)
 
   useEffect(() => {
-    const controller = new AbortController()
-    setRateLoading(true)
-    getUsdKrw(controller.signal)
-      .then((nextRate) => {
-        setRate(nextRate)
-        setRateError('')
-      })
-      .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === 'AbortError') return
-        setRateError(reason instanceof Error ? reason.message : '환율을 불러오지 못했습니다.')
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setRateLoading(false)
-      })
-    return () => controller.abort()
+    realtimeRateRef.current = realtimeRate
+    if (!validRealtimeRate(realtimeRate)) return
+    setRate((current) => mergeRealtimeFxRate(current, realtimeRate))
+    setRateError('')
+  }, [realtimeRate])
+
+  useEffect(() => {
+    let active = true
+    let inFlight = false
+    let controller: AbortController | null = null
+
+    const refresh = () => {
+      if (!active || inFlight || document.visibilityState !== 'visible' || !navigator.onLine) return
+      inFlight = true
+      controller = new AbortController()
+      setRateLoading(true)
+      getUsdKrw(controller.signal)
+        .then((nextRate) => {
+          if (!active) return
+          setRate(mergeRealtimeFxRate(nextRate, realtimeRateRef.current))
+          setRateError('')
+        })
+        .catch((reason: unknown) => {
+          if (!active || (reason instanceof DOMException && reason.name === 'AbortError')) return
+          setRateError(reason instanceof Error ? reason.message : '환율을 불러오지 못했습니다.')
+        })
+        .finally(() => {
+          inFlight = false
+          if (active) setRateLoading(false)
+        })
+    }
+
+    refresh()
+    const interval = window.setInterval(refresh, 30_000)
+    const resume = () => refresh()
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    window.addEventListener('online', resume)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      window.removeEventListener('online', resume)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      controller?.abort()
+    }
   }, [rateAttempt])
 
   useEffect(() => {

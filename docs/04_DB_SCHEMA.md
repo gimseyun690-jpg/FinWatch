@@ -1,6 +1,6 @@
 # FinWatch DB 스키마
 
-상태: V19 마이그레이션까지 구현됨. PostgreSQL과 snake_case를 기준으로 한다.
+상태: V20 마이그레이션까지 구현됨. PostgreSQL과 snake_case를 기준으로 한다.
 
 ## 1. 관계 요약
 
@@ -14,9 +14,11 @@ stocks 1--N news_articles
 news_articles 1--N ai_analyses
 users 1--N ai_usage_logs
 users 1--N auth_identities
+users 1--N ai_portfolio_evaluations
 ai_analyses 1--N ai_usage_logs
 stocks 1--N ai_technical_explanations
 stocks 1--N ai_daily_change_briefings
+ai_portfolio_evaluations 1--N ai_usage_logs
 ```
 
 ## 2. 공통 규칙
@@ -115,10 +117,14 @@ UNIQUE `(user_id, stock_id)`.
 | quantity | NUMERIC(20, 6) | 양수 |
 | average_purchase_price | NUMERIC(20, 4) | 0 이상 |
 | currency | CHAR(3) | NOT NULL |
+| average_purchase_fx_rate | NUMERIC(24, 10) | USD 보유의 평균 매수 USD/KRW, NULL 가능 |
+| purchase_fx_base_currency | CHAR(3) | 매수 환율 base, NULL 가능 |
+| purchase_fx_quote_currency | CHAR(3) | 매수 환율 quote, NULL 가능 |
 | created_at | TIMESTAMPTZ | NOT NULL |
 | updated_at | TIMESTAMPTZ | NOT NULL |
 
 MVP는 사용자·종목별 보유 행 하나를 유지하므로 UNIQUE `(user_id, stock_id)`.
+매수 환율 세 필드는 모두 NULL이거나 함께 유효해야 하며, 정확한 체결별 환차손익이 아니라 평균단가 기반 근사 계산에만 사용한다.
 
 ### price_alerts
 
@@ -244,6 +250,39 @@ DB 컬럼명 `analysis_interval`을 API의 `interval`에 매핑한다. UNIQUE `(
 
 UNIQUE `(stock_id, current_trading_date, input_hash, prompt_version)`, UNIQUE `(cache_key)`를 적용한다. 전체 컬럼과 사용량 로그 연결은 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md` 12절을 따른다.
 
+### ai_portfolio_evaluations (V20 구현)
+
+인증 사용자의 서버 포트폴리오를 15분 평가 창으로 정규화한 뒤 생성한 AI 구성 평가를 저장한다. 클라이언트가 제출한 보유 비중이나 수익률은 저장 입력으로 사용하지 않는다.
+
+| 컬럼 | 타입 | 제약/설명 |
+|---|---|---|
+| id | BIGINT | PK |
+| user_id | BIGINT | FK users, NOT NULL, ON DELETE CASCADE |
+| snapshot_at | TIMESTAMPTZ | 평가 입력을 만든 시각 |
+| window_started_at | TIMESTAMPTZ | 15분 평가 창 시작 |
+| input_hash | VARCHAR(64) | 평가액·비중·환율·근거를 포함한 정규화 입력 SHA-256 |
+| positions_hash | VARCHAR(64) | 사용자 보유 구성 식별 SHA-256 |
+| prompt_version | VARCHAR(80) | NOT NULL |
+| balance_status | VARCHAR(40) | DIVERSIFIED / MODERATE_CONCENTRATION / HIGH_CONCENTRATION / INCOMPLETE |
+| headline | VARCHAR(180) | 평가 제목 |
+| summary | TEXT | 전체 요약 |
+| diversification | TEXT | 분산도 statement JSON |
+| concentration | TEXT | 집중도 statement JSON |
+| currency_exposure | TEXT | 통화 노출 statement JSON |
+| performance_context | TEXT | 성과 맥락 statement JSON |
+| strengths | TEXT | 강점 statement 배열 JSON |
+| risk_factors | TEXT | 위험 statement 배열 JSON |
+| review_points | TEXT | 정기 점검 statement 배열 JSON |
+| data_limitations | TEXT | 서버·AI 한계 배열 JSON |
+| evidence | TEXT | `P/C/FX/H` 서버 근거 배열 JSON |
+| model_name | VARCHAR(100) | 원 생성 모델 |
+| input_tokens, output_tokens | INTEGER | 0 이상 |
+| estimated_cost | NUMERIC(16, 8) | 원 생성 예상 비용 |
+| cache_key | VARCHAR(500) | UNIQUE |
+| generated_at | TIMESTAMPTZ | 원 생성 시각 |
+
+UNIQUE `(user_id, positions_hash, window_started_at, prompt_version)`로 같은 사용자·보유 구성·15분 창의 중복 생성을 막고, INDEX `(user_id, generated_at DESC)`로 사용자별 최근 평가를 조회한다. 원문 프롬프트와 전체 외부 응답은 저장하지 않는다.
+
 ### ai_usage_logs
 
 | 컬럼 | 타입 | 제약/설명 |
@@ -254,9 +293,10 @@ UNIQUE `(stock_id, current_trading_date, input_hash, prompt_version)`, UNIQUE `(
 | analysis_id | BIGINT | FK ai_analyses, 뉴스 분석이면 연결, NULL 가능 |
 | technical_explanation_id | BIGINT | FK ai_technical_explanations, 기술지표 해설이면 연결, NULL 가능 |
 | daily_briefing_id | BIGINT | FK ai_daily_change_briefings, 일일 브리핑이면 연결, NULL 가능 |
+| portfolio_evaluation_id | BIGINT | FK ai_portfolio_evaluations, 포트폴리오 평가이면 연결, NULL 가능, ON DELETE SET NULL |
 | feature_type | VARCHAR(40) | NOT NULL |
-| target_type | VARCHAR(40) | NEWS / STOCK |
-| target_id | BIGINT | 뉴스 ID 또는 종목 ID |
+| target_type | VARCHAR(40) | NEWS / STOCK / PORTFOLIO |
+| target_id | BIGINT | 뉴스 ID, 종목 ID 또는 포트폴리오 소유 사용자 ID |
 | model_name | VARCHAR(100) | 캐시 적중 시 원 생성 모델 |
 | input_tokens | INTEGER | 캐시 적중은 0 |
 | output_tokens | INTEGER | 캐시 적중은 0 |
@@ -271,7 +311,7 @@ UNIQUE `(stock_id, current_trading_date, input_hash, prompt_version)`, UNIQUE `(
 
 인덱스 `(created_at DESC)`, `(feature_type, created_at DESC)`, `(estimated_cost DESC)`.
 
-V13에서 `technical_explanation_id`가 추가됐다. `daily_briefing_id`는 일일 변화 브리핑 migration에서 추가한다. 성공 로그는 기능에 맞는 결과 FK 하나만 연결하고 실패 로그는 결과 FK가 모두 `NULL`일 수 있다. 세부 규칙은 `12_AI_TECHNICAL_EXPLANATION_SPEC.md`와 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
+V13에서 `technical_explanation_id`, V17에서 `daily_briefing_id`, V20에서 `portfolio_evaluation_id`가 추가됐다. 성공 로그는 기능에 맞는 결과 FK 하나만 연결하고 실패 로그는 결과 FK가 모두 `NULL`일 수 있다. 포트폴리오 성공·HIT 로그는 계정이 활성 상태일 때 `feature_type=PORTFOLIO_EVALUATION`, `target_type=PORTFOLIO`, `target_id=userId`와 평가 FK를 사용한다. 계정 삭제 시 해당 로그의 `user_id`, `target_id`, 평가 FK를 익명화한 뒤 사용자별 평가 행을 삭제한다. 세부 규칙은 `08_AI_OPERATION_SPEC.md`, `12_AI_TECHNICAL_EXPLANATION_SPEC.md`와 `13_AI_DAILY_CHANGE_BRIEFING_SPEC.md`를 따른다.
 
 ### prompt_templates (향후 운영 범위, 현재 대회 MVP 제외)
 
@@ -306,6 +346,7 @@ UNIQUE `(feature_type, version)`. 기능별 활성 버전은 하나만 허용하
 | 키 | 값 | TTL |
 |---|---|---|
 | `ai:news-summary:{newsId}:{contentHash}:{promptVersion}` | AI 요약 응답 JSON | 기본 24시간, 설정 가능 |
+| `ai:portfolio-evaluation:{userId}:{positionsHash}:{windowStartedAt}:{promptVersion}` | 포트폴리오 구성 평가 응답 JSON | 기본 15분 |
 | `stock:quote:{market}:{symbol}` | 현재가 JSON | 공급자 갱신주기에 맞춤 |
 
 DB가 원본이고 Redis는 재생성 가능한 캐시로 취급한다.
@@ -332,5 +373,7 @@ Flyway를 사용하며 현재 적용 파일은 다음과 같다. 파일명과 �
 16. `V16__create_exchange_rates.sql`: USD/KRW 환율 이력과 포트폴리오 매수 환율
 17. `V17__create_ai_daily_change_briefings.sql`: 일일 변화 브리핑 결과와 사용량 로그 FK
 18. `V18__add_content_feed_indexes.sql`: 통합 콘텐츠 피드의 종류·출처·발행시각 정렬과 AI 완료 상태 조회 인덱스
+19. `V19__add_social_auth_and_user_profile.sql`: 소셜 인증 identity와 사용자 프로필·상태 확장
+20. `V20__create_ai_portfolio_evaluations.sql`: 사용자 포트폴리오 AI 구성 평가와 사용량 로그 FK
 
 `prompt_templates`, `ai_model_prices`는 현재 대회 MVP 범위가 아니다. 프롬프트 버전과 단가는 환경설정으로 고정하며, 운영 중 무중단 편집·시점별 단가 이력이 필요할 때 별도 마이그레이션으로 추가한다.

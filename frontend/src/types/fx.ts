@@ -13,6 +13,17 @@ export type FxRate = {
   freshness: 'FRESH' | 'DELAYED' | 'STALE'
 }
 
+export type RealtimeFxRate = {
+  baseCurrency: string
+  quoteCurrency: string
+  rate: number
+  rateType: 'LIVE'
+  source: string
+  providerSymbol: string
+  asOf: string
+  fetchedAt: string
+}
+
 export type FxHistory = {
   baseCurrency: string
   quoteCurrency: string

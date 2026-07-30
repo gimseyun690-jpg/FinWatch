@@ -4,7 +4,7 @@ test('production service worker restores the shell offline without trusting a st
   await page.route('**/api/v1/**', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"offline fixture"}' }))
 
   await page.goto('/login')
-  await expect(page.getByRole('heading', { name: '투자 정보 대시보드 로그인' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'FinWatch 시작하기' })).toBeVisible()
   await page.evaluate(() => navigator.serviceWorker.ready)
   await page.waitForFunction(() => navigator.serviceWorker.controller != null)
   expect(await page.evaluate(() => localStorage.getItem('finwatch.auth.session'))).toBeNull()
@@ -20,7 +20,7 @@ test('production service worker restores the shell offline without trusting a st
   await context.setOffline(true)
   try {
     await page.goto('/stocks/KRX/000660/technical')
-    await expect(page.getByRole('heading', { name: '투자 정보 대시보드 로그인' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'FinWatch 시작하기' })).toBeVisible()
     await expect(page).toHaveURL(/\/login\?returnTo=/)
     expect(await page.evaluate(() => localStorage.getItem('finwatch.auth.session'))).toBeNull()
     await page.screenshot({ path: '../docs/evidence/18-pwa-offline.png', fullPage: true })

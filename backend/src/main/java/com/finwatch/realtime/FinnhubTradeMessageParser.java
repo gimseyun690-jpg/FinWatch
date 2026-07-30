@@ -36,7 +36,8 @@ public class FinnhubTradeMessageParser {
                         symbol,
                         price,
                         item.path("v").decimalValue(),
-                        epochMillis > 0 ? Instant.ofEpochMilli(epochMillis) : Instant.now()));
+                        epochMillis > 0 ? Instant.ofEpochMilli(epochMillis) : Instant.now(),
+                        epochMillis > 0));
             }
             return List.copyOf(trades);
         } catch (RuntimeException ignored) {
@@ -48,6 +49,7 @@ public class FinnhubTradeMessageParser {
             String symbol,
             BigDecimal price,
             BigDecimal volume,
-            Instant asOf) {
+            Instant asOf,
+            boolean providerTimestamp) {
     }
 }

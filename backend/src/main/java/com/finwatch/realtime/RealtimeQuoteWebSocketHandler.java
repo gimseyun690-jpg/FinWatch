@@ -38,6 +38,9 @@ public class RealtimeQuoteWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         sessions.put(session.getId(), session);
         send(session, new RealtimeEvent("snapshot", hub.snapshot()));
+        for (RealtimeFxRate fxRate : hub.fxSnapshot()) {
+            send(session, new RealtimeEvent("fx", fxRate));
+        }
         send(session, new RealtimeEvent("candles", candleAggregator.snapshot()));
     }
 

@@ -15,6 +15,7 @@ import type { ApiState, AppRouteContext } from './app/context'
 import { clearLegacyTokenSession, UNAUTHORIZED_EVENT } from './auth/session'
 import { AdminAiDashboard } from './components/AdminAiDashboard'
 import { AiNewsSummary } from './components/AiNewsSummary'
+import { AiPortfolioEvaluation } from './components/AiPortfolioEvaluation'
 import { AiTechnicalExplanation } from './components/AiTechnicalExplanation'
 import { AlertsPanel } from './components/AlertsPanel'
 import { AppShell } from './components/AppShell'
@@ -72,7 +73,7 @@ function App() {
   const [selectedStock, setSelectedStock] = useState<StockRef>(() => stockFromPath(window.location.pathname) ?? defaultStock)
   const [adminRefreshKey, setAdminRefreshKey] = useState(0)
   const [session, setSession] = useState<AuthSession | null | undefined>(undefined)
-  const { quotes: liveQuotes, intradayCandles, connection: realtimeConnection, connectedProviders } = useRealtimeQuotes(Boolean(session), selectedStock)
+  const { quotes: liveQuotes, intradayCandles, fxRate: realtimeFxRate, connection: realtimeConnection, connectedProviders } = useRealtimeQuotes(Boolean(session), selectedStock)
   const [showAdminDetails, setShowAdminDetailsState] = useState(() => localStorage.getItem('finwatch.ui.admin-details') === 'true')
   const setShowAdminDetails = useCallback((show: boolean) => {
     localStorage.setItem('finwatch.ui.admin-details', String(show))
@@ -155,6 +156,7 @@ function App() {
     selectedStock,
     liveQuotes,
     intradayCandles,
+    realtimeFxRate,
     realtimeConnection,
     connectedProviders,
     adminRefreshKey,
@@ -163,7 +165,7 @@ function App() {
     logout,
     showAdminDetails,
     setShowAdminDetails,
-  }), [apiState, session, selectedStock, liveQuotes, intradayCandles, realtimeConnection, connectedProviders, adminRefreshKey, selectStock, recordAiUsage, logout, showAdminDetails, setShowAdminDetails])
+  }), [apiState, session, selectedStock, liveQuotes, intradayCandles, realtimeFxRate, realtimeConnection, connectedProviders, adminRefreshKey, selectStock, recordAiUsage, logout, showAdminDetails, setShowAdminDetails])
 
   if (session === undefined) {
     return <main className="session-bootstrap" role="status"><span className="search-spinner" aria-hidden="true" /><strong>보안 세션을 확인하는 중입니다.</strong></main>
@@ -328,7 +330,8 @@ function WatchlistPage() {
 
 function PortfolioPage() {
   const context = useAppContext()
-  return <><PageHeading eyebrow="PORTFOLIO" title="포트폴리오" description="보유 수량과 매입 단가를 기준통화로 환산해 평가합니다." /><PortfolioPanel liveQuotes={context.liveQuotes} /></>
+  const [portfolioRevision, setPortfolioRevision] = useState(0)
+  return <><PageHeading eyebrow="PORTFOLIO" title="포트폴리오" description="보유 수량과 매입 단가를 기준통화로 환산하고 자산 구성의 균형을 점검합니다." /><PortfolioPanel liveQuotes={context.liveQuotes} onPortfolioChanged={() => setPortfolioRevision((value) => value + 1)} /><AiPortfolioEvaluation portfolioRevision={portfolioRevision} onUsageRecorded={context.recordAiUsage} /></>
 }
 
 function AlertsPage() {

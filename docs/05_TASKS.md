@@ -83,7 +83,8 @@
 
 목표: `15_FX_RATE_SPEC.md` 기준으로 환율을 표시하고 미국 주식 원통화 값을 보존하면서 혼합 포트폴리오의 현재 평가액을 KRW로 환산한다.
 
-- [x] `FxRateProvider`와 Finnhub Forex pair discovery·quote·candle 어댑터
+- [x] `FxRateProvider`와 Finnhub Forex quote·candle 어댑터
+- [x] 공급자 시각이 있는 Finnhub WebSocket USD/KRW 틱만 LIVE로 채택하고 오래된 틱은 폐기
 - [x] Finnhub 권한 제한 시 Frankfurter `REFERENCE` 최신·이력 fallback
 - [x] `exchange_rates` migration, 품질 검증과 Redis/DB fallback
 - [x] 최신 USD/KRW·이력 API, cache와 single-flight
@@ -156,6 +157,18 @@
 - [x] 종목 상세 변화 브리핑·관점 매트릭스·근거 drawer·AI 감사 카드 UI
 - [x] 관리자 화면에서 기능별 호출·토큰·비용·캐시 절감액·실패 분리
 - [x] AC-12 핵심 MISS/HIT·근거·금지 출력 계약 통합 테스트
+
+## Step 2.4 포트폴리오 구성 AI 평가
+
+목표: 현재 사용자의 서버 계산 포트폴리오만 입력으로 사용해 분산·집중·통화 노출·성과 맥락을 근거 중심으로 설명하고, 매수·매도 추천 없이 정기 점검 항목을 제공한다.
+
+- [x] JWT 사용자 포트폴리오 스냅샷, HHI·상위 비중·통화 노출과 `P/C/FX/H` 근거 계산
+- [x] `POST /api/v1/ai/portfolio-evaluations`와 Gemini·Mock 구조화 응답
+- [x] 존재하지 않는 근거·추적 불가 숫자·목표가·수익률 예측·직접 거래 권고 검증
+- [x] 15분 평가 창 Redis/DB 캐시, V20 영속화와 AI 사용량 로그 연결
+- [x] 포트폴리오 평가 카드, 근거 drawer, 데이터 한계·감사 정보 표시
+- [x] 원화 환산 평가액 기반 원형 자산배분 그래프와 불완전 환산 차단
+- [x] API·검증기·스냅샷·Gemini 계약과 Playwright 회귀 테스트
 
 ## Step 3. 관리자 비용 대시보드
 

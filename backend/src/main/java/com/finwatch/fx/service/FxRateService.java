@@ -27,6 +27,7 @@ import com.finwatch.fx.dto.FxRateResponses.FxHistoryItem;
 import com.finwatch.fx.dto.FxRateResponses.FxPair;
 import com.finwatch.fx.dto.FxRateResponses.LatestFxRate;
 import com.finwatch.fx.provider.FxRateProvider;
+import com.finwatch.fx.realtime.FinnhubFxRealtimeStore;
 import com.finwatch.fx.repository.ExchangeRateRepository;
 
 @Service
@@ -38,52 +39,69 @@ public class FxRateService {
     private final ExchangeRateRepository repository;
     private final List<FxRateProvider> providers;
     private final FxRateCacheStore cache;
+    private final FinnhubFxRealtimeStore realtimeStore;
     private final DataMode dataMode;
     private final Duration cacheTtl;
     private final Duration freshWithin;
     private final Duration delayedWithin;
+    private final Duration realtimeMaxAge;
+    private final String realtimeSymbol;
     private final ConcurrentHashMap<String, CompletableFuture<ExchangeRate>> inFlight = new ConcurrentHashMap<>();
 
     public FxRateService(
             ExchangeRateRepository repository,
             List<FxRateProvider> providers,
             FxRateCacheStore cache,
+            FinnhubFxRealtimeStore realtimeStore,
             @Value("${app.data.mode:DEMO}") String dataMode,
             @Value("${app.data.fx.cache-ttl:60s}") Duration cacheTtl,
             @Value("${app.data.fx.fresh-within:15m}") Duration freshWithin,
-            @Value("${app.data.fx.delayed-within:36h}") Duration delayedWithin) {
+            @Value("${app.data.fx.delayed-within:36h}") Duration delayedWithin,
+            @Value("${app.data.fx.realtime-max-age:2m}") Duration realtimeMaxAge,
+            @Value("${app.data.fx.finnhub-symbol:OANDA:USD_KRW}") String realtimeSymbol) {
         this.repository = repository;
         this.providers = List.copyOf(providers);
         this.cache = cache;
+        this.realtimeStore = realtimeStore;
         this.dataMode = DataMode.from(dataMode);
         this.cacheTtl = cacheTtl;
         this.freshWithin = freshWithin;
         this.delayedWithin = delayedWithin;
+        this.realtimeMaxAge = realtimeMaxAge;
+        this.realtimeSymbol = realtimeSymbol == null ? "" : realtimeSymbol.trim().toUpperCase(Locale.ROOT);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public LatestFxRate latest(String base, String quote) {
         Pair pair = pair(base, quote);
+        Optional<FxRateCacheValue> realtime = latestRealtime(pair);
+        if (realtime.isPresent()) {
+            FxRateCacheValue value = realtime.get();
+            return response(value, previousClose(pair, value.source(), value.asOf()));
+        }
         String key = cacheKey(pair);
         Optional<FxRateCacheValue> cached = cache.get(key);
-        if (cached.isPresent()) return response(cached.get(), previousClose(pair, cached.get().asOf()));
+        if (cached.isPresent()) {
+            FxRateCacheValue value = cached.get();
+            return response(value, previousClose(pair, value.source(), value.asOf()));
+        }
 
         ExchangeRate stored = latestStored(pair).orElse(null);
         if (dataMode == DataMode.DEMO) {
             if (stored == null) throw unavailable();
             cache(stored, key);
-            return response(stored, previousClose(pair, stored.getAsOf()));
+            return response(stored, previousClose(pair, stored.getSource(), stored.getAsOf()));
         }
         if (stored != null && stored.getFetchedAt().isAfter(Instant.now().minus(freshWithin))) {
             cache(stored, key);
-            return response(stored, previousClose(pair, stored.getAsOf()));
+            return response(stored, previousClose(pair, stored.getSource(), stored.getAsOf()));
         }
 
         try {
             ExchangeRate current = fetchSingleFlight(pair);
-            return response(current, previousClose(pair, current.getAsOf()));
+            return response(current, previousClose(pair, current.getSource(), current.getAsOf()));
         } catch (RuntimeException exception) {
-            if (stored != null) return response(stored, previousClose(pair, stored.getAsOf()));
+            if (stored != null) return response(stored, previousClose(pair, stored.getSource(), stored.getAsOf()));
             if (exception instanceof FxRateException fx) throw fx;
             if (exception.getCause() instanceof RuntimeException cause) throw cause;
             throw unavailable();
@@ -112,12 +130,16 @@ public class FxRateService {
         if (dataMode == DataMode.LIVE && values.size() < 2) {
             for (FxRateProvider provider : providers(pair)) {
                 try {
-                    for (var bar : provider.history(pair.base(), pair.quote(), from, to)) {
+                    var providerBars = provider.history(pair.base(), pair.quote(), from, to);
+                    if (providerBars.isEmpty()) {
+                        continue;
+                    }
+                    for (var bar : providerBars) {
                         if (!validBar(bar) || repository.existsByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOf(pair.base(), pair.quote(), provider.providerId(), bar.asOf())) continue;
-                        repository.save(ExchangeRate.create(pair.base(), pair.quote(), bar.close(), bar.open(), bar.high(), bar.low(), bar.close(), "DELAYED", provider.providerId(), bar.providerSymbol(), bar.asOf(), Instant.now()));
+                        repository.save(ExchangeRate.create(pair.base(), pair.quote(), bar.close(), bar.open(), bar.high(), bar.low(), bar.close(), provider.historyRateType(), provider.providerId(), bar.providerSymbol(), bar.asOf(), Instant.now()));
                     }
                     values = historyStored(pair, from, to);
-                    if (!values.isEmpty()) {
+                    if (values.size() >= 2) {
                         break;
                     }
                 } catch (ProviderException ignored) {
@@ -140,17 +162,25 @@ public class FxRateService {
     private ExchangeRate fetchSingleFlight(Pair pair) {
         String key = pair.base() + ":" + pair.quote();
         CompletableFuture<ExchangeRate> created = new CompletableFuture<>();
-        CompletableFuture<ExchangeRate> existing = inFlight.putIfAbsent(key, created);
-        if (existing != null) return existing.join();
+        CompletableFuture<ExchangeRate> inFlightRequest = inFlight.putIfAbsent(key, created);
+        if (inFlightRequest != null) return inFlightRequest.join();
         try {
             RuntimeException lastFailure = null;
             for (FxRateProvider provider : providers(pair)) {
                 try {
                     var quote = provider.latest(pair.base(), pair.quote());
                     validate(quote.rate(), quote.asOf());
-                    ExchangeRate saved = repository.existsByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOf(pair.base(), pair.quote(), provider.providerId(), quote.asOf())
-                            ? latestStored(pair).orElseThrow()
-                            : repository.save(ExchangeRate.create(pair.base(), pair.quote(), quote.rate(), null, null, null, quote.rate(), quote.rateType(), provider.providerId(), quote.providerSymbol(), quote.asOf(), quote.fetchedAt()));
+                    ExchangeRate saved = repository.findFirstByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOf(
+                                    pair.base(), pair.quote(), provider.providerId(), quote.asOf())
+                            .map(existing -> {
+                                existing.refreshSnapshot(
+                                        quote.rate(), quote.rateType(), quote.providerSymbol(), quote.fetchedAt());
+                                return repository.save(existing);
+                            })
+                            .orElseGet(() -> repository.save(ExchangeRate.create(
+                                    pair.base(), pair.quote(), quote.rate(), null, null, null, quote.rate(),
+                                    quote.rateType(), provider.providerId(), quote.providerSymbol(),
+                                    quote.asOf(), quote.fetchedAt())));
                     cache(saved, cacheKey(pair));
                     created.complete(saved);
                     return saved;
@@ -201,10 +231,26 @@ public class FxRateService {
         return bar != null && bar.close() != null && bar.close().signum() > 0 && bar.asOf() != null && !bar.asOf().isAfter(Instant.now().plus(Duration.ofMinutes(5)));
     }
 
-    private BigDecimal previousClose(Pair pair, Instant currentAsOf) {
-        Instant from = currentAsOf.minus(14, ChronoUnit.DAYS);
-        return historyStored(pair, from, currentAsOf.minusNanos(1)).stream()
-                .reduce((first, second) -> second).map(value -> nonNull(value.getCloseRate(), value.getRate())).orElse(null);
+    private BigDecimal previousClose(Pair pair, String source, Instant currentAsOf) {
+        Instant currentDayStart = currentAsOf.truncatedTo(ChronoUnit.DAYS);
+        Optional<ExchangeRate> sameSource = repository
+                .findFirstByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOfBeforeOrderByAsOfDesc(
+                        pair.base(), pair.quote(), source, currentDayStart);
+        return sameSource.or(() -> repository
+                        .findFirstByBaseCurrencyAndQuoteCurrencyAndAsOfBeforeOrderByAsOfDesc(
+                                pair.base(), pair.quote(), currentDayStart))
+                .map(value -> nonNull(value.getCloseRate(), value.getRate()))
+                .orElse(null);
+    }
+
+    private Optional<FxRateCacheValue> latestRealtime(Pair pair) {
+        if (dataMode != DataMode.LIVE || !USD.equals(pair.base()) || !KRW.equals(pair.quote())) {
+            return Optional.empty();
+        }
+        return realtimeStore.latest(realtimeSymbol, realtimeMaxAge, Instant.now())
+                .map(value -> new FxRateCacheValue(
+                        pair.base(), pair.quote(), value.rate(), "LIVE", "FINNHUB_WS",
+                        value.providerSymbol(), value.asOf(), value.receivedAt()));
     }
 
     private Optional<ExchangeRate> latestStored(Pair pair) {

@@ -52,6 +52,11 @@ public class FrankfurterFxRateProvider implements FxRateProvider {
     }
 
     @Override
+    public String historyRateType() {
+        return "REFERENCE";
+    }
+
+    @Override
     public FxQuote latest(String baseCurrency, String quoteCurrency) {
         try {
             @SuppressWarnings("unchecked")
@@ -101,13 +106,19 @@ public class FrankfurterFxRateProvider implements FxRateProvider {
             throw invalidResponse();
         }
         String date = string(response.get("date"));
+        Instant asOf;
+        try {
+            asOf = LocalDate.parse(date).atStartOfDay(ZoneOffset.UTC).toInstant();
+        } catch (RuntimeException exception) {
+            throw invalidResponse();
+        }
         return new FxQuote(
                 baseCurrency,
                 quoteCurrency,
                 rate,
                 "REFERENCE",
                 "FRANKFURTER:" + baseCurrency + "/" + quoteCurrency + ":" + date,
-                fetchedAt,
+                asOf,
                 fetchedAt);
     }
 

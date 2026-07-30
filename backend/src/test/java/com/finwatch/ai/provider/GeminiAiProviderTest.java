@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -19,6 +20,9 @@ import org.springframework.http.HttpStatus;
 
 import com.finwatch.ai.dto.TechnicalExplanationInput;
 import com.finwatch.ai.dto.TechnicalExplanationInput.TechnicalEvidence;
+import com.finwatch.ai.dto.PortfolioEvaluationInput;
+import com.finwatch.ai.dto.PortfolioEvaluationInput.CurrencyExposure;
+import com.finwatch.ai.dto.PortfolioEvaluationInput.Evidence;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -129,6 +133,61 @@ class GeminiAiProviderTest {
                 .contains("목표주가")
                 .contains("\"symbol\":\"000660\"")
                 .contains("\"id\":\"I1\"");
+        assertThat(requestBody.get()).doesNotContain("fixture-key");
+    }
+
+    @Test
+    void sendsPortfolioEvidenceWithoutIdentityAndParsesAssessment() {
+        String payload = """
+                {"headline":"구성 평가","summary":"서버 근거 기반 설명","diversification":{"text":"분산 설명","evidenceIds":["C1"]},"concentration":{"text":"집중 설명","evidenceIds":["C1"]},"currencyExposure":{"text":"통화 설명","evidenceIds":["FX1"]},"performanceContext":{"text":"성과 설명","evidenceIds":["P1"]},"strengths":[{"text":"강점 설명","evidenceIds":["P1"]}],"riskFactors":[{"text":"위험 설명","evidenceIds":["C1"]}],"reviewPoints":[{"text":"점검 설명","evidenceIds":["FX1"]}],"dataLimitations":[]}
+                """.trim();
+        responseBody = """
+                {
+                  "candidates":[{"content":{"parts":[{"text":%s}]} ,"finishReason":"STOP"}],
+                  "usageMetadata":{"promptTokenCount":160,"candidatesTokenCount":70},
+                  "modelVersion":"gemini-test"
+                }
+                """.formatted(new ObjectMapper().writeValueAsString(payload));
+        PortfolioEvaluationInput input = new PortfolioEvaluationInput(
+                "KRW",
+                Instant.parse("2026-07-30T05:30:00Z"),
+                Instant.parse("2026-07-30T05:30:00Z"),
+                2,
+                2,
+                true,
+                true,
+                new BigDecimal("100"),
+                new BigDecimal("90"),
+                new BigDecimal("10"),
+                new BigDecimal("11.1111"),
+                new BigDecimal("60"),
+                new BigDecimal("100"),
+                new BigDecimal("5200"),
+                "HIGH_CONCENTRATION",
+                List.of(new CurrencyExposure(
+                        "KRW",
+                        new BigDecimal("100"),
+                        new BigDecimal("100"),
+                        2)),
+                List.of(),
+                List.of(
+                        new Evidence("P1", "PORTFOLIO_TOTAL", Map.of("evaluation", "100"), "평가액 100"),
+                        new Evidence("C1", "CONCENTRATION", Map.of("hhi", "5200"), "HHI 5200"),
+                        new Evidence("FX1", "CURRENCY_EXPOSURE", Map.of("KRWWeight", "100"), "KRW 100%")),
+                List.of());
+
+        var result = provider().evaluatePortfolio(input, "portfolio-evaluation-v1");
+
+        assertThat(result.headline()).isEqualTo("구성 평가");
+        assertThat(result.concentration().evidenceIds()).containsExactly("C1");
+        assertThat(result.inputTokens()).isEqualTo(160);
+        String prompt = new ObjectMapper().readTree(requestBody.get())
+                .get("contents").get(0).get("parts").get(0).get("text").asText();
+        assertThat(prompt)
+                .contains("읽기 전용 평가 스냅샷")
+                .contains("매수·매도")
+                .contains("\"id\":\"C1\"")
+                .doesNotContain("userId", "email");
         assertThat(requestBody.get()).doesNotContain("fixture-key");
     }
 

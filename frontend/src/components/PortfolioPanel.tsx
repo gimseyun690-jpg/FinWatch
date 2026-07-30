@@ -8,14 +8,20 @@ import type { Portfolio, PortfolioHolding } from '../types/portfolio'
 import type { LiveQuote } from '../types/realtime'
 import type { StockSummary, StockCatalogItem } from '../types/stock'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
+import { PortfolioAllocationDonut } from './PortfolioAllocationDonut'
+import { validRealtimeRate } from '../utils/realtimeFx'
 
 type Props = {
   liveQuotes: Record<string, LiveQuote>
+  onPortfolioChanged?: () => void
 }
 
-export function PortfolioPanel({ liveQuotes }: Props) {
+export function PortfolioPanel({ liveQuotes, onPortfolioChanged }: Props) {
   const context = useOutletContext<AppRouteContext | null>()
   const showAdminDetails = context?.showAdminDetails ?? true
+  const realtimeFxRate = context?.realtimeFxRate ?? null
+  const onPortfolioChangedRef = useRef(onPortfolioChanged)
+  const compositionSignatureRef = useRef<string | null>(null)
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [stocks, setStocks] = useState<StockSummary[] | null>(null)
   const [symbol, setSymbol] = useState('')
@@ -36,6 +42,10 @@ export function PortfolioPanel({ liveQuotes }: Props) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1)
   const portfolioSearchRootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    onPortfolioChangedRef.current = onPortfolioChanged
+  }, [onPortfolioChanged])
 
   useEffect(() => {
     const query = searchQuery.trim()
@@ -93,8 +103,8 @@ export function PortfolioPanel({ liveQuotes }: Props) {
     (searchedStocks.length > 0 ? searchedStocks : (stocks ?? [])) as Array<{ symbol: string; name: string; market: string; currency: string }>
   ).find((stock) => stock.symbol === symbol) ?? null
   const evaluatedPortfolio = useMemo(
-    () => applyLiveQuotes(portfolio, liveQuotes),
-    [liveQuotes, portfolio],
+    () => applyLiveQuotes(portfolio, liveQuotes, realtimeFxRate),
+    [liveQuotes, portfolio, realtimeFxRate],
   )
 
   const loadPortfolio = useCallback(async (signal?: AbortSignal) => {
@@ -103,7 +113,13 @@ export function PortfolioPanel({ liveQuotes }: Props) {
     try {
       const loadedPortfolio = await getPortfolio(signal)
       if (signal?.aborted) return false
+      const nextSignature = portfolioCompositionSignature(loadedPortfolio)
+      const previousSignature = compositionSignatureRef.current
+      compositionSignatureRef.current = nextSignature
       setPortfolio(loadedPortfolio)
+      if (previousSignature != null && previousSignature !== nextSignature) {
+        onPortfolioChangedRef.current?.()
+      }
       return true
     } catch (reason: unknown) {
       if (isAbortError(reason)) return false
@@ -137,6 +153,28 @@ export function PortfolioPanel({ liveQuotes }: Props) {
     void loadCatalog(controller.signal)
     return () => controller.abort()
   }, [loadCatalog, loadPortfolio])
+
+  useEffect(() => {
+    let controller: AbortController | null = null
+    const refreshPortfolio = () => {
+      if (!navigator.onLine || document.visibilityState !== 'visible') return
+      controller?.abort()
+      controller = new AbortController()
+      void loadPortfolio(controller.signal)
+    }
+    const intervalId = window.setInterval(refreshPortfolio, 30_000)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshPortfolio()
+    }
+    window.addEventListener('online', refreshPortfolio)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      window.clearInterval(intervalId)
+      controller?.abort()
+      window.removeEventListener('online', refreshPortfolio)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [loadPortfolio])
 
   useEffect(() => {
     const updateConnection = () => setOffline(!navigator.onLine)
@@ -200,6 +238,8 @@ export function PortfolioPanel({ liveQuotes }: Props) {
           ? { averagePurchaseFxRate: parsedFxRate, purchaseFxBaseCurrency: 'USD', purchaseFxQuoteCurrency: 'KRW' }
           : {}),
       })
+      onPortfolioChangedRef.current?.()
+      compositionSignatureRef.current = null
       setAveragePrice('')
       setPurchaseFxRate('')
       setPurchaseCurrency('USD')
@@ -228,6 +268,8 @@ export function PortfolioPanel({ liveQuotes }: Props) {
     setStatusMessage('')
     try {
       await deleteHolding(holding.id)
+      onPortfolioChangedRef.current?.()
+      compositionSignatureRef.current = null
       setDeleteConfirmationId(null)
       const refreshed = await loadPortfolio()
       setStatusMessage(refreshed
@@ -462,6 +504,8 @@ export function PortfolioPanel({ liveQuotes }: Props) {
             ))}
           </div>
 
+          <PortfolioAllocationDonut portfolio={evaluatedPortfolio} />
+
           <div className="holding-list">
             {evaluatedPortfolio.holdings.map((holding) => {
               const quote = liveQuotes[realtimeInstrumentKey(holding.market, holding.symbol)]
@@ -516,9 +560,34 @@ export function PortfolioPanel({ liveQuotes }: Props) {
   )
 }
 
-function applyLiveQuotes(portfolio: Portfolio | null, liveQuotes: Record<string, LiveQuote>): Portfolio | null {
+function portfolioCompositionSignature(portfolio: Portfolio) {
+  return JSON.stringify(
+    [...portfolio.holdings]
+      .sort((left, right) => (
+        `${left.market}:${left.symbol}:${left.id}`.localeCompare(`${right.market}:${right.symbol}:${right.id}`)
+      ))
+      .map((holding) => [
+        holding.id,
+        holding.market,
+        holding.symbol,
+        holding.currency,
+        holding.quantity,
+        holding.averagePurchasePrice,
+        holding.averagePurchaseFxRate,
+        holding.purchaseFxBaseCurrency,
+        holding.purchaseFxQuoteCurrency,
+      ]),
+  )
+}
+
+function applyLiveQuotes(
+  portfolio: Portfolio | null,
+  liveQuotes: Record<string, LiveQuote>,
+  realtimeFxRate: AppRouteContext['realtimeFxRate'],
+): Portfolio | null {
   if (portfolio == null) return null
-  const fxRate = portfolio.fxRates.find((item) => item.pair === 'USD/KRW')?.rate ?? null
+  const liveFxRate = validRealtimeRate(realtimeFxRate) ? realtimeFxRate : null
+  const fxRate = liveFxRate?.rate ?? portfolio.fxRates.find((item) => item.pair === 'USD/KRW')?.rate ?? null
   const holdings = portfolio.holdings.map((holding) => {
     const live = applyLiveQuote(holding, liveQuotes[realtimeInstrumentKey(holding.market, holding.symbol)])
     const convertedEvaluationAmount = live.evaluationAmount == null ? null
@@ -555,6 +624,14 @@ function applyLiveQuotes(portfolio: Portfolio | null, liveQuotes: Record<string,
   const baseCurrencyTotalPurchaseAmount = profitLossComplete ? holdings.reduce((sum, holding) => sum + (holding.convertedPurchaseAmount ?? 0), 0) : null
   return {
     ...portfolio,
+    fxRates: liveFxRate ? [{
+      pair: 'USD/KRW',
+      rate: liveFxRate.rate,
+      asOf: liveFxRate.asOf,
+      source: liveFxRate.source,
+      rateType: liveFxRate.rateType,
+      freshness: 'FRESH',
+    }] : portfolio.fxRates,
     holdings,
     currencySummaries,
     conversionComplete,

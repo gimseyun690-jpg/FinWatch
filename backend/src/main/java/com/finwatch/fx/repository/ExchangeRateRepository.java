@@ -15,6 +15,15 @@ public interface ExchangeRateRepository extends JpaRepository<ExchangeRate, Long
     Optional<ExchangeRate> findFirstByBaseCurrencyAndQuoteCurrencyAndSourceNotOrderByAsOfDesc(
             String baseCurrency, String quoteCurrency, String excludedSource);
 
+    Optional<ExchangeRate> findFirstByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOf(
+            String baseCurrency, String quoteCurrency, String source, Instant asOf);
+
+    Optional<ExchangeRate> findFirstByBaseCurrencyAndQuoteCurrencyAndSourceAndAsOfBeforeOrderByAsOfDesc(
+            String baseCurrency, String quoteCurrency, String source, Instant before);
+
+    Optional<ExchangeRate> findFirstByBaseCurrencyAndQuoteCurrencyAndAsOfBeforeOrderByAsOfDesc(
+            String baseCurrency, String quoteCurrency, Instant before);
+
     List<ExchangeRate> findByBaseCurrencyAndQuoteCurrencyAndAsOfBetweenOrderByAsOfAsc(
             String baseCurrency, String quoteCurrency, Instant from, Instant to);
 

@@ -26,11 +26,23 @@ class FinnhubTradeMessageParserTest {
         assertThat(trades.getFirst().price()).isEqualByComparingTo("317.31");
         assertThat(trades.getFirst().volume()).isEqualByComparingTo("12");
         assertThat(trades.getFirst().asOf()).isEqualTo(Instant.ofEpochMilli(1784000000123L));
+        assertThat(trades.getFirst().providerTimestamp()).isTrue();
     }
 
     @Test
     void ignoresPingAndMalformedFrames() {
         assertThat(parser.parse("{\"type\":\"ping\"}")).isEmpty();
         assertThat(parser.parse("not-json")).isEmpty();
+    }
+
+    @Test
+    void marksFramesWithoutProviderTimeSoTheyCannotBecomeLiveFxQuotes() {
+        var trades = parser.parse("""
+                {"type":"trade","data":[{"s":"OANDA:USD_KRW","p":1382.5,"v":1}]}
+                """);
+
+        assertThat(trades).singleElement()
+                .extracting(FinnhubTradeMessageParser.FinnhubTrade::providerTimestamp)
+                .isEqualTo(false);
     }
 }

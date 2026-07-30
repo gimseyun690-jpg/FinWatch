@@ -93,6 +93,18 @@ public class ExchangeRate {
         return value;
     }
 
+    public void refreshSnapshot(
+            BigDecimal rate,
+            String rateType,
+            String providerSymbol,
+            Instant fetchedAt) {
+        this.rate = rate;
+        this.closeRate = rate;
+        this.rateType = rateType;
+        this.providerSymbol = providerSymbol;
+        this.fetchedAt = fetchedAt;
+    }
+
     public Long getId() { return id; }
     public String getBaseCurrency() { return baseCurrency; }
     public String getQuoteCurrency() { return quoteCurrency; }

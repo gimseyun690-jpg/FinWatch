@@ -8,6 +8,7 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.List;
@@ -26,6 +27,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.finwatch.data.provider.FinnhubMarketDataClient;
+import com.finwatch.fx.realtime.FinnhubFxRealtimeStore;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -42,7 +44,10 @@ public class FinnhubRealtimeClient {
     private final ObjectMapper objectMapper;
     private final FinnhubMarketDataClient marketDataClient;
     private final FinnhubTradeMessageParser messageParser;
+    private final FinnhubFxRealtimeStore fxRealtimeStore;
     private final RealtimeQuoteHub hub;
+    private final boolean fxRealtimeEnabled;
+    private final String fxSymbol;
     private final ScheduledExecutorService scheduler;
     private final Map<String, BigDecimal> previousCloses = new ConcurrentHashMap<>();
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
@@ -59,9 +64,12 @@ public class FinnhubRealtimeClient {
             @Value("${app.data.finnhub.websocket-url:wss://ws.finnhub.io}") String websocketUrl,
             @Value("${app.data.connect-timeout:3s}") Duration connectTimeout,
             @Value("${app.realtime.reconnect-max-delay:30s}") Duration maxReconnectDelay,
+            @Value("${app.data.fx.realtime-enabled:true}") boolean fxRealtimeEnabled,
+            @Value("${app.data.fx.finnhub-symbol:OANDA:USD_KRW}") String fxSymbol,
             ObjectMapper objectMapper,
             FinnhubMarketDataClient marketDataClient,
             FinnhubTradeMessageParser messageParser,
+            FinnhubFxRealtimeStore fxRealtimeStore,
             RealtimeQuoteHub hub) {
         this.apiKey = apiKey;
         this.websocketUri = URI.create(websocketUrl + "?token=" + URLEncoder.encode(apiKey, StandardCharsets.UTF_8));
@@ -71,7 +79,10 @@ public class FinnhubRealtimeClient {
         this.objectMapper = objectMapper;
         this.marketDataClient = marketDataClient;
         this.messageParser = messageParser;
+        this.fxRealtimeStore = fxRealtimeStore;
         this.hub = hub;
+        this.fxRealtimeEnabled = fxRealtimeEnabled;
+        this.fxSymbol = normalizeValue(fxSymbol);
         this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "finnhub-realtime");
             thread.setDaemon(true);
@@ -202,8 +213,25 @@ public class FinnhubRealtimeClient {
                 });
     }
 
-    private void handleMessage(String message) {
+    void handleMessage(String message) {
         for (var trade : messageParser.parse(message)) {
+            if (fxRealtimeEnabled && fxSymbol.equals(trade.symbol())) {
+                if (trade.providerTimestamp()) {
+                    Instant receivedAt = Instant.now();
+                    if (fxRealtimeStore.accept(fxSymbol, trade.price(), trade.asOf(), receivedAt)) {
+                        hub.publish(new RealtimeFxRate(
+                                "USD",
+                                "KRW",
+                                trade.price(),
+                                "LIVE",
+                                "FINNHUB_WS",
+                                fxSymbol,
+                                trade.asOf(),
+                                receivedAt));
+                    }
+                }
+                continue;
+            }
             if (!symbols.contains(trade.symbol())) {
                 continue;
             }
@@ -248,6 +276,14 @@ public class FinnhubRealtimeClient {
 
     private String subscriptionMessage(String type, String symbol) {
         return objectMapper.writeValueAsString(Map.of("type", type, "symbol", symbol));
+    }
+
+    private List<String> providerSymbols() {
+        LinkedHashSet<String> desired = new LinkedHashSet<>(symbols);
+        if (fxRealtimeEnabled && !fxSymbol.isBlank()) {
+            desired.add(fxSymbol);
+        }
+        return List.copyOf(desired);
     }
 
     private List<String> normalize(List<String> values) {
@@ -298,7 +334,7 @@ public class FinnhubRealtimeClient {
             reconnectScheduled.set(false);
             webSocket.request(1);
             CompletableFuture<?> subscriptions = CompletableFuture.completedFuture(null);
-            for (String symbol : symbols) {
+            for (String symbol : providerSymbols()) {
                 subscriptions = subscriptions.thenCompose(ignored -> webSocket.sendText(subscribeMessage(symbol), true));
             }
             subscriptions.whenComplete((ignored, error) -> {

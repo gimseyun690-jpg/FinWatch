@@ -64,6 +64,9 @@ app:
       identifier-cache-ttl: ${DISCLOSURE_IDENTIFIER_CACHE_TTL:24h}
     fx:
       finnhub-exchange: ${FX_FINNHUB_EXCHANGE:OANDA}
+      finnhub-symbol: ${FX_FINNHUB_SYMBOL:OANDA:USD_KRW}
+      realtime-enabled: ${FX_REALTIME_ENABLED:true}
+      realtime-max-age: ${FX_REALTIME_MAX_AGE:2m}
       frankfurter-base-url: ${FRANKFURTER_BASE_URL:https://api.frankfurter.dev}
       cache-ttl: ${FX_CACHE_TTL:60s}
       fresh-within: ${FX_FRESH_WITHIN:15m}
@@ -145,6 +148,9 @@ app:
     daily-briefing-prompt-version: ${AI_DAILY_BRIEFING_PROMPT_VERSION:daily-change-briefing-v2-news-fixed}
     daily-briefing-allowed-prompt-versions: ${AI_DAILY_BRIEFING_ALLOWED_PROMPT_VERSIONS:}
     daily-briefing-cache-ttl: ${AI_DAILY_BRIEFING_CACHE_TTL:24h}
+    portfolio-prompt-version: ${AI_PORTFOLIO_PROMPT_VERSION:portfolio-evaluation-v1}
+    portfolio-allowed-prompt-versions: ${AI_PORTFOLIO_ALLOWED_PROMPT_VERSIONS:}
+    portfolio-cache-ttl: ${AI_PORTFOLIO_CACHE_TTL:15m}
     requests-per-minute: ${AI_REQUESTS_PER_MINUTE:20}
     daily-budget-usd: ${AI_DAILY_BUDGET_USD:2.00}
     budget-zone: ${AI_BUDGET_ZONE:Asia/Seoul}

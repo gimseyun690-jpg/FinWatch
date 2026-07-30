@@ -22,7 +22,8 @@ class FrankfurterFxRateProviderTest {
                 "USD", "KRW", fetchedAt);
 
         assertThat(quote.rate()).isEqualByComparingTo("1495.41");
-        assertThat(quote.asOf()).isEqualTo(fetchedAt);
+        assertThat(quote.asOf()).isEqualTo(Instant.parse("2026-07-15T00:00:00Z"));
+        assertThat(quote.fetchedAt()).isEqualTo(fetchedAt);
         assertThat(quote.providerSymbol()).contains("2026-07-15");
     }
 
@@ -42,5 +43,6 @@ class FrankfurterFxRateProviderTest {
             assertThat(bar.close()).isEqualByComparingTo("1495.39");
             assertThat(bar.open()).isEqualByComparingTo("1495.39");
         });
+        assertThat(new FrankfurterFxRateProvider(null).historyRateType()).isEqualTo("REFERENCE");
     }
 }

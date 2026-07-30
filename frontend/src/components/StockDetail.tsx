@@ -356,14 +356,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
         <article className="card price-chart-card">
           <div className="quote-row">
             <div>
-              <span>
-                현재가
-                {streaming && (
-                  <em className="live-tick-badge">
-                    <i />TICK
-                  </em>
-                )}
-              </span>
+              <span>현재가</span>
               <strong>{formatMoney(stock.price, stock.currency)}</strong>
             </div>
             <div className={changeClass}>

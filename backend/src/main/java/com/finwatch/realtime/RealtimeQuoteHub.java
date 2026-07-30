@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 public class RealtimeQuoteHub {
 
     private final ConcurrentHashMap<String, LiveQuote> quotes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, RealtimeFxRate> fxRates = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, RealtimeProviderStatus> providerStatuses = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Consumer<RealtimeEvent>> listeners = new CopyOnWriteArrayList<>();
 
@@ -32,6 +33,23 @@ public class RealtimeQuoteHub {
         });
         if (accepted[0]) {
             notifyListeners(new RealtimeEvent("quote", quote));
+        }
+    }
+
+    public void publish(RealtimeFxRate fxRate) {
+        if (!valid(fxRate)) {
+            return;
+        }
+        boolean[] accepted = {false};
+        fxRates.compute(fxRate.canonicalKey(), (key, current) -> {
+            if (current == null || fxRate.asOf().isAfter(current.asOf())) {
+                accepted[0] = true;
+                return fxRate;
+            }
+            return current;
+        });
+        if (accepted[0]) {
+            notifyListeners(new RealtimeEvent("fx", fxRate));
         }
     }
 
@@ -60,6 +78,17 @@ public class RealtimeQuoteHub {
                 .limit(2)
                 .toList();
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
+    public Optional<RealtimeFxRate> findFx(String baseCurrency, String quoteCurrency) {
+        return Optional.ofNullable(fxRates.get(fxKey(baseCurrency, quoteCurrency)));
+    }
+
+    public List<RealtimeFxRate> fxSnapshot() {
+        return fxRates.values().stream()
+                .sorted(Comparator.comparing(RealtimeFxRate::baseCurrency)
+                        .thenComparing(RealtimeFxRate::quoteCurrency))
+                .toList();
     }
 
     public RealtimeSnapshot snapshot() {
@@ -97,6 +126,25 @@ public class RealtimeQuoteHub {
     private String canonical(String market, String symbol) {
         String normalizedMarket = normalize(market);
         return (normalizedMarket.isBlank() ? "UNKNOWN" : normalizedMarket) + ":" + normalize(symbol);
+    }
+
+    private String fxKey(String baseCurrency, String quoteCurrency) {
+        return normalize(baseCurrency) + "/" + normalize(quoteCurrency);
+    }
+
+    private boolean valid(RealtimeFxRate fxRate) {
+        return fxRate != null
+                && !fxRate.baseCurrency().isBlank()
+                && !fxRate.quoteCurrency().isBlank()
+                && !fxRate.baseCurrency().equals(fxRate.quoteCurrency())
+                && fxRate.rate() != null
+                && fxRate.rate().signum() > 0
+                && !fxRate.rateType().isBlank()
+                && !fxRate.source().isBlank()
+                && !fxRate.providerSymbol().isBlank()
+                && fxRate.asOf() != null
+                && fxRate.fetchedAt() != null
+                && !fxRate.asOf().isAfter(fxRate.fetchedAt().plusSeconds(300));
     }
 
     private String normalize(String value) {

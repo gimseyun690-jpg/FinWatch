@@ -2,11 +2,11 @@
 
 상태: v1.0 MVP 구현
 기준일: 2026-07-14
-범위: 관심종목, 포트폴리오, 가격 알림, 사용자 메인 대시보드. Sidebar·route·뉴스/공시 목록 개편은 `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md`를 따른다.
+범위: 관심종목, 포트폴리오·자산배분·AI 구성 평가, 가격 알림, 사용자 메인 대시보드. Sidebar·route·뉴스/공시 목록 개편은 `17_NAVIGATION_AND_CONTENT_LIST_SPEC.md`를 따른다.
 
 ## 1. 목적과 문서 상태
 
-이 문서는 01_REQUIREMENTS.md의 U-02, U-03, U-06, U-07과 03_API_SPEC.md의 사용자 기능 계약을 구현 가능한 업무 규칙으로 구체화한다.
+이 문서는 01_REQUIREMENTS.md의 U-02, U-03, U-06, U-07, U-13, U-15와 03_API_SPEC.md의 사용자 기능 계약을 구현 가능한 업무 규칙으로 구체화한다.
 
 기능별 상태 표기는 다음과 같다.
 
@@ -22,8 +22,9 @@
 |---|---|---|
 | 관심종목 조회·등록·삭제 | 구현 | watchlists 테이블, API, 사용자 격리 통합 테스트 존재 |
 | 포트폴리오 CRUD·평가 | 구현 | 사용자 분리, 원통화 보존, USD/KRW 기반 KRW 통합 평가와 화면 연결 |
+| 포트폴리오 자산배분·AI 구성 평가 | 구현 | 환산 완전성 기반 도넛, 인증 사용자 서버 스냅샷과 P/C/FX/H 근거 |
 | 가격 알림 CRUD·평가 | 구현 | ABOVE/BELOW 조건, 상태 전이와 최신 가격 평가 화면 연결 |
-| 메인 대시보드 | 구현 | 선택 market·symbol이 차트·뉴스·공시·세 AI 기능·WebSocket 구독에 함께 연결됨 |
+| 메인 대시보드 | 구현 | 선택 market·symbol이 차트·뉴스·공시·종목 대상 AI 기능·WebSocket 구독에 함께 연결됨 |
 
 이 문서의 “현재 동작”은 기존 구현을 설명하고, “목표 규칙”과 인수 조건은 미구현 기능의 완료 기준이다.
 
@@ -231,6 +232,22 @@ returnRate            = totalPurchaseAmount > 0
 
 같은 통화 그룹에 PRICE_UNAVAILABLE 보유가 하나라도 있으면 valuationComplete=false로 하고 totalEvaluationAmount, profitLoss, returnRate는 null로 반환한다. 누락된 종목을 제외한 부분 합계를 완전한 합계처럼 표시하지 않는다.
 
+#### 4.5.1 종목별 자산배분
+
+- `conversionComplete=true`이고 KRW 기준 총 평가액이 양수일 때만 `convertedEvaluationAmount / baseCurrencyTotalEvaluationAmount × 100`으로 비중을 계산한다.
+- 도넛은 평가액 상위 7개 종목을 개별 표시하고 나머지를 `기타` 한 조각으로 합친다.
+- 범례는 종목명, 비중과 KRW 환산 평가액을 함께 제공한다.
+- 환율·가격 누락으로 환산이 불완전하면 도넛을 그리지 않고 원통화 조회와 누락 사유를 유지한다.
+
+#### 4.5.2 AI 포트폴리오 구성 평가
+
+- `POST /api/v1/ai/portfolio-evaluations`는 인증 principal의 사용자 ID만 사용하며 다른 사용자 ID나 보유 비중을 요청으로 받지 않는다.
+- 서버는 현재 포트폴리오에서 분산도, 최대·상위 3개 집중도, HHI, 통화 노출과 성과 맥락을 계산하고 `P/C/FX/H` evidence를 만든다.
+- AI는 서버 근거를 설명할 뿐 목표가·미래 수익률·직접 매수·매도·교체를 추천하지 않는다.
+- 같은 보유 구성·15분 평가 창·프롬프트 버전은 캐시/DB에서 재사용하며 HIT의 토큰과 실제 비용은 0이다.
+- 모델·프롬프트·토큰·공급자 세부정보는 관리자 진단에 제공하고, 일반 사용자는 구성 평가·근거·기준시각·한계를 중심으로 본다.
+- 상세 캐시·검증·사용량 계약은 `08_AI_OPERATION_SPEC.md` 15절을 따른다.
+
 ### 4.6 상태와 동시성
 
 1. 보유 행은 생성과 삭제 두 상태만 가지며 별도의 활성 상태는 없다.
@@ -259,6 +276,8 @@ returnRate            = totalPurchaseAmount > 0
 - 최신 가격이 없는 보유가 포함된 통화 요약은 valuationComplete=false이고 평가 합계가 null이다.
 - 사용자 A는 사용자 B의 holdingId를 조회·수정·삭제할 수 없다.
 - PATCH 후 평가는 저장된 평가액이 아니라 수정된 보유 값과 조회 시 최신 가격으로 다시 계산된다.
+- 환산이 완전한 고정 fixture에서 종목별 도넛 비중 합계는 반올림 전 100%이며 상위 7개 밖의 종목은 `기타`로 합쳐진다.
+- 인증 사용자의 포트폴리오 AI 평가가 다른 사용자의 보유를 읽지 않고 모든 핵심 설명을 유효한 evidence ID에 연결한다.
 
 ## 5. 가격 알림
 

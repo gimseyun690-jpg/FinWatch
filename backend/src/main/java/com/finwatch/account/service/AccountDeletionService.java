@@ -44,6 +44,23 @@ public class AccountDeletionService {
         jdbcTemplate.update("DELETE FROM watchlists WHERE user_id = ?", userId);
         jdbcTemplate.update("DELETE FROM portfolio_holdings WHERE user_id = ?", userId);
         jdbcTemplate.update("DELETE FROM price_alerts WHERE user_id = ?", userId);
+        jdbcTemplate.update("""
+                UPDATE ai_usage_logs
+                SET user_id = NULL,
+                    target_id = 0,
+                    portfolio_evaluation_id = NULL
+                WHERE feature_type = 'PORTFOLIO_EVALUATION'
+                  AND target_type = 'PORTFOLIO'
+                  AND (
+                      target_id = ?
+                      OR portfolio_evaluation_id IN (
+                          SELECT id
+                          FROM ai_portfolio_evaluations
+                          WHERE user_id = ?
+                      )
+                  )
+                """, userId, userId);
+        jdbcTemplate.update("DELETE FROM ai_portfolio_evaluations WHERE user_id = ?", userId);
         jdbcTemplate.update("UPDATE ai_usage_logs SET user_id = NULL WHERE user_id = ?", userId);
         jdbcTemplate.update("DELETE FROM auth_identities WHERE user_id = ?", userId);
         user.markDeleted();

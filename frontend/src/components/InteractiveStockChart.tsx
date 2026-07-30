@@ -107,9 +107,36 @@ type ProjectedDrawing = {
   y2: number
 }
 
+function sameProjectedDrawings(left: ProjectedDrawing[], right: ProjectedDrawing[]) {
+  return left.length === right.length && left.every((drawing, index) => {
+    const next = right[index]
+    return next != null
+      && drawing.id === next.id
+      && drawing.type === next.type
+      && drawing.x1 === next.x1
+      && drawing.y1 === next.y1
+      && drawing.x2 === next.x2
+      && drawing.y2 === next.y2
+  })
+}
+
 type DragTarget = {
   drawingId: string
   anchorIndex: 0 | 1
+}
+
+type DragGeometry = {
+  left: number
+  top: number
+  width: number
+  paneHeight: number
+}
+
+type DragSession = DragTarget & {
+  pointerId: number
+  captureElement: SVGElement
+  geometry: DragGeometry
+  previewAnchor: DrawingAnchor | null
 }
 
 type HoverData = {
@@ -352,14 +379,6 @@ function displayChartTime(value: Time, market: string, interval: PriceInterval) 
   return String(normalizeTime(value))
 }
 
-function valueAtTime(
-  series: Array<LineData<Time> | HistogramData<Time>>,
-  time: NormalizedChartTime,
-) {
-  const point = series.find((item) => normalizeTime(item.time) === time)
-  return point && 'value' in point && typeof point.value === 'number' ? point.value : undefined
-}
-
 function movingAverage(items: PricePoint[], times: Time[], windowSize: number): LineData<Time>[] {
   let rollingTotal = 0
   const result: LineData<Time>[] = []
@@ -487,12 +506,16 @@ export function InteractiveStockChart({
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const seriesRefs = useRef<ChartSeriesRefs>(emptySeriesRefs())
   const projectionFrameRef = useRef<number | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
+  const dragPointerRef = useRef<{ clientX: number; clientY: number } | null>(null)
+  const dragSessionRef = useRef<DragSession | null>(null)
+  const drawingLayerRef = useRef<SVGSVGElement>(null)
   const drawingsRef = useRef<Drawing[]>(emptyDrawings)
   const [hoverData, setHoverData] = useState<HoverData | null>(null)
   const [tool, setTool] = useState<ChartTool>('pan')
   const [pendingAnchor, setPendingAnchor] = useState<DrawingAnchor | null>(null)
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
-  const [dragTarget, setDragTarget] = useState<DragTarget | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
   const [drawingsBySymbol, setDrawingsBySymbol] = useState<Record<string, Drawing[]>>({})
   const [projectedDrawings, setProjectedDrawings] = useState<ProjectedDrawing[]>([])
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -597,7 +620,7 @@ export function InteractiveStockChart({
     const candleSeries = candleSeriesRef.current
     const container = chartContainerRef.current
     if (!chart || !candleSeries || !container) {
-      setProjectedDrawings([])
+      setProjectedDrawings((current) => current.length === 0 ? current : [])
       return
     }
 
@@ -616,13 +639,27 @@ export function InteractiveStockChart({
       if (x1 == null || y1 == null || x2 == null || y2 == null) return []
       return [{ id: drawing.id, type: drawing.type, x1, y1, x2, y2 }]
     })
-    setProjectedDrawings(next)
+    setProjectedDrawings((current) => sameProjectedDrawings(current, next) ? current : next)
   }, [])
 
   const queueProjection = useCallback(() => {
-    if (projectionFrameRef.current != null) cancelAnimationFrame(projectionFrameRef.current)
-    projectionFrameRef.current = requestAnimationFrame(refreshProjection)
+    if (projectionFrameRef.current != null) return
+    projectionFrameRef.current = requestAnimationFrame(() => {
+      projectionFrameRef.current = null
+      refreshProjection()
+    })
   }, [refreshProjection])
+
+  useEffect(() => () => {
+    if (projectionFrameRef.current != null) {
+      cancelAnimationFrame(projectionFrameRef.current)
+      projectionFrameRef.current = null
+    }
+    if (dragFrameRef.current != null) {
+      cancelAnimationFrame(dragFrameRef.current)
+      dragFrameRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     drawingsRef.current = drawings
@@ -807,41 +844,52 @@ export function InteractiveStockChart({
 
     chart.panes().forEach((pane, index) => pane.setStretchFactor(index === 0 ? 4 : 1))
 
+    let hoverFrame: number | null = null
+    let queuedHoverData: HoverData | null = null
+    const publishHoverData = (next: HoverData | null) => {
+      queuedHoverData = next
+      if (hoverFrame != null) return
+      hoverFrame = requestAnimationFrame(() => {
+        hoverFrame = null
+        setHoverData(queuedHoverData)
+      })
+    }
     const crosshairHandler = (param: Parameters<IChartApi['subscribeCrosshairMove']>[0] extends (value: infer P) => void ? P : never) => {
       if (param.time == null) {
-        setHoverData(null)
+        publishHoverData(null)
         return
       }
       const candle = param.seriesData.get(candleSeries)
       const volume = volumeSeries ? param.seriesData.get(volumeSeries) : null
       if (!candle || !('open' in candle) || !('high' in candle) || !('low' in candle) || !('close' in candle)) {
-        setHoverData(null)
+        publishHoverData(null)
         return
       }
-      const normalizedTime = normalizeTime(param.time)
-      const currentData = chartDataRef.current
-      setHoverData({
+      const seriesValue = (series: ISeriesApi<'Line'> | ISeriesApi<'Histogram'> | null) => {
+        const point = series ? param.seriesData.get(series) : null
+        return point && 'value' in point && typeof point.value === 'number' ? point.value : undefined
+      }
+      publishHoverData({
         time: displayChartTime(param.time, market, interval),
         open: candle.open,
         high: candle.high,
         low: candle.low,
         close: candle.close,
         volume: volume && 'value' in volume && typeof volume.value === 'number' ? volume.value : 0,
-        ma5: valueAtTime(currentData.ma5, normalizedTime),
-        ma20: valueAtTime(currentData.ma20, normalizedTime),
-        ma60: valueAtTime(currentData.ma60, normalizedTime),
-        volumeMa20: valueAtTime(currentData.volumeMa20, normalizedTime),
-        bollingerUpper: valueAtTime(currentData.bollinger.upper, normalizedTime),
-        bollingerLower: valueAtTime(currentData.bollinger.lower, normalizedTime),
+        ma5: seriesValue(createdSeries.ma5),
+        ma20: seriesValue(createdSeries.ma20),
+        ma60: seriesValue(createdSeries.ma60),
+        volumeMa20: seriesValue(createdSeries.volumeMa20),
+        bollingerUpper: seriesValue(createdSeries.bollingerUpper),
+        bollingerLower: seriesValue(createdSeries.bollingerLower),
         oscillatorValue: oscillator === 'rsi'
-          ? valueAtTime(currentData.rsi, normalizedTime)
+          ? seriesValue(createdSeries.rsi)
           : oscillator === 'atr'
-            ? valueAtTime(currentData.atr, normalizedTime)
+            ? seriesValue(createdSeries.atr)
             : oscillator === 'macd'
-              ? valueAtTime(currentData.macd.histogram, normalizedTime)
+              ? seriesValue(createdSeries.macdHistogram)
               : undefined,
       })
-      queueProjection()
     }
 
     chart.subscribeCrosshairMove(crosshairHandler)
@@ -852,9 +900,21 @@ export function InteractiveStockChart({
     seriesRefs.current = createdSeries
     renderedChartDataRef.current = initialData
 
+    let resizeFrame: number | null = null
+    let lastWidth = container.clientWidth
+    let lastHeight = container.clientHeight
     const resizeObserver = new ResizeObserver(() => {
-      chart.resize(container.clientWidth, container.clientHeight)
-      queueProjection()
+      if (resizeFrame != null) return
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null
+        const width = container.clientWidth
+        const height = container.clientHeight
+        if (width <= 0 || height <= 0 || (width === lastWidth && height === lastHeight)) return
+        lastWidth = width
+        lastHeight = height
+        chart.resize(width, height)
+        queueProjection()
+      })
     })
     resizeObserver.observe(container)
     container.addEventListener('wheel', queueProjection, { passive: true })
@@ -862,6 +922,8 @@ export function InteractiveStockChart({
     queueProjection()
 
     return () => {
+      if (hoverFrame != null) cancelAnimationFrame(hoverFrame)
+      if (resizeFrame != null) cancelAnimationFrame(resizeFrame)
       resizeObserver.disconnect()
       container.removeEventListener('wheel', queueProjection)
       container.removeEventListener('pointerup', queueProjection)
@@ -919,20 +981,85 @@ export function InteractiveStockChart({
     queueProjection()
   }, [chartData, queueProjection])
 
-  const pointerToAnchor = useCallback((clientX: number, clientY: number): DrawingAnchor | null => {
+  const currentDragGeometry = useCallback((): DragGeometry | null => {
+    const chart = chartRef.current
+    const container = chartContainerRef.current
+    if (!chart || !container) return null
+    const rect = container.getBoundingClientRect()
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      paneHeight: chart.paneSize(0).height,
+    }
+  }, [])
+
+  const pointerToAnchor = useCallback((
+    clientX: number,
+    clientY: number,
+    geometry?: DragGeometry,
+  ): DrawingAnchor | null => {
     const chart = chartRef.current
     const candleSeries = candleSeriesRef.current
-    const container = chartContainerRef.current
-    if (!chart || !candleSeries || !container) return null
-    const rect = container.getBoundingClientRect()
-    const x = clientX - rect.left
-    const y = clientY - rect.top
-    if (x < 0 || x > rect.width || y < 0 || y > chart.paneSize(0).height) return null
+    const activeGeometry = geometry ?? currentDragGeometry()
+    if (!chart || !candleSeries || !activeGeometry) return null
+    const x = clientX - activeGeometry.left
+    const y = clientY - activeGeometry.top
+    if (x < 0 || x > activeGeometry.width || y < 0 || y > activeGeometry.paneHeight) return null
     const time = chart.timeScale().coordinateToTime(x)
     const price = candleSeries.coordinateToPrice(y)
     if (time == null || price == null) return null
     return { time: normalizeTime(time), price: Number(price) }
+  }, [currentDragGeometry])
+
+  const previewDragAnchor = useCallback((session: DragSession, anchor: DrawingAnchor) => {
+    const chart = chartRef.current
+    const candleSeries = candleSeriesRef.current
+    const layer = drawingLayerRef.current
+    const drawing = drawingsRef.current.find((item) => item.id === session.drawingId)
+    if (!chart || !candleSeries || !layer || !drawing) return
+
+    const group = layer.querySelector<SVGGElement>(`g[data-drawing-id="${session.drawingId}"]`)
+    const line = group?.querySelector<SVGLineElement>('line')
+    if (!group || !line) return
+
+    const y = candleSeries.priceToCoordinate(anchor.price)
+    if (y == null) return
+
+    if (drawing.type === 'horizontal') {
+      line.setAttribute('x1', '0')
+      line.setAttribute('y1', String(y))
+      line.setAttribute('x2', String(session.geometry.width))
+      line.setAttribute('y2', String(y))
+      session.previewAnchor = anchor
+      return
+    }
+
+    const x = chart.timeScale().timeToCoordinate(anchor.time as Time)
+    if (x == null) return
+    const suffix = session.anchorIndex === 0 ? '1' : '2'
+    line.setAttribute(`x${suffix}`, String(x))
+    line.setAttribute(`y${suffix}`, String(y))
+    const handle = group.querySelector<SVGCircleElement>(`circle[data-anchor-index="${session.anchorIndex}"]`)
+    handle?.setAttribute('cx', String(x))
+    handle?.setAttribute('cy', String(y))
+    session.previewAnchor = anchor
   }, [])
+
+  const flushDragPreview = useCallback(() => {
+    dragFrameRef.current = null
+    const session = dragSessionRef.current
+    const pointer = dragPointerRef.current
+    if (!session || !pointer) return
+    const anchor = pointerToAnchor(pointer.clientX, pointer.clientY, session.geometry)
+    if (anchor) previewDragAnchor(session, anchor)
+  }, [pointerToAnchor, previewDragAnchor])
+
+  const queueDragPreview = useCallback((clientX: number, clientY: number) => {
+    dragPointerRef.current = { clientX, clientY }
+    if (dragFrameRef.current != null) return
+    dragFrameRef.current = requestAnimationFrame(flushDragPreview)
+  }, [flushDragPreview])
 
   function handleDrawingPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     if (tool === 'pan') return
@@ -978,31 +1105,57 @@ export function InteractiveStockChart({
     anchorIndex: 0 | 1,
   ) {
     selectDrawing(event, drawingIdValue)
-    setDragTarget({ drawingId: drawingIdValue, anchorIndex })
+    const geometry = currentDragGeometry()
+    const captureElement = drawingLayerRef.current
+    if (!geometry || !captureElement) return
+    captureElement.setPointerCapture(event.pointerId)
+    dragSessionRef.current = {
+      drawingId: drawingIdValue,
+      anchorIndex,
+      pointerId: event.pointerId,
+      captureElement,
+      geometry,
+      previewAnchor: null,
+    }
+    queueDragPreview(event.clientX, event.clientY)
+    setIsDragging(true)
   }
 
-  useEffect(() => {
-    if (!dragTarget) return
+  function handleDragPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    const session = dragSessionRef.current
+    if (!session || event.pointerId !== session.pointerId) return
+    event.preventDefault()
+    queueDragPreview(event.clientX, event.clientY)
+  }
 
-    const move = (event: PointerEvent) => {
-      const anchor = pointerToAnchor(event.clientX, event.clientY)
-      if (!anchor) return
+  function finishDrag(event: ReactPointerEvent<SVGSVGElement>, commit: boolean) {
+    const session = dragSessionRef.current
+    if (!session || event.pointerId !== session.pointerId) return
+    event.preventDefault()
+    if (dragFrameRef.current != null) {
+      cancelAnimationFrame(dragFrameRef.current)
+      dragFrameRef.current = null
+    }
+    dragPointerRef.current = { clientX: event.clientX, clientY: event.clientY }
+    flushDragPreview()
+    const anchor = session.previewAnchor
+    if (commit && anchor) {
       updateCurrentDrawings((current) => current.map((drawing) => {
-        if (drawing.id !== dragTarget.drawingId) return drawing
+        if (drawing.id !== session.drawingId) return drawing
         if (drawing.type === 'horizontal') return { ...drawing, anchor }
         const anchors: [DrawingAnchor, DrawingAnchor] = [...drawing.anchors]
-        anchors[dragTarget.anchorIndex] = anchor
+        anchors[session.anchorIndex] = anchor
         return { ...drawing, anchors }
       }))
     }
-    const stop = () => setDragTarget(null)
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', stop, { once: true })
-    return () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', stop)
+    if (session.captureElement.hasPointerCapture(session.pointerId)) {
+      session.captureElement.releasePointerCapture(session.pointerId)
     }
-  }, [dragTarget, pointerToAnchor, updateCurrentDrawings])
+    dragSessionRef.current = null
+    dragPointerRef.current = null
+    setIsDragging(false)
+    queueProjection()
+  }
 
   const deleteSelectedDrawing = useCallback(() => {
     if (!selectedDrawingId) return
@@ -1220,7 +1373,7 @@ export function InteractiveStockChart({
       ? '수평선을 놓을 가격 지점을 선택하세요.'
       : selectedDrawingId
         ? '선을 선택했습니다. 핸들을 드래그하거나 Delete 키로 삭제할 수 있습니다.'
-        : '드래그로 이동하고 휠 또는 핀치로 확대·축소할 수 있습니다.'
+        : null
 
   return (
     <div
@@ -1250,7 +1403,7 @@ export function InteractiveStockChart({
                 </button>
               ))}
             </div>
-          ) : <span className="intraday-session-label"><i />현재 서버 세션 · 최대 390봉</span>}
+          ) : null}
         </div>
         <div className="chart-tools">
           <div className="chart-tool-group chart-view-tools" role="group" aria-label="보기 설정">
@@ -1430,14 +1583,20 @@ export function InteractiveStockChart({
         />
 
         <svg
-          className={`drawing-layer${tool !== 'pan' ? ' drawing-active' : ''}`}
+          ref={drawingLayerRef}
+          data-drawing-count={drawings.length}
+          data-projected-count={projectedDrawings.length}
+          className={`drawing-layer${tool !== 'pan' ? ' drawing-active' : ''}${isDragging ? ' drawing-dragging' : ''}`}
           aria-hidden="true"
           onPointerDown={handleDrawingPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={(event) => finishDrag(event, true)}
+          onPointerCancel={(event) => finishDrag(event, false)}
         >
           {projectedDrawings.map((drawing) => {
             const selected = drawing.id === selectedDrawingId
             return (
-              <g key={drawing.id}>
+              <g key={drawing.id} data-drawing-id={drawing.id}>
                 <line
                   className={`drawing-shape ${drawing.type}${selected ? ' selected' : ''}`}
                   x1={drawing.x1}
@@ -1455,6 +1614,7 @@ export function InteractiveStockChart({
                       cx={drawing.x1}
                       cy={drawing.y1}
                       r="6"
+                      data-anchor-index="0"
                       onPointerDown={(event) => startDrag(event, drawing.id, 0)}
                     />
                     <circle
@@ -1462,6 +1622,7 @@ export function InteractiveStockChart({
                       cx={drawing.x2}
                       cy={drawing.y2}
                       r="6"
+                      data-anchor-index="1"
                       onPointerDown={(event) => startDrag(event, drawing.id, 1)}
                     />
                   </>
@@ -1511,8 +1672,8 @@ export function InteractiveStockChart({
         )}
       </div>
 
-      <div className="chart-status-row">
-        <span aria-live="polite">{statusText}</span>
+      <div className={`chart-status-row${statusText ? '' : ' idle'}`}>
+        {statusText && <span aria-live="polite">{statusText}</span>}
         <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">Charts by TradingView</a>
       </div>
 

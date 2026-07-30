@@ -21,6 +21,7 @@ function featureLabel(feature: string) {
   if (feature === 'NEWS_SUMMARY') return '뉴스 요약'
   if (feature === 'TECHNICAL_EXPLANATION') return '기술지표 해설'
   if (feature === 'DAILY_CHANGE_BRIEFING') return '일일 변화 브리핑'
+  if (feature === 'PORTFOLIO_EVALUATION') return '포트폴리오 평가'
   return feature
 }
 

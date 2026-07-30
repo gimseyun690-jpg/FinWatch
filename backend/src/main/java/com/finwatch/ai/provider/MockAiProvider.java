@@ -10,9 +10,11 @@ import org.springframework.stereotype.Component;
 
 import com.finwatch.ai.dto.TechnicalExplanationInput;
 import com.finwatch.ai.dto.DailyChangeBriefingInput;
+import com.finwatch.ai.dto.PortfolioEvaluationInput;
 import com.finwatch.ai.dto.TechnicalExplanationInput.TechnicalEvidence;
 import com.finwatch.ai.provider.AiProvider.TechnicalSignalExplanation;
 import com.finwatch.ai.provider.AiProvider.DailyBriefingStatement;
+import com.finwatch.ai.provider.AiProvider.PortfolioEvaluationStatement;
 
 @Component
 @ConditionalOnProperty(name = "app.ai.provider", havingValue = "mock", matchIfMissing = true)
@@ -198,6 +200,62 @@ public class MockAiProvider implements AiProvider {
                 List.of(new DailyBriefingStatement("분석 방식과 계산 버전은 동일하게 유지됩니다.", List.of("Q1"))),
                 "ALIGNED".equals(input.relation()) ? List.of(new DailyBriefingStatement("여러 관점이 같은 방향을 보입니다.", List.of("T1", "T2"))) : List.of(),
                 conflicts, limitations, estimateTokens(input.toString() + promptVersion), estimateTokens(output));
+    }
+
+    @Override
+    public PortfolioEvaluationResult evaluatePortfolio(
+            PortfolioEvaluationInput input,
+            String promptVersion) {
+        String headline = switch (input.concentrationBand()) {
+            case "DIVERSIFIED" -> "여러 보유 종목에 자산이 비교적 고르게 분산되어 있습니다.";
+            case "MODERATE_CONCENTRATION" -> "일부 보유 종목의 비중이 포트폴리오 흐름에 영향을 주고 있습니다.";
+            case "HIGH_CONCENTRATION" -> "상위 보유 종목의 비중이 전체 평가에 큰 영향을 주는 구조입니다.";
+            default -> "가격 또는 환율이 불완전해 전체 자산 구성을 제한적으로 평가했습니다.";
+        };
+        PortfolioEvaluationStatement diversification = new PortfolioEvaluationStatement(
+                input.conversionComplete()
+                        ? "서버가 계산한 종목별 기준통화 비중을 바탕으로 분산 상태를 확인했습니다."
+                        : "서로 다른 통화를 하나의 전체 비중으로 합치지 않고 데이터 한계를 우선 확인했습니다.",
+                List.of("C1"));
+        PortfolioEvaluationStatement concentration = new PortfolioEvaluationStatement(
+                "최대 보유 종목과 상위 보유 종목 묶음의 비중, 집중도 지표를 함께 살폈습니다.",
+                List.of("C1"));
+        PortfolioEvaluationStatement currency = new PortfolioEvaluationStatement(
+                "통화별 평가 비중을 기준으로 환율 변화에 노출되는 자산 구성을 확인했습니다.",
+                List.of("FX1"));
+        PortfolioEvaluationStatement performance = new PortfolioEvaluationStatement(
+                input.profitLossComplete()
+                        ? "현재 평가액과 매입 기준 금액의 차이를 포트폴리오 성과 맥락으로 확인했습니다."
+                        : "매수 당시 환율이 부족한 항목은 통합 손익을 확정하지 않고 제한사항으로 분리했습니다.",
+                List.of("P1"));
+        List<PortfolioEvaluationStatement> strengths = input.conversionComplete()
+                ? List.of(new PortfolioEvaluationStatement(
+                        "기준통화로 환산된 동일 기준의 평가 비중을 확인할 수 있습니다.",
+                        List.of("P1", "FX1")))
+                : List.of();
+        List<PortfolioEvaluationStatement> risks = List.of(new PortfolioEvaluationStatement(
+                "상위 종목 집중도와 통화 노출이 전체 평가액 변동에 미치는 영향을 함께 점검해야 합니다.",
+                List.of("C1", "FX1")));
+        List<PortfolioEvaluationStatement> reviewPoints = List.of(new PortfolioEvaluationStatement(
+                "보유 구성과 환율 기준시각이 바뀔 때 동일한 기준으로 비중 변화를 다시 확인할 수 있습니다.",
+                List.of("P1", "C1", "FX1")));
+        String summary = headline + " 이 평가는 서버가 산출한 비중과 손익 근거를 설명한 참고 정보입니다.";
+        String output = headline + summary + diversification + concentration + currency + performance
+                + strengths + risks + reviewPoints;
+        return new PortfolioEvaluationResult(
+                "finwatch-demo-portfolio-v1",
+                headline,
+                summary,
+                diversification,
+                concentration,
+                currency,
+                performance,
+                strengths,
+                risks,
+                reviewPoints,
+                input.serverDataLimitations(),
+                estimateTokens(input.toString() + promptVersion),
+                estimateTokens(output));
     }
 
     private TechnicalEvidence evidence(TechnicalExplanationInput input, String indicator) {
