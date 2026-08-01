@@ -121,7 +121,8 @@ public class StockQueryService {
                         price.low(),
                         price.close(),
                         price.volume(),
-                        indicatorsByTime.get(price.time())))
+                        indicatorsByTime.get(price.time()),
+                        null))
                 .toList();
         List<String> sources = dailyPrices.stream().map(MarketPrice::getSource).distinct().toList();
         String source = sources.size() == 1 ? sources.getFirst() : sources.isEmpty() ? "UNKNOWN" : "MIXED";
@@ -137,8 +138,8 @@ public class StockQueryService {
     }
 
     private PriceHistory getIntradayPriceHistory(Stock stock, int limit) {
-        if (limit < 1 || limit > 600) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit은 1~600 범위여야 합니다.");
+        if (limit < 1 || limit > 1_000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit은 1~1000 범위여야 합니다.");
         }
         List<PricePoint> items = candleAggregator.find(stock.getMarket(), stock.getSymbol(), limit).stream()
                 .map(candle -> new PricePoint(
@@ -148,7 +149,8 @@ public class StockQueryService {
                         candle.low(),
                         candle.close(),
                         candle.volume(),
-                        null))
+                        null,
+                        candle.sessionStatus()))
                 .toList();
         return new PriceHistory(stock.getSymbol(), "1m", "SESSION", "LIVE", items);
     }

@@ -1,3 +1,5 @@
+import type { MarketSessionStatus } from './realtime'
+
 export type ApiResponse<T> = {
   success: boolean
   data: T
@@ -69,6 +71,7 @@ export type PricePoint = {
   low: number
   close: number
   volume: number
+  sessionStatus?: MarketSessionStatus | null
   indicators?: {
     ma5: number | null
     ma20: number | null

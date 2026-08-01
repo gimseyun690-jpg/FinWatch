@@ -21,7 +21,7 @@ function mergeCandle(current: IntradayCandle[], candle: IntradayCandle) {
   const next = index < 0
     ? [...current, candle]
     : current.map((item, itemIndex) => itemIndex === index ? candle : item)
-  return next.sort((left, right) => left.time.localeCompare(right.time)).slice(-600)
+  return next.sort((left, right) => left.time.localeCompare(right.time)).slice(-1000)
 }
 
 function sameQuote(left: LiveQuote | undefined, right: LiveQuote) {

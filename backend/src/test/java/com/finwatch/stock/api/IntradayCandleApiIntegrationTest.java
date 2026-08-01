@@ -46,14 +46,15 @@ class IntradayCandleApiIntegrationTest {
                 .andExpect(jsonPath("$.data.items[0].open").value(85000))
                 .andExpect(jsonPath("$.data.items[0].high").value(85100))
                 .andExpect(jsonPath("$.data.items[0].close").value(85100))
-                .andExpect(jsonPath("$.data.items[0].volume").value(10));
+                .andExpect(jsonPath("$.data.items[0].volume").value(10))
+                .andExpect(jsonPath("$.data.items[0].sessionStatus").value("LIVE"));
     }
 
     @Test
     void rejectsInvalidIntradayLimit() throws Exception {
         mockMvc.perform(get("/api/v1/stocks/005930/intraday")
                         .with(jwt())
-                        .queryParam("limit", "601"))
+                        .queryParam("limit", "1001"))
                 .andExpect(status().isBadRequest());
     }
 

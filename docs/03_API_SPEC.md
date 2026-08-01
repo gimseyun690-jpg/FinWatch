@@ -283,7 +283,7 @@ GET /market/fx-rates/pairs
 
 ### `WS /ws/quotes`
 
-연결 직후 `snapshot`, 유효한 최신 USD/KRW가 있으면 별도 `fx`, 현재 장중 봉의 `candles`를 전송하고 이후 변경마다 `quote`, `candle`, `fx` 또는 `status` 이벤트를 전송한다. 프런트엔드는 지수 백오프로 자동 재연결하고 새 연결의 snapshot과 최신 `fx` 이벤트로 상태를 복구한다. `sessionStatus=LIVE`와 REST 초기값 `SNAPSHOT`은 내부 신선도·진단 상태로 구분하되, 일반 사용자 종목 카드에는 `TICK`이나 공급자 코드 같은 구현 상세를 반복 표시하지 않고 가격·등락·차트만 제자리 갱신한다.
+연결 직후 `snapshot`, 유효한 최신 USD/KRW가 있으면 별도 `fx`, 현재 장중 봉의 `candles`를 전송하고 이후 변경마다 `quote`, `candle`, `fx` 또는 `status` 이벤트를 전송한다. 프런트엔드는 지수 백오프로 자동 재연결하고 새 연결의 snapshot과 최신 `fx` 이벤트로 상태를 복구한다. 미국 Finnhub WebSocket quote는 정상 영업일 기준 `sessionStatus=PRE_MARKET|REGULAR|AFTER_HOURS|CLOSED|UNKNOWN`을 사용하고 생성된 1분 봉에도 같은 값을 보존한다. 기존 KRX·REST 호환 경로의 `LIVE|SNAPSHOT`은 당장 제거하지 않는다. 일반 사용자 종목 카드에는 `TICK`이나 공급자 코드를 반복 표시하지 않고 가격·등락·세션만 제자리 갱신한다.
 
 브라우저는 선택 종목이 바뀔 때 다음 메시지를 보낸다. 서버는 현재 세션 선택 종목을 최우선으로 두고 관심종목·보유종목·활성 알림을 합쳐 공급자별 구독 상한 안에서 동적으로 구독·해제한다.
 
@@ -294,9 +294,42 @@ GET /market/fx-rates/pairs
 { "type": "candle", "data": { "symbol": "005930", "time": "2026-07-14T02:32:00Z", "open": 254500, "high": 255000, "low": 254000, "close": 255000, "volume": 1820, "currency": "KRW", "source": "KIS_WS" } }
 ```
 
+#### 미국 확장시간 quote 계약 — 배포 후보 수용 게이트
+
+미국 주식 quote는 Finnhub의 공급자 timestamp를 `asOf`로 사용한다. 공급자 timestamp가 없거나 5초를 초과한 미래값이거나 수신 시점보다 2분 넘게 오래된 값이면 서버 시각으로 대체하지 않고 폐기한다. 정상 월요일~금요일의 프리마켓·정규장·애프터마켓 체결만 quote·1분 봉·알림 평가 경로에 들어가며 `CLOSED|UNKNOWN` 체결은 격리한다.
+
+```json
+[
+  {
+    "type": "quote",
+    "data": {
+      "market": "NASDAQ",
+      "symbol": "AAPL",
+      "price": 215.42,
+      "asOf": "2026-07-30T21:15:03.482Z",
+      "source": "FINNHUB_WS",
+      "sessionStatus": "AFTER_HOURS"
+    }
+  },
+  {
+    "type": "candle",
+    "data": {
+      "market": "NASDAQ",
+      "symbol": "AAPL",
+      "time": "2026-07-30T21:15:00Z",
+      "close": 215.42,
+      "source": "FINNHUB_WS",
+      "sessionStatus": "AFTER_HOURS"
+    }
+  }
+]
+```
+
+`fetchedAt`, `evaluatedAt`, `priceSession`, `feedStatus`, `freshness`, `delaySeconds`, `calendarVersion`, 휴장·조기 종료 캘린더와 stale scheduler는 후속 하드닝이다. 현재 배포 후보와 후속 기준의 구분은 `21_US_EXTENDED_HOURS_SPEC.md`를 따른다. 자동 테스트와 실제 Finnhub entitlement 증적 전에는 WebSocket 연결만을 미국 확장시간 완료 증적으로 사용하지 않는다.
+
 ### `GET /stocks/{symbol}/intraday?limit=390`
 
-현재 백엔드 프로세스가 WebSocket 체결로 집계한 1분 OHLCV를 시간순으로 반환한다. `limit`은 1~600이며 기본값은 390이다. KIS 누적 거래량은 직전 틱과의 차이를 사용하고 Finnhub 체결 거래량은 같은 분 안에서 합산한다. REST 초기 현재가와 폐장 snapshot은 봉을 생성하지 않으며, 서버 재시작 전 데이터만 제공하므로 빈 배열도 정상 응답이다.
+현재 백엔드 프로세스가 WebSocket 체결로 집계한 1분 OHLCV를 시간순으로 반환한다. `limit`은 1~1000이며 기본값은 390이다. 프런트는 국내 시장에 390, 미국 시장에 1000을 요청해 04:00~20:00 ET의 최대 960개 분봉을 보존한다. 각 item은 체결 세션인 `sessionStatus`를 포함한다. KIS 누적 거래량은 직전 틱과의 차이를 사용하고 Finnhub 체결 거래량은 같은 분 안에서 합산한다. REST 초기 현재가와 폐장 snapshot은 봉을 생성하지 않으며, 서버 재시작 전 데이터만 제공하므로 빈 배열도 정상 응답이다.
 
 ```json
 {
@@ -451,7 +484,7 @@ ADMIN 전용 종목 마스터 동기화 API다. `provider`는 `KIS_MASTER` 또�
 }
 ```
 
-알림 상태는 `ACTIVE`, `TRIGGERED`, `DISABLED` 중 하나다. KIS/Finnhub 틱 수신기는 종목별 최신 틱을 250ms 단위로 병합하고 조건을 충족한 ACTIVE 알림만 조회해 `TRIGGERED`로 전환한다. 목록 조회·생성·수정 때도 같은 최신 가격 선택 정책으로 즉시 평가한다.
+알림 상태는 `ACTIVE`, `TRIGGERED`, `DISABLED` 중 하나다. KIS/Finnhub 틱 수신기는 종목별 최신 틱을 250ms 단위로 병합하고 조건을 충족한 ACTIVE 알림만 조회해 `TRIGGERED`로 전환한다. 미국 알림의 현재 기본 정책은 프리마켓·정규장·애프터마켓 모두 평가하고 `CLOSED|UNKNOWN` 체결은 평가 전에 폐기하는 것이다. 세션별 사용자 opt-in은 후속 범위다. 목록 조회·생성·수정 때도 같은 최신 가격 선택 정책으로 즉시 평가한다.
 
 ## 7. 뉴스
 

@@ -22,6 +22,7 @@ import {
 import type { PriceInterval, PricePeriod, PricePoint, TechnicalAnalysis } from '../types/stock'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { resolveDataStatus } from './dataStatus'
+import { marketSessionClassName, marketSessionInfo } from '../utils/marketSession'
 
 type Props = {
   symbol: string
@@ -35,6 +36,7 @@ type Props = {
   source: string
   freshness?: string | null
   asOf?: string | null
+  sessionStatus?: string | null
   events?: TechnicalAnalysis['events']
   onPeriodChange: (period: PricePeriod) => void
   onIntervalChange: (interval: PriceInterval) => void
@@ -492,6 +494,7 @@ export function InteractiveStockChart({
   source,
   freshness,
   asOf,
+  sessionStatus,
   events,
   onPeriodChange,
   onIntervalChange,
@@ -1374,6 +1377,7 @@ export function InteractiveStockChart({
       : selectedDrawingId
         ? '선을 선택했습니다. 핸들을 드래그하거나 Delete 키로 삭제할 수 있습니다.'
         : null
+  const session = interval === '1m' ? marketSessionInfo(market, sessionStatus) : null
 
   return (
     <div
@@ -1579,7 +1583,7 @@ export function InteractiveStockChart({
           ref={chartContainerRef}
           className="interactive-chart-canvas"
           role="img"
-          aria-label={`${symbol} ${interval === '1m' ? '실시간 1분봉' : `${period} ${intervalLabel(interval)}`} 캔들 및 거래량(주) 차트`}
+          aria-label={`${symbol} ${interval === '1m' ? (dataStatus === 'LIVE' ? '실시간 1분봉' : '1분봉') : `${period} ${intervalLabel(interval)}`} 캔들 및 거래량(주) 차트`}
         />
 
         <svg
@@ -1672,8 +1676,23 @@ export function InteractiveStockChart({
         )}
       </div>
 
-      <div className={`chart-status-row${statusText ? '' : ' idle'}`}>
-        {statusText && <span aria-live="polite">{statusText}</span>}
+      <div className={`chart-status-row${statusText || session ? '' : ' idle'}`}>
+        {(statusText || session) && (
+          <span className="chart-status-copy">
+            {session && (
+              <span
+                className={`market-session-badge ${marketSessionClassName(session.phase)}`}
+                role="status"
+                aria-live="polite"
+                aria-label={`최근 체결 세션: ${session.label}`}
+                title="최근 체결 세션"
+              >
+                {session.label}
+              </span>
+            )}
+            {statusText && <span aria-live="polite">{statusText}</span>}
+          </span>
+        )}
         <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">Charts by TradingView</a>
       </div>
 

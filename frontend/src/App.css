@@ -314,6 +314,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .card-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .card-heading span { font-weight: 750; }
 .card-heading small, .muted { color: var(--text-muted); }
+.stock-card-market { display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.market-session-badge { display: inline-flex; width: max-content; align-items: center; border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px; color: var(--text-muted); background: color-mix(in srgb, var(--panel-soft) 82%, transparent); font-size: 10px; font-style: normal; font-weight: 750; letter-spacing: .02em; line-height: 1.35; white-space: nowrap; }
+.market-session-badge.pre-market { border-color: color-mix(in srgb, var(--cyan) 35%, var(--border)); color: var(--cyan); }
+.market-session-badge.regular { border-color: color-mix(in srgb, var(--green) 35%, var(--border)); color: var(--green); }
+.market-session-badge.after-hours { border-color: color-mix(in srgb, var(--amber) 35%, var(--border)); color: var(--amber); }
+.market-session-badge.closed { color: var(--text-muted); }
 .stock-card-main > strong { display: block; overflow: hidden; margin-bottom: 6px; font-size: 22px; text-overflow: ellipsis; white-space: nowrap; }
 .live-quote-label { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; margin-left: 6px; color: var(--green); font-size: 10px; font-weight: 750; letter-spacing: .04em; }
 .live-quote-label i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px color-mix(in srgb, var(--green) 75%, transparent); }
@@ -332,8 +338,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .detail-title-row h2 { margin-bottom: 7px; font-size: clamp(24px, 3vw, 32px); }
 .detail-title-row p:last-child { margin: 0; color: var(--text-muted); font-size: 13px; }
 .stock-trust-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
-.stock-trust-meta > span:not(.data-status-badge), .stock-trust-meta time { color: var(--text-muted); font-size: 11px; }
-.stock-trust-meta > span:not(.data-status-badge)::after { margin-left: 10px; color: var(--border); content: '·'; }
+.stock-trust-meta > span:not(.data-status-badge):not(.market-session-badge), .stock-trust-meta time { color: var(--text-muted); font-size: 11px; }
+.stock-trust-meta > span:not(.data-status-badge):not(.market-session-badge)::after { margin-left: 10px; color: var(--border); content: '·'; }
+.stock-trust-meta > .market-session-badge { font-size: 10px; }
 .signal-badge { flex: 0 0 auto; border: 1px solid; border-radius: 999px; padding: 8px 12px; font-size: 12px; font-weight: 800; }
 .signal-badge.buy { border-color: color-mix(in srgb, var(--green) 40%, transparent); background: color-mix(in srgb, var(--green) 10%, transparent); }
 .signal-badge.sell { border-color: color-mix(in srgb, var(--red) 40%, transparent); background: color-mix(in srgb, var(--red) 10%, transparent); }
@@ -442,6 +449,7 @@ button.has-tooltip, .legend-swatch.has-tooltip {
 .chart-state button { min-height: 40px; border-color: currentColor; color: inherit; }
 .chart-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; padding: 7px 12px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 10px; }
 .chart-status-row.idle { min-height: 28px; justify-content: flex-end; padding-block: 5px; }
+.chart-status-copy { display: inline-flex; min-width: 0; align-items: center; gap: 8px; }
 .chart-status-row a { flex: 0 0 auto; color: var(--cyan); text-decoration: none; }
 .chart-status-row a:hover { text-decoration: underline; }
 .chart-a11y-summary { margin: 0; padding: 0 12px 10px; color: var(--text-muted); font-size: 10px; line-height: 1.6; }
@@ -1059,6 +1067,7 @@ footer { padding: 23px 0 35px; border-top: 1px solid var(--border); color: var(-
   .stock-card-main > strong { font-size: 16px; }
   .remove-watchlist { min-height: 44px; opacity: 1; }
   .card-heading { align-items: flex-start; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+  .stock-card-market { justify-content: flex-start; }
   .portfolio-card { padding: 19px; }
   .portfolio-allocation-card.incomplete { align-items: flex-start; flex-direction: column; }
   .portfolio-allocation-card.incomplete p { text-align: left; }
@@ -1097,6 +1106,7 @@ footer { padding: 23px 0 35px; border-top: 1px solid var(--border); color: var(-
   .chart-canvas-wrap { height: 380px; }
   .chart-tooltip { grid-template-columns: repeat(2, auto); }
   .chart-status-row { align-items: flex-start; flex-direction: column; }
+  .chart-status-copy { align-items: flex-start; flex-direction: column; }
   .technical-grid { grid-template-columns: 1fr 1fr; }
   .ai-news-card { padding: 18px; }
   .daily-briefing-card { padding: 18px; }

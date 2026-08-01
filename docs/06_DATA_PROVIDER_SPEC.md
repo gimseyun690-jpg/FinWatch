@@ -353,8 +353,8 @@ stock_provider_mappings
 | 작업 | 기본 주기 | 범위 | 보정 |
 |---|---|---|---|
 | 종목 마스터 동기화 | 매일 1회 00:15 UTC | 활성 시장 전체 또는 승인 목록 | 상장폐지는 즉시 삭제하지 않고 `active=false` |
-| 장중 현재가 | 장중 1분 | 관심종목과 포트폴리오 종목 | 지연 공급자는 지연 시간을 함께 표시 |
-| 장외 현재가 | 30분 또는 폴링 중지 | 마지막 공식 종가 유지 | `sessionStatus=CLOSED` 표시 |
+| 활성 세션 현재가 | 프리마켓·정규장·애프터마켓 중 WebSocket 우선 | 관심종목과 포트폴리오 종목 | 공급자 timestamp·세션·지연 시간을 함께 표시 |
+| 폐장·주말 현재가 | 폴링 중지 또는 공식 종가 확인 작업만 실행 | 마지막 검증 가격 유지 | `CLOSED`; 휴장 이유 구분은 후속 캘린더 범위 |
 | 일봉 수집 | 공식 장 마감 30분 후 | 활성 종목 | 마감 4시간 후와 다음 거래일 1회 재조회 |
 | 뉴스 증분 수집 | 5분 | 관심종목·포트폴리오 종목 | 시작 시 최근 24시간 Backfill, 10분 overlap |
 | 뉴스 저우선 범위 | 30분 | 그 외 활성 종목 | 호출량 80%부터 일시 중지 가능 |
@@ -374,7 +374,7 @@ provider_sync_state
 
 ## 10. 데이터 신선도와 사용자 표시
 
-### 공통 필드
+### 목표 공통 필드
 
 라이브 API 응답에는 최소 다음 정보를 제공한다.
 
@@ -382,20 +382,20 @@ provider_sync_state
 - `asOf`: 가격이 유효한 공급자 기준 시각 또는 뉴스 발행 시각
 - `fetchedAt`: FinWatch가 공급자 응답을 받은 시각
 - `freshness`: `FRESH`, `DELAYED`, `STALE`, `UNAVAILABLE`, `DEMO`
-- 가격은 `sessionStatus`: `PRE_MARKET`, `OPEN`, `AFTER_HOURS`, `CLOSED`, `HOLIDAY`, `UNKNOWN`
+- 미국 Finnhub WebSocket 가격의 배포 후보 `sessionStatus`: `PRE_MARKET`, `REGULAR`, `AFTER_HOURS`, `CLOSED`, `UNKNOWN`
 - 공급자가 공표한 `delaySeconds`
 
-현재 종목 응답은 `source`, `asOf`만 포함하고 뉴스 응답은 출처와 수집 시각을 포함하지 않는다. DG-4 전에 DB와 API를 확장한다.
+현재 배포 후보는 미국 Finnhub WebSocket quote와 1분 봉의 `sessionStatus`만 시장 세션으로 확장하고 KRX·REST의 `LIVE|SNAPSHOT` 호환값은 유지한다. `feedStatus`, `priceSession`, `fetchedAt`, `evaluatedAt`, `freshness`, `delaySeconds`, `calendarVersion` 분리는 후속 하드닝이다. 뉴스 응답도 출처와 수집 시각을 보존한다.
 
 ### 판정 규칙
 
 | 데이터 | `FRESH` | `DELAYED` | `STALE` |
 |---|---|---|---|
-| 장중 현재가 | `asOf` 경과가 `공표 지연 + 폴링 주기 + 60초` 이내 | Fresh 기준 초과, 30분 이내 | 30분 초과 |
+| 활성 세션 현재가 | 실시간 권한이고 `asOf` 경과가 60초 이내 | 공표 지연 상품 또는 60초 초과·30분 이내 | 30분 초과 |
 | 장 마감 가격 | 최신 거래일 공식 종가가 존재 | 마감 후 2시간 내 아직 최종 봉 없음 | 마감 2시간 후에도 최신 거래일 봉 없음 |
 | 뉴스 피드 상태 | 마지막 성공 수집이 `2 × 수집 주기 + 1분` 이내 | 60분 이내 | 마지막 성공이 60분 초과 |
 
-오래된 기사 자체는 오류가 아니다. 뉴스 `freshness`는 기사 나이가 아니라 해당 종목 피드의 마지막 성공 수집 상태를 뜻한다. 시장이 `CLOSED` 또는 `HOLIDAY`일 때 마지막 공식 종가는 장중 규칙만으로 `STALE` 처리하지 않는다.
+오래된 기사 자체는 오류가 아니다. 뉴스 `freshness`는 기사 나이가 아니라 해당 종목 피드의 마지막 성공 수집 상태를 뜻한다. 후속 stale 계약에서는 시장이 `CLOSED`일 때 마지막 공식 종가를 장중 규칙만으로 `STALE` 처리하지 않는다.
 
 화면은 출처, `asOf`, `freshness`를 함께 표시한다. `STALE` 가격으로 포트폴리오 평가를 계산할 수는 있지만 `지연된 가격 기준` 경고를 표시한다. 최신 값이 전혀 없으면 0으로 계산하지 않고 `503 MARKET_DATA_UNAVAILABLE` 또는 해당 필드 `null` 정책을 API 명세에 반영한다.
 
@@ -404,10 +404,14 @@ provider_sync_state
 ### 거래 세션
 
 - KRX 기준 시간대는 `Asia/Seoul`, 정규장은 기본 09:00~15:30이다.
-- NASDAQ 등 미국 동부 거래소는 `America/New_York`, 정규장은 기본 09:30~16:00이며 DST를 시간대 DB로 처리한다.
+- NASDAQ·NYSE 미국 주식 배포 후보는 `America/New_York`로 판정한다. 정상 월요일~금요일은 프리마켓 04:00~09:30, 정규장 09:30~16:00, 애프터마켓 16:00~20:00 ET이며 DST를 시간대 DB로 처리한다.
+- 구간은 시작 포함·종료 미포함이다. 배포 후보는 주말을 `CLOSED`, 판정 불가를 `UNKNOWN`으로 처리한다.
+- 공식 주중 휴장과 조기 종료는 후속 버전 캘린더 범위다. 휴장·주말은 canonical `CLOSED`로 두고 향후 `closureReason=HOLIDAY|WEEKEND`로 구분하며, 조기 종료 시각을 코드 상수로 고정하지 않는다.
 - 위 시간은 초기 기준이며 조기 종료, 임시 휴장과 제도 변경을 코드 상수만으로 판정하지 않는다.
 - 공급자 거래 캘린더 또는 검증된 거래소 캘린더를 연도별로 버전 관리한다.
 - 휴장일에는 일봉을 생성하지 않는다. 캘린더를 확인할 수 없으면 시장을 `UNKNOWN`으로 표시하고 합성 가격을 만들지 않는다.
+
+Finnhub stock trade의 `t`는 Unix millisecond 공급자 시각으로 필수다. 누락 시 서버 `Instant.now()`로 대체하지 않으며, 5초를 넘는 미래값·수신 시점보다 2분 넘게 오래된 값·더 최신 quote보다 역행하는 값을 거부한다. `CLOSED|UNKNOWN` 체결은 quote·봉·알림 경로에 넣지 않는다. 영속 중복 제거, 휴장·조기 종료, stale·API 상태 분리는 후속 하드닝이다. 단계별 테스트 기준은 `21_US_EXTENDED_HOURS_SPEC.md`를 따른다.
 
 `sessionDate`는 거래소 현지 날짜이며 DB 시간은 해당 세션 종료를 UTC로 변환해 저장한다. 서버 실행 지역과 무관해야 한다. 데모 이력에 주말 날짜가 포함될 수 있으나 이는 합성 데모일 뿐 라이브 거래일 검증의 기준으로 사용하지 않는다.
 

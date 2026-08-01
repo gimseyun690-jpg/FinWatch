@@ -27,6 +27,19 @@ class RealtimeQuoteHubTest {
     }
 
     @Test
+    void doesNotRebroadcastAnIdenticalQuoteWithTheSameProviderTimestamp() {
+        RealtimeQuoteHub hub = new RealtimeQuoteHub();
+        var events = new ArrayList<RealtimeEvent>();
+        hub.addListener(events::add);
+        LiveQuote quote = quote("AAPL", "201.25", Instant.parse("2026-07-14T14:00:01Z"));
+
+        hub.publish(quote);
+        hub.publish(quote);
+
+        assertThat(events).hasSize(1);
+    }
+
+    @Test
     void isolatesIdenticalSymbolsByMarketAndRejectsAmbiguousLegacyLookup() {
         RealtimeQuoteHub hub = new RealtimeQuoteHub();
         Instant asOf = Instant.parse("2026-07-14T01:00:01Z");

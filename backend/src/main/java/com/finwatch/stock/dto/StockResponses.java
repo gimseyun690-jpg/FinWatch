@@ -29,7 +29,8 @@ public final class StockResponses {
             BigDecimal low,
             BigDecimal close,
             BigDecimal volume,
-            TechnicalSeriesPoint indicators) {
+            TechnicalSeriesPoint indicators,
+            String sessionStatus) {
     }
 
     public record TechnicalSeriesPoint(

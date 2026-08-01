@@ -8,6 +8,7 @@ import type { PriceAlert } from '../types/alert'
 import type { LiveQuote } from '../types/realtime'
 import type { StockCatalogItem, StockSummary } from '../types/stock'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
+import { isStreamingSession } from '../utils/marketSession'
 
 type Props = {
   liveQuotes: Record<string, LiveQuote>
@@ -374,7 +375,7 @@ export function AlertsPanel({ liveQuotes }: Props) {
               && (alert.condition === 'ABOVE' ? latestPrice >= alert.targetPrice : latestPrice <= alert.targetPrice)
             )
             const effectiveStatus = conditionMet ? 'TRIGGERED' : alert.status
-            const live = quote?.sessionStatus === 'LIVE'
+            const live = isStreamingSession(quote?.sessionStatus)
             const confirmingDelete = deleteConfirmationId === alert.id
             const rowBusy = updatingId === alert.id || deletingId === alert.id
             return (
@@ -425,7 +426,7 @@ export function AlertsPanel({ liveQuotes }: Props) {
 
 function alertDataStatus(alert: PriceAlert, quote?: LiveQuote): DataStatus {
   if (quote?.source.toUpperCase().includes('DEMO')) return 'DEMO'
-  if (quote?.sessionStatus === 'LIVE') return 'LIVE'
+  if (isStreamingSession(quote?.sessionStatus)) return 'LIVE'
   if (alert.evaluationStatus === 'PRICE_UNAVAILABLE' || (quote?.price ?? alert.latestPrice) == null) return 'UNAVAILABLE'
   if (alert.evaluationStatus === 'NOT_EVALUATED') return 'PARTIAL'
   if (quote != null) return 'DELAYED'

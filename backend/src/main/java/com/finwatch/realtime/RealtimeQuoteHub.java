@@ -25,7 +25,9 @@ public class RealtimeQuoteHub {
         }
         boolean[] accepted = {false};
         quotes.compute(quote.canonicalKey(), (key, current) -> {
-            if (current == null || !quote.asOf().isBefore(current.asOf())) {
+            if (current == null
+                    || quote.asOf().isAfter(current.asOf())
+                    || (quote.asOf().equals(current.asOf()) && !quote.equals(current))) {
                 accepted[0] = true;
                 return quote;
             }

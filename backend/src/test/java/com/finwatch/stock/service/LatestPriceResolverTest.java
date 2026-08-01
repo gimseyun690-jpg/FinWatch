@@ -51,6 +51,35 @@ class LatestPriceResolverTest {
         assertThat(result.realtime()).isFalse();
     }
 
+    @Test
+    void treatsUsExtendedHoursWebsocketQuoteAsRealtime() {
+        Stock stock = stock("AAPL");
+        when(marketPriceRepository.findTopByStockIdOrderByRecordedAtDesc(stock.getId()))
+                .thenReturn(Optional.empty());
+        quoteHub.publish(new LiveQuote(
+                "NASDAQ",
+                "AAPL", new BigDecimal("322.40"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ONE,
+                "USD", Instant.parse("2026-07-14T12:00:00Z"), "FINNHUB_WS", "PRE_MARKET"));
+
+        var result = resolver.resolve(stock).orElseThrow();
+
+        assertThat(result.price()).isEqualByComparingTo("322.40");
+        assertThat(result.realtime()).isTrue();
+    }
+
+    @Test
+    void doesNotLabelRestSnapshotRealtimeEvenWhenItCarriesAStreamingSessionName() {
+        Stock stock = stock("AAPL");
+        when(marketPriceRepository.findTopByStockIdOrderByRecordedAtDesc(stock.getId()))
+                .thenReturn(Optional.empty());
+        quoteHub.publish(new LiveQuote(
+                "NASDAQ",
+                "AAPL", new BigDecimal("320.10"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                "USD", Instant.parse("2026-07-14T14:00:00Z"), "FINNHUB_REST", "REGULAR"));
+
+        assertThat(resolver.resolve(stock).orElseThrow().realtime()).isFalse();
+    }
+
     private Stock stock(String symbol) {
         Stock stock = mock(Stock.class);
         when(stock.getId()).thenReturn(1L);

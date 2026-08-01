@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class RealtimeCandleAggregator {
 
-    private static final int MAX_CANDLES_PER_SYMBOL = 600;
+    // A full US extended session spans 04:00-20:00 ET (960 one-minute bars).
+    private static final int MAX_CANDLES_PER_SYMBOL = 1_000;
 
     private final ConcurrentHashMap<String, ConcurrentSkipListMap<Instant, IntradayCandle>> candles =
             new ConcurrentHashMap<>();
@@ -71,7 +72,7 @@ public class RealtimeCandleAggregator {
             return;
         }
         String source = quote.source();
-        if (!"LIVE".equalsIgnoreCase(quote.sessionStatus()) || source == null || !source.endsWith("_WS")) {
+        if (!MarketSessionStatus.isStreaming(quote.sessionStatus()) || source == null || !source.endsWith("_WS")) {
             return;
         }
 
@@ -116,7 +117,8 @@ public class RealtimeCandleAggregator {
                     quote.price(),
                     tickVolume,
                     quote.currency(),
-                    quote.source());
+                    quote.source(),
+                    quote.sessionStatus());
         }
         return new IntradayCandle(
                 current.market(),
@@ -128,7 +130,8 @@ public class RealtimeCandleAggregator {
                 quote.price(),
                 current.volume().add(tickVolume),
                 current.currency(),
-                quote.source());
+                quote.source(),
+                quote.sessionStatus());
     }
 
     private void trim(ConcurrentSkipListMap<Instant, IntradayCandle> symbolCandles) {

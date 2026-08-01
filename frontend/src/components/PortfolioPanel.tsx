@@ -10,6 +10,7 @@ import type { StockSummary, StockCatalogItem } from '../types/stock'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
 import { PortfolioAllocationDonut } from './PortfolioAllocationDonut'
 import { validRealtimeRate } from '../utils/realtimeFx'
+import { isStreamingSession } from '../utils/marketSession'
 
 type Props = {
   liveQuotes: Record<string, LiveQuote>
@@ -509,7 +510,7 @@ export function PortfolioPanel({ liveQuotes, onPortfolioChanged }: Props) {
           <div className="holding-list">
             {evaluatedPortfolio.holdings.map((holding) => {
               const quote = liveQuotes[realtimeInstrumentKey(holding.market, holding.symbol)]
-              const streaming = quote?.sessionStatus === 'LIVE' && holding.priceAsOf === quote.asOf
+              const streaming = isStreamingSession(quote?.sessionStatus) && holding.priceAsOf === quote?.asOf
               const confirmingDelete = deleteConfirmationId === holding.id
               return (
                 <div className={`holding-row ${streaming ? 'live' : ''}`} key={holding.id}>

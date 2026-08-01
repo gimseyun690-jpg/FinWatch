@@ -14,11 +14,15 @@ public record IntradayCandle(
         BigDecimal close,
         BigDecimal volume,
         String currency,
-        String source) {
+        String source,
+        String sessionStatus) {
 
     public IntradayCandle {
         market = normalize(market, "UNKNOWN");
         symbol = normalize(symbol, "");
+        currency = normalize(currency, "");
+        source = normalize(source, "UNKNOWN");
+        sessionStatus = normalize(sessionStatus, MarketSessionStatus.UNKNOWN.name());
     }
 
     public String canonicalKey() {

@@ -30,6 +30,7 @@
 | 관리자 AI 통합 | cache 절감 지표와 사용량 정렬 1개 |
 | 관심종목 통합 | 사용자별 CRUD 격리, 중복·없는 삭제 1개 |
 | 실시간 시세 단위 | KIS 46필드 체결 파싱·부호, Finnhub trade 파싱, 오래된 틱 폐기 |
+| 미국 확장시간 세션 | 로컬 배포 후보 PASS; ET 경계·provider timestamp·1000봉·REST/WS 세션·화면 badge 검증, 실제 Finnhub 장전/애프터 entitlement 증적은 다음 거래일 확인 |
 | 실시간 1분 봉 | KIS 누적 거래량 delta, Finnhub 체결량 합산, REST snapshot 제외, OHLC와 limit 검증 |
 | 실시간 환율 단위·E2E | 공급자 timestamp 검증, 오래된 FX 틱 폐기, 신규 연결 최신값 복구, 헤더·환율·포트폴리오 동시 반영 |
 | 포트폴리오 AI 단위·통합·E2E | 서버 스냅샷·P/C/FX/H 근거·숫자/권고 검증·MISS/HIT·계정 삭제 익명화, 도넛·모바일·외부 구성 변경 무효화 |
@@ -489,6 +490,26 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 판정: 빈 포트폴리오·스냅샷 계산·Gemini/Mock 구조·근거 숫자/권고 검증·MISS/HIT·사용량 로그·계정 삭제 통합 테스트와 원형 그래프·근거 drawer·구성 변경 무효화 Playwright 시나리오가 통과해야 한다.
 
+### AC-18 미국 프리마켓·정규장·애프터마켓
+
+이번 배포 후보 수용 기준:
+
+1. 정상 월요일~금요일의 세션은 `America/New_York` 기준 04:00~09:30 `PRE_MARKET`, 09:30~16:00 `REGULAR`, 16:00~20:00 `AFTER_HOURS`, 그 밖은 `CLOSED`다. 구간은 시작 포함·종료 미포함이다.
+2. 겨울·여름 UTC offset, 토요일·일요일 `CLOSED`, null timestamp `UNKNOWN`이 자동 테스트를 통과한다.
+3. Finnhub `t`가 있는 stock trade만 수용한다. 누락 timestamp를 서버 시각으로 대체하지 않고 5초 초과 미래값·2분 초과 과거값·더 오래된 quote를 거부한다.
+4. quote와 WebSocket 1분 봉이 동일한 canonical `sessionStatus`를 보존하고 REST snapshot·`CLOSED|UNKNOWN` quote로 가격·봉·알림을 만들지 않는다.
+5. 종목별 최대 1000개 분봉과 미국 조회 limit 1000으로 정상 04:00~20:00 ET 전체 960분을 보존한다.
+6. 관심종목·상세·차트가 장전·정규장·애프터마켓을 공급자 코드·`TICK` 없이 표시하며 실시간 갱신 때 카드·차트를 재마운트하지 않는다.
+7. 실제 Finnhub entitlement로 프리마켓·애프터마켓 대표 종목의 provider timestamp와 지연을 확인하기 전에는 실시간 확장시간 완료로 판정하지 않는다.
+
+후속 하드닝 기준:
+
+1. 버전된 미국 캘린더로 공식 휴장과 조기 종료를 판정하고 `CLOSED`의 `closureReason=HOLIDAY|WEEKEND`를 구분한다.
+2. `sessionStatus`, `priceSession`, `feedStatus`, `freshness`, `fetchedAt`, `evaluatedAt`, `delaySeconds`, `calendarVersion`을 분리한다.
+3. 무체결·연결 종료·세션 경계 stale scheduler, 정규 종가 등락률 baseline, 세션별 volume·알림·포트폴리오 정책을 자동 검증한다.
+
+판정: 2026-08-01 로컬 배포 후보는 관련 백엔드 24개 테스트, 프런트 lint/build, 확장장 direct-load·실시간 차트 E2E와 PWA 검증을 통과해 **PASS**다. 전체 E2E 31개 중 무관한 일일 브리핑 1건이 최초 실행에서 시간 초과했으나 단독 재실행은 통과했다. 실제 Finnhub 장전·애프터 entitlement 증적은 주말이라 다음 거래일 확인이 필요하다. 휴장 캘린더·조기 종료·stale scheduler와 상태 필드 분리는 별도 non-blocking 후속 범위이며 이번 AC-18 PASS에 포함하지 않고 완료로 주장하지 않는다.
+
 ## 14. 결함 심각도와 인수 판정
 
 | 등급 | 예 | 인수 처리 |
@@ -500,7 +521,7 @@ CI/CD가 구현되기 전 수동 명령 결과는 임시 증적으로 허용하�
 
 MVP 합격 조건:
 
-1. AC-00~AC-17 중 MVP scope에 포함된 모든 시나리오가 통과한다.
+1. AC-00~AC-18 중 MVP scope에 포함된 모든 시나리오가 통과한다.
 2. Blocker·Critical·미승인 Major가 0건이다.
 3. PR/release 품질 게이트와 운영 체크리스트가 통과한다.
 4. 모든 배포 전 게이트 TBD가 값·책임자·검증 증적을 갖는다.

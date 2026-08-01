@@ -167,6 +167,24 @@ const intradayCandles = Array.from({ length: 30 }, (_, index) => {
     volume: 1200 + index * 30,
     currency: stock.currency,
     source: 'KIS_WS',
+    sessionStatus: 'LIVE',
+  }
+})
+
+const appleIntradayCandles = Array.from({ length: 30 }, (_, index) => {
+  const close = 211 + index * 0.08 + Math.sin(index / 3) * 0.3
+  return {
+    market: appleStock.market,
+    symbol: appleStock.symbol,
+    time: new Date(Date.UTC(2026, 6, 14, 8, index)).toISOString(),
+    open: close - 0.12,
+    high: close + 0.2,
+    low: close - 0.18,
+    close,
+    volume: 800 + index * 25,
+    currency: appleStock.currency,
+    source: 'FINNHUB_WS',
+    sessionStatus: 'PRE_MARKET',
   }
 })
 
@@ -346,6 +364,8 @@ async function mockApi(page: Page) {
       body = response({ symbol: appleStock.symbol, interval: url.searchParams.get('interval') ?? '1D', period: url.searchParams.get('period') ?? '3M', source: 'DEMO', items: prices.map((item) => ({ ...item, open: item.open / 10000, high: item.high / 10000, low: item.low / 10000, close: item.close / 10000 })) })
     } else if (path === '/api/v1/stocks/000660/intraday' || path === '/api/v1/stocks/KRX/000660/intraday') {
       body = response({ symbol: stock.symbol, interval: '1m', period: 'SESSION', items: intradayCandles })
+    } else if (path === '/api/v1/stocks/NASDAQ/AAPL/intraday') {
+      body = response({ symbol: appleStock.symbol, interval: '1m', period: 'SESSION', items: appleIntradayCandles })
     } else if (path === '/api/v1/stocks/000660/technical' || path === '/api/v1/stocks/KRX/000660/technical' || path === '/api/v1/stocks/NASDAQ/AAPL/technical') {
       const responseSymbol = path.includes('/AAPL/') ? 'AAPL' : stock.symbol
       body = response({
@@ -716,6 +736,122 @@ test('live quote updates the latest candle without recreating the chart', async 
   await expect(page.locator('.price-chart-card .quote-row')).toContainText('₩2,751,000')
   await expect(page.locator('.price-chart-card .quote-row')).not.toContainText('TICK')
   await expect(chart).toHaveAttribute('data-chart-instance', instanceBeforeTick!)
+})
+
+test('US intraday REST data preserves its extended-session label on direct navigation', async ({ page }) => {
+  await login(page)
+
+  const globalSearch = page.getByPlaceholder('종목명 또는 심볼 검색')
+  await globalSearch.fill('AAPL')
+  await page.getByRole('option', { name: /AAPL/ }).click()
+  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
+
+  await page.getByRole('button', { name: '1분봉', exact: true }).click()
+
+  await expect(page.locator('.stock-trust-meta .market-session-badge')).toHaveText('프리마켓')
+  await expect(page.locator('.chart-status-row .market-session-badge')).toHaveText('프리마켓')
+  await expect(page.locator('.interactive-chart-canvas')).toHaveAttribute('aria-label', /실시간 1분봉/)
+})
+
+test('US extended-hours quotes and one-minute candles update immediately without recreating the chart', async ({ page }) => {
+  await login(page)
+
+  await page.getByRole('button', { name: /관심종목 추가/ }).click()
+  const watchlistSearch = page.getByPlaceholder('예: 삼성전자, NAVER, Apple, AAPL')
+  await watchlistSearch.fill('AAPL')
+  await page.getByRole('button', { name: 'Apple 관심종목 추가' }).click()
+
+  const sendRealtime = realtimeSenders.get(page)
+  expect(sendRealtime).toBeDefined()
+  sendRealtime?.({
+    type: 'quote',
+    data: {
+      market: 'NASDAQ',
+      symbol: 'AAPL',
+      price: 214.75,
+      change: 4.43,
+      changeRate: 2.11,
+      volume: 12040,
+      currency: 'USD',
+      asOf: '2026-07-14T08:31:10Z',
+      source: 'FINNHUB_WS',
+      sessionStatus: 'PRE_MARKET',
+    },
+  })
+
+  const appleCard = page.locator('.stock-card').filter({ hasText: 'Apple' })
+  await expect(appleCard.locator('.market-session-badge')).toHaveText('프리마켓')
+  await expect(appleCard).toContainText('214.75')
+
+  const globalSearch = page.getByPlaceholder('종목명 또는 심볼 검색')
+  await globalSearch.fill('AAPL')
+  await page.getByRole('option', { name: /AAPL/ }).click()
+  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
+  await expect(page.locator('.stock-trust-meta .market-session-badge')).toHaveText('프리마켓')
+
+  await page.getByRole('button', { name: '1분봉', exact: true }).click()
+  const chart = page.locator('.interactive-chart-canvas')
+  await expect(chart).toBeVisible()
+  const instanceBeforeTicks = await chart.getAttribute('data-chart-instance')
+  expect(instanceBeforeTicks).toBeTruthy()
+  await expect(page.locator('.chart-status-row .market-session-badge')).toHaveText('프리마켓')
+
+  sendRealtime?.({
+    type: 'candle',
+    data: {
+      market: 'NASDAQ',
+      symbol: 'AAPL',
+      time: '2026-07-14T08:31:00Z',
+      open: 214.55,
+      high: 214.9,
+      low: 214.4,
+      close: 214.75,
+      volume: 1240,
+      currency: 'USD',
+      source: 'FINNHUB_WS',
+      sessionStatus: 'PRE_MARKET',
+    },
+  })
+  await expect(page.locator('.chart-a11y-summary')).toContainText('214.75')
+  await expect(chart).toHaveAttribute('data-chart-instance', instanceBeforeTicks!)
+
+  sendRealtime?.({
+    type: 'quote',
+    data: {
+      market: 'NASDAQ',
+      symbol: 'AAPL',
+      price: 215.1,
+      change: 4.78,
+      changeRate: 2.27,
+      volume: 14220,
+      currency: 'USD',
+      asOf: '2026-07-14T22:01:10Z',
+      source: 'FINNHUB_WS',
+      sessionStatus: 'AFTER_HOURS',
+    },
+  })
+  sendRealtime?.({
+    type: 'candle',
+    data: {
+      market: 'NASDAQ',
+      symbol: 'AAPL',
+      time: '2026-07-14T22:01:00Z',
+      open: 214.8,
+      high: 215.2,
+      low: 214.75,
+      close: 215.1,
+      volume: 1610,
+      currency: 'USD',
+      source: 'FINNHUB_WS',
+      sessionStatus: 'AFTER_HOURS',
+    },
+  })
+
+  await expect(page.locator('.stock-trust-meta .market-session-badge')).toHaveText('애프터마켓')
+  await expect(page.locator('.chart-status-row .market-session-badge')).toHaveText('애프터마켓')
+  await expect(page.locator('.price-chart-card .quote-row')).toContainText('215.10')
+  await expect(page.locator('.chart-a11y-summary')).toContainText('215.10')
+  await expect(chart).toHaveAttribute('data-chart-instance', instanceBeforeTicks!)
 })
 
 test('dashboard live ticks keep the watchlist mounted without refetching it', async ({ page }) => {

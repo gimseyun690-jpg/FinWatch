@@ -7,6 +7,7 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +37,8 @@ import tools.jackson.databind.ObjectMapper;
 public class FinnhubRealtimeClient {
 
     private static final String PROVIDER = "FINNHUB";
+    private static final Duration MAX_PROVIDER_CLOCK_SKEW = Duration.ofSeconds(5);
+    private static final Duration MAX_PROVIDER_TRADE_AGE = Duration.ofMinutes(2);
 
     private final String apiKey;
     private final URI websocketUri;
@@ -44,8 +48,10 @@ public class FinnhubRealtimeClient {
     private final ObjectMapper objectMapper;
     private final FinnhubMarketDataClient marketDataClient;
     private final FinnhubTradeMessageParser messageParser;
+    private final UsMarketSessionResolver sessionResolver;
     private final FinnhubFxRealtimeStore fxRealtimeStore;
     private final RealtimeQuoteHub hub;
+    private final Clock clock;
     private final boolean fxRealtimeEnabled;
     private final String fxSymbol;
     private final ScheduledExecutorService scheduler;
@@ -59,6 +65,7 @@ public class FinnhubRealtimeClient {
     private volatile WebSocket activeSocket;
     private volatile boolean stopped = true;
 
+    @Autowired
     public FinnhubRealtimeClient(
             @Value("${app.data.finnhub.api-key:}") String apiKey,
             @Value("${app.data.finnhub.websocket-url:wss://ws.finnhub.io}") String websocketUrl,
@@ -69,8 +76,39 @@ public class FinnhubRealtimeClient {
             ObjectMapper objectMapper,
             FinnhubMarketDataClient marketDataClient,
             FinnhubTradeMessageParser messageParser,
+            UsMarketSessionResolver sessionResolver,
             FinnhubFxRealtimeStore fxRealtimeStore,
             RealtimeQuoteHub hub) {
+        this(
+                apiKey,
+                websocketUrl,
+                connectTimeout,
+                maxReconnectDelay,
+                fxRealtimeEnabled,
+                fxSymbol,
+                objectMapper,
+                marketDataClient,
+                messageParser,
+                sessionResolver,
+                fxRealtimeStore,
+                hub,
+                Clock.systemUTC());
+    }
+
+    FinnhubRealtimeClient(
+            String apiKey,
+            String websocketUrl,
+            Duration connectTimeout,
+            Duration maxReconnectDelay,
+            boolean fxRealtimeEnabled,
+            String fxSymbol,
+            ObjectMapper objectMapper,
+            FinnhubMarketDataClient marketDataClient,
+            FinnhubTradeMessageParser messageParser,
+            UsMarketSessionResolver sessionResolver,
+            FinnhubFxRealtimeStore fxRealtimeStore,
+            RealtimeQuoteHub hub,
+            Clock clock) {
         this.apiKey = apiKey;
         this.websocketUri = URI.create(websocketUrl + "?token=" + URLEncoder.encode(apiKey, StandardCharsets.UTF_8));
         this.connectTimeout = connectTimeout;
@@ -79,8 +117,10 @@ public class FinnhubRealtimeClient {
         this.objectMapper = objectMapper;
         this.marketDataClient = marketDataClient;
         this.messageParser = messageParser;
+        this.sessionResolver = sessionResolver;
         this.fxRealtimeStore = fxRealtimeStore;
         this.hub = hub;
+        this.clock = clock;
         this.fxRealtimeEnabled = fxRealtimeEnabled;
         this.fxSymbol = normalizeValue(fxSymbol);
         this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -217,7 +257,7 @@ public class FinnhubRealtimeClient {
         for (var trade : messageParser.parse(message)) {
             if (fxRealtimeEnabled && fxSymbol.equals(trade.symbol())) {
                 if (trade.providerTimestamp()) {
-                    Instant receivedAt = Instant.now();
+                    Instant receivedAt = clock.instant();
                     if (fxRealtimeStore.accept(fxSymbol, trade.price(), trade.asOf(), receivedAt)) {
                         hub.publish(new RealtimeFxRate(
                                 "USD",
@@ -233,6 +273,16 @@ public class FinnhubRealtimeClient {
                 continue;
             }
             if (!symbols.contains(trade.symbol())) {
+                continue;
+            }
+            Instant now = clock.instant();
+            if (!trade.providerTimestamp()
+                    || trade.asOf().isAfter(now.plus(MAX_PROVIDER_CLOCK_SKEW))
+                    || trade.asOf().isBefore(now.minus(MAX_PROVIDER_TRADE_AGE))) {
+                continue;
+            }
+            MarketSessionStatus session = sessionResolver.resolve(trade.asOf());
+            if (!session.isStreaming()) {
                 continue;
             }
             BigDecimal previousClose = previousCloses.get(trade.symbol());
@@ -252,7 +302,7 @@ public class FinnhubRealtimeClient {
                     "USD",
                     trade.asOf(),
                     "FINNHUB_WS",
-                    "LIVE"));
+                    session.name()));
         }
     }
 

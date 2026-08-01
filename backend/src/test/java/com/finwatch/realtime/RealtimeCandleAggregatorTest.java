@@ -40,7 +40,44 @@ class RealtimeCandleAggregatorTest {
             assertThat(candle.open()).isEqualByComparingTo("201");
             assertThat(candle.close()).isEqualByComparingTo("202");
             assertThat(candle.volume()).isEqualByComparingTo("7");
+            assertThat(candle.sessionStatus()).isEqualTo("LIVE");
         });
+    }
+
+    @Test
+    void aggregatesUsPreMarketRegularAndAfterHoursTicksButNotClosedTrades() {
+        quoteHub.publish(quote("AAPL", "198", "2", "2026-07-14T12:00:02Z", "FINNHUB_WS", "PRE_MARKET"));
+        quoteHub.publish(quote("AAPL", "201", "3", "2026-07-14T14:00:02Z", "FINNHUB_WS", "REGULAR"));
+        quoteHub.publish(quote("AAPL", "203", "4", "2026-07-14T21:00:02Z", "FINNHUB_WS", "AFTER_HOURS"));
+        quoteHub.publish(quote("AAPL", "204", "5", "2026-07-15T01:00:02Z", "FINNHUB_WS", "CLOSED"));
+        quoteHub.publish(quote("AAPL", "205", "6", "2026-07-18T14:00:02Z", "FINNHUB_WS", "CLOSED"));
+
+        assertThat(aggregator.find("NASDAQ", "AAPL", 10))
+                .extracting(IntradayCandle::sessionStatus)
+                .containsExactly("PRE_MARKET", "REGULAR", "AFTER_HOURS");
+        assertThat(aggregator.find("NASDAQ", "AAPL", 10))
+                .extracting(IntradayCandle::close)
+                .containsExactly(new BigDecimal("198"), new BigDecimal("201"), new BigDecimal("203"));
+    }
+
+    @Test
+    void retainsEnoughOneMinuteCandlesForTheFullUsExtendedSession() {
+        Instant start = Instant.parse("2026-07-14T08:00:00Z");
+        for (int index = 0; index <= 1_000; index++) {
+            quoteHub.publish(quote(
+                    "AAPL",
+                    Integer.toString(200 + index),
+                    "1",
+                    start.plusSeconds(index * 60L).toString(),
+                    "FINNHUB_WS",
+                    "REGULAR"));
+        }
+
+        var candles = aggregator.find("NASDAQ", "AAPL", 1_000);
+
+        assertThat(candles).hasSize(1_000);
+        assertThat(candles.getFirst().time()).isEqualTo(start.plusSeconds(60));
+        assertThat(candles.getLast().time()).isEqualTo(start.plusSeconds(60_000));
     }
 
     @Test

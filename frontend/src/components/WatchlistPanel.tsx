@@ -8,6 +8,7 @@ import type { WatchlistItem } from '../types/watchlist'
 import type { LiveQuote } from '../types/realtime'
 import { DataStatusBadge } from './DataStatusBadge'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
+import { isStreamingSession, marketSessionClassName, marketSessionInfo } from '../utils/marketSession'
 
 type Props = {
   selectedStock: StockRef
@@ -247,7 +248,8 @@ export function WatchlistPanel({
             const liveQuote = candidateQuote != null && (stock.asOf == null || new Date(candidateQuote.asOf) >= new Date(stock.asOf))
               ? candidateQuote
               : undefined
-            const streaming = liveQuote?.sessionStatus === 'LIVE'
+            const streaming = isStreamingSession(liveQuote?.sessionStatus)
+            const session = marketSessionInfo(stock.market, liveQuote?.sessionStatus)
             const price = liveQuote?.price ?? stock.price
             const changeRate = liveQuote?.changeRate ?? stock.changeRate
             const key = stockKey(stock)
@@ -256,7 +258,18 @@ export function WatchlistPanel({
                 <button className="stock-card-main" type="button" onClick={() => onSelect({ market: stock.market, symbol: stock.symbol })}>
                   <span className="card-heading">
                     <span>{stock.name}</span>
-                    <small>{stock.market}</small>
+                    <span className="stock-card-market">
+                      <small>{stock.market}</small>
+                      {session && (
+                        <small
+                          className={`market-session-badge ${marketSessionClassName(session.phase)}`}
+                          aria-label={`최근 체결 세션: ${session.label}`}
+                          title="최근 체결 세션"
+                        >
+                          {session.label}
+                        </small>
+                      )}
+                    </span>
                   </span>
                   <strong>{price == null ? '데이터 준비 중' : formatMoney(price, stock.currency)}</strong>
                   {changeRate == null ? (

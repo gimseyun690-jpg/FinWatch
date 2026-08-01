@@ -1,3 +1,12 @@
+export type MarketSessionStatus =
+  | 'PRE_MARKET'
+  | 'REGULAR'
+  | 'AFTER_HOURS'
+  | 'CLOSED'
+  | 'UNKNOWN'
+  | 'LIVE'
+  | 'SNAPSHOT'
+
 export type LiveQuote = {
   market: string
   symbol: string
@@ -8,7 +17,7 @@ export type LiveQuote = {
   currency: string
   asOf: string
   source: string
-  sessionStatus: 'LIVE' | 'SNAPSHOT' | string
+  sessionStatus: MarketSessionStatus
 }
 
 export type RealtimeProviderStatus = {
@@ -36,6 +45,7 @@ export type IntradayCandle = {
   volume: number
   currency: string
   source: string
+  sessionStatus?: MarketSessionStatus
 }
 
 export type IntradayCandleSnapshot = {

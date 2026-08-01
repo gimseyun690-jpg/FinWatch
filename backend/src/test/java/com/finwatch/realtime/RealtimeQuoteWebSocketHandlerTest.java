@@ -19,6 +19,55 @@ import tools.jackson.databind.ObjectMapper;
 class RealtimeQuoteWebSocketHandlerTest {
 
     @Test
+    void exposesUsExtendedSessionOnQuoteAndOneMinuteCandleEvents() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        RealtimeQuoteHub hub = new RealtimeQuoteHub();
+        RealtimeCandleAggregator candleAggregator = new RealtimeCandleAggregator(hub);
+        hub.publish(new LiveQuote(
+                "NASDAQ",
+                "AAPL",
+                new BigDecimal("201.25"),
+                BigDecimal.ONE,
+                new BigDecimal("0.50"),
+                new BigDecimal("3"),
+                "USD",
+                Instant.parse("2026-07-14T12:00:02Z"),
+                "FINNHUB_WS",
+                "PRE_MARKET"));
+        RealtimeQuoteWebSocketHandler handler = new RealtimeQuoteWebSocketHandler(
+                objectMapper,
+                hub,
+                candleAggregator,
+                mock(RealtimeSubscriptionManager.class));
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("session-us");
+        when(session.isOpen()).thenReturn(true);
+
+        handler.afterConnectionEstablished(session);
+
+        ArgumentCaptor<TextMessage> messages = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, times(2)).sendMessage(messages.capture());
+        var payloads = messages.getAllValues().stream()
+                .map(TextMessage::getPayload)
+                .map(objectMapper::readTree)
+                .toList();
+        var quote = payloads.stream()
+                .filter(node -> "snapshot".equals(node.path("type").asText()))
+                .findFirst()
+                .orElseThrow()
+                .path("data").path("quotes").get(0);
+        var candle = payloads.stream()
+                .filter(node -> "candles".equals(node.path("type").asText()))
+                .findFirst()
+                .orElseThrow()
+                .path("data").path("candles").get(0);
+
+        assertThat(quote.path("sessionStatus").asText()).isEqualTo("PRE_MARKET");
+        assertThat(candle.path("sessionStatus").asText()).isEqualTo("PRE_MARKET");
+        assertThat(candle.path("time").asText()).isEqualTo("2026-07-14T12:00:00Z");
+    }
+
+    @Test
     void sendsLatestFxEventWhenBrowserConnects() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         RealtimeQuoteHub hub = new RealtimeQuoteHub();

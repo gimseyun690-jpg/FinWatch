@@ -46,8 +46,10 @@ export function getStockPrices(
 }
 
 export function getStockIntraday(stock: StockRef, signal?: AbortSignal) {
+  const market = stock.market.trim().toUpperCase()
+  const limit = market === 'NASDAQ' || market === 'NYSE' ? 1000 : 390
   return get<PriceHistory>(
-    `${canonicalPath(stock)}/intraday?limit=390`,
+    `${canonicalPath(stock)}/intraday?limit=${limit}`,
     signal,
   )
 }

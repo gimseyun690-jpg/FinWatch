@@ -22,6 +22,7 @@ import type { IntradayCandle, LiveQuote } from '../types/realtime'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { InteractiveStockChart } from './InteractiveStockChart'
 import { marketSourceLabel } from '../utils/marketSource'
+import { isStreamingSession, marketSessionClassName, marketSessionInfo } from '../utils/marketSession'
 
 type DetailState = {
   stock: CanonicalStockDetail
@@ -99,6 +100,7 @@ function mergeIntradayCandles(prices: PriceHistory | null, liveCandles: Intraday
     low: candle.low,
     close: candle.close,
     volume: candle.volume,
+    sessionStatus: candle.sessionStatus,
   }))
   return {
     ...prices,
@@ -107,7 +109,7 @@ function mergeIntradayCandles(prices: PriceHistory | null, liveCandles: Intraday
     source: 'LIVE',
     items: [...byTime.values()]
       .sort((left, right) => left.time.localeCompare(right.time))
-      .slice(-390),
+      .slice(-1000),
   }
 }
 
@@ -312,7 +314,13 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
     : mergeLiveCandle(priceDataKey === priceRequestKey ? prices : null, effectiveLiveQuote)
   const hasIntradayCandles = (chartPrices?.items.length ?? 0) > 0
   const changeClass = stock.changeRate >= 0 ? 'up' : 'down'
-  const streaming = effectiveLiveQuote?.sessionStatus === 'LIVE'
+  const latestIntradayPoint = interval === '1m' ? chartPrices?.items.at(-1) : undefined
+  const latestPointIsCurrent = latestIntradayPoint != null
+    && Date.parse(latestIntradayPoint.time) + 60_000 >= Date.parse(stock.asOf)
+  const effectiveSessionStatus = effectiveLiveQuote?.sessionStatus
+    ?? (latestPointIsCurrent ? latestIntradayPoint?.sessionStatus : undefined)
+  const streaming = isStreamingSession(effectiveSessionStatus)
+  const session = marketSessionInfo(stock.market, effectiveSessionStatus)
   const dataStatus: DataStatus = detail.source === 'DEMO' || stock.status === 'DEMO_ONLY'
     ? 'DEMO'
     : streaming
@@ -323,7 +331,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
   const dataSource = effectiveLiveQuote?.source ?? stock.source ?? catalogStock.historySource ?? detail.source
   const dataSourceLabel = marketSourceLabel(dataSource)
   const chartFreshness: DataStatus = interval === '1m' && hasIntradayCandles
-    ? 'LIVE'
+    ? streaming ? 'LIVE' : 'REFERENCE'
     : priceSource.toUpperCase() === 'DEMO'
       ? 'DEMO'
       : 'REFERENCE'
@@ -338,6 +346,17 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
             <span>{stock.symbol}</span>
             <span>{stock.market}</span>
             <span>{stock.currency}</span>
+            {session && (
+              <span
+                className={`market-session-badge ${marketSessionClassName(session.phase)}`}
+                role="status"
+                aria-live="polite"
+                aria-label={`최근 체결 세션: ${session.label}`}
+                title="최근 체결 세션"
+              >
+                {session.label}
+              </span>
+            )}
             {showAdminDetails && <span>{dataSourceLabel}</span>}
             <time dateTime={stock.asOf}>기준 {new Date(stock.asOf).toLocaleString('ko-KR')}</time>
             {showAdminDetails && <DataStatusBadge status={dataStatus} />}
@@ -374,9 +393,10 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
             interval={interval}
             loading={pricesLoading}
             error={interval === '1m' && hasIntradayCandles ? null : pricesError}
-            source={interval === '1m' && hasIntradayCandles ? 'LIVE' : priceSource}
+            source={interval === '1m' && hasIntradayCandles ? (streaming ? 'LIVE' : 'REFERENCE') : priceSource}
             freshness={chartFreshness}
             asOf={stock.asOf}
+            sessionStatus={effectiveSessionStatus}
             events={interval === '1D' ? technical?.events : undefined}
             onPeriodChange={setPeriod}
             onIntervalChange={setInterval}

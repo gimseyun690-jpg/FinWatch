@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.springframework.stereotype.Component;
 
+import com.finwatch.realtime.MarketSessionStatus;
 import com.finwatch.realtime.RealtimeQuoteHub;
 import com.finwatch.stock.domain.MarketPrice;
 import com.finwatch.stock.domain.Stock;
@@ -32,7 +33,7 @@ public class LatestPriceResolver {
                         quote.price(),
                         quote.asOf(),
                         quote.source(),
-                        "LIVE".equals(quote.sessionStatus())));
+                        isRealtime(quote.source(), quote.sessionStatus())));
 
         if (realtime.isEmpty()) {
             return stored;
@@ -49,6 +50,12 @@ public class LatestPriceResolver {
                 price.getRecordedAt(),
                 price.getSource(),
                 false);
+    }
+
+    private boolean isRealtime(String source, String sessionStatus) {
+        return source != null
+                && source.endsWith("_WS")
+                && MarketSessionStatus.isStreaming(sessionStatus);
     }
 
     public record LatestPrice(
