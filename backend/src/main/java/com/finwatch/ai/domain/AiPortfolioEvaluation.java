@@ -152,6 +152,35 @@ public class AiPortfolioEvaluation {
         return value;
     }
 
+    public void replaceGeneratedResult(AiPortfolioEvaluation value) {
+        if (!positionsHash.equals(value.positionsHash)
+                || !windowStartedAt.equals(value.windowStartedAt)
+                || !promptVersion.equals(value.promptVersion)
+                || !user.getId().equals(value.user.getId())) {
+            throw new IllegalArgumentException("같은 포트폴리오 평가 창의 결과만 교체할 수 있습니다.");
+        }
+        snapshotAt = value.snapshotAt;
+        inputHash = value.inputHash;
+        balanceStatus = value.balanceStatus;
+        headline = value.headline;
+        summary = value.summary;
+        diversification = value.diversification;
+        concentration = value.concentration;
+        currencyExposure = value.currencyExposure;
+        performanceContext = value.performanceContext;
+        strengths = value.strengths;
+        riskFactors = value.riskFactors;
+        reviewPoints = value.reviewPoints;
+        dataLimitations = value.dataLimitations;
+        evidence = value.evidence;
+        modelName = value.modelName;
+        inputTokens = value.inputTokens;
+        outputTokens = value.outputTokens;
+        estimatedCost = value.estimatedCost;
+        cacheKey = value.cacheKey;
+        generatedAt = value.generatedAt;
+    }
+
     public Long getId() { return id; }
     public AppUser getUser() { return user; }
     public Instant getSnapshotAt() { return snapshotAt; }

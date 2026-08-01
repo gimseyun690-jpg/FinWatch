@@ -331,7 +331,8 @@ function WatchlistPage() {
 function PortfolioPage() {
   const context = useAppContext()
   const [portfolioRevision, setPortfolioRevision] = useState(0)
-  return <><PageHeading eyebrow="PORTFOLIO" title="포트폴리오" description="보유 수량과 매입 단가를 기준통화로 환산하고 자산 구성의 균형을 점검합니다." /><PortfolioPanel liveQuotes={context.liveQuotes} onPortfolioChanged={() => setPortfolioRevision((value) => value + 1)} /><AiPortfolioEvaluation portfolioRevision={portfolioRevision} onUsageRecorded={context.recordAiUsage} /></>
+  const [portfolioHoldingCount, setPortfolioHoldingCount] = useState<number | null>(null)
+  return <><PageHeading eyebrow="PORTFOLIO" title="포트폴리오" description="보유 수량과 매입 단가를 기준통화로 환산하고 자산 구성의 균형을 점검합니다." /><PortfolioPanel liveQuotes={context.liveQuotes} onPortfolioChanged={() => setPortfolioRevision((value) => value + 1)} onPortfolioLoaded={setPortfolioHoldingCount} /><AiPortfolioEvaluation portfolioRevision={portfolioRevision} holdingCount={portfolioHoldingCount} onUsageRecorded={context.recordAiUsage} /></>
 }
 
 function AlertsPage() {

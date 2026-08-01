@@ -176,7 +176,7 @@ class GeminiAiProviderTest {
                         new Evidence("FX1", "CURRENCY_EXPOSURE", Map.of("KRWWeight", "100"), "KRW 100%")),
                 List.of());
 
-        var result = provider().evaluatePortfolio(input, "portfolio-evaluation-v1");
+        var result = provider().evaluatePortfolio(input, "portfolio-evaluation-v2-grounded");
 
         assertThat(result.headline()).isEqualTo("구성 평가");
         assertThat(result.concentration().evidenceIds()).containsExactly("C1");
@@ -186,8 +186,19 @@ class GeminiAiProviderTest {
         assertThat(prompt)
                 .contains("읽기 전용 평가 스냅샷")
                 .contains("매수·매도")
+                .contains("근거에 없는 순번·개수·반올림 값")
+                .contains("riskFactors와 reviewPoints는 각각 1개 이상 5개 이하")
                 .contains("\"id\":\"C1\"")
                 .doesNotContain("userId", "email");
+        var responseSchema = new ObjectMapper().readTree(requestBody.get())
+                .get("generationConfig").get("responseSchema");
+        var properties = responseSchema.get("properties");
+        assertThat(properties.get("riskFactors").get("minItems").asInt()).isEqualTo(1);
+        assertThat(properties.get("riskFactors").get("maxItems").asInt()).isEqualTo(5);
+        assertThat(properties.get("reviewPoints").get("minItems").asInt()).isEqualTo(1);
+        assertThat(properties.get("strengths").get("maxItems").asInt()).isEqualTo(5);
+        assertThat(properties.get("diversification").get("properties")
+                .get("evidenceIds").get("minItems").asInt()).isEqualTo(1);
         assertThat(requestBody.get()).doesNotContain("fixture-key");
     }
 

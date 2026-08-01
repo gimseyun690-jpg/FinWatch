@@ -549,6 +549,11 @@ public class GeminiAiProvider implements AiProvider {
                 미래 가격·목표주가·수익률·확률을 예측하지 마세요.
                 특정 종목의 매수·매도·교체를 권하거나 종목을 추천하지 마세요.
                 모든 statement의 evidenceIds에는 DATA.evidence에 실제 존재하는 ID만 사용하세요.
+                riskFactors와 reviewPoints는 각각 1개 이상 5개 이하, strengths는 5개 이하로 작성하세요.
+                각 statement에는 중복되지 않은 evidence ID를 1개 이상 5개 이하로 연결하세요.
+                숫자는 연결한 evidence의 values 또는 displayValue에 적힌 형태와 값만 그대로 사용하세요.
+                근거에 없는 순번·개수·반올림 값은 만들지 말고, 필요하면 숫자 없이 정성적으로 설명하세요.
+                headline, summary, dataLimitations에도 DATA에서 추적할 수 없는 숫자를 쓰지 마세요.
                 환산 또는 손익이 불완전하면 단정적인 전체 비중·성과 평가를 피하고 한계를 명시하세요.
                 headline과 모든 설명은 자연스러운 한국어로 작성하세요.
 
@@ -563,7 +568,9 @@ public class GeminiAiProvider implements AiProvider {
                         "text", Map.of("type", "STRING"),
                         "evidenceIds", Map.of(
                                 "type", "ARRAY",
-                                "items", Map.of("type", "STRING"))),
+                                "items", Map.of("type", "STRING"),
+                                "minItems", 1,
+                                "maxItems", 5)),
                 "required", List.of("text", "evidenceIds"));
         Map<String, Object> properties = Map.ofEntries(
                 Map.entry("headline", Map.of("type", "STRING")),
@@ -572,12 +579,16 @@ public class GeminiAiProvider implements AiProvider {
                 Map.entry("concentration", statement),
                 Map.entry("currencyExposure", statement),
                 Map.entry("performanceContext", statement),
-                Map.entry("strengths", Map.of("type", "ARRAY", "items", statement)),
-                Map.entry("riskFactors", Map.of("type", "ARRAY", "items", statement)),
-                Map.entry("reviewPoints", Map.of("type", "ARRAY", "items", statement)),
+                Map.entry("strengths", Map.of(
+                        "type", "ARRAY", "items", statement, "maxItems", 5)),
+                Map.entry("riskFactors", Map.of(
+                        "type", "ARRAY", "items", statement, "minItems", 1, "maxItems", 5)),
+                Map.entry("reviewPoints", Map.of(
+                        "type", "ARRAY", "items", statement, "minItems", 1, "maxItems", 5)),
                 Map.entry("dataLimitations", Map.of(
                         "type", "ARRAY",
-                        "items", Map.of("type", "STRING"))));
+                        "items", Map.of("type", "STRING"),
+                        "maxItems", 8)));
         Map<String, Object> schema = Map.of(
                 "type", "OBJECT",
                 "properties", properties,

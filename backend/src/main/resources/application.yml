@@ -148,7 +148,7 @@ app:
     daily-briefing-prompt-version: ${AI_DAILY_BRIEFING_PROMPT_VERSION:daily-change-briefing-v2-news-fixed}
     daily-briefing-allowed-prompt-versions: ${AI_DAILY_BRIEFING_ALLOWED_PROMPT_VERSIONS:}
     daily-briefing-cache-ttl: ${AI_DAILY_BRIEFING_CACHE_TTL:24h}
-    portfolio-prompt-version: ${AI_PORTFOLIO_PROMPT_VERSION:portfolio-evaluation-v1}
+    portfolio-prompt-version: ${AI_PORTFOLIO_PROMPT_VERSION:portfolio-evaluation-v2-grounded}
     portfolio-allowed-prompt-versions: ${AI_PORTFOLIO_ALLOWED_PROMPT_VERSIONS:}
     portfolio-cache-ttl: ${AI_PORTFOLIO_CACHE_TTL:15m}
     requests-per-minute: ${AI_REQUESTS_PER_MINUTE:20}

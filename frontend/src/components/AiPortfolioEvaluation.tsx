@@ -11,6 +11,7 @@ import type {
 
 type Props = {
   portfolioRevision?: number
+  holdingCount?: number | null
   onUsageRecorded?: () => void
 }
 
@@ -25,7 +26,7 @@ const sectionCards: Array<{
   { key: 'performanceContext', label: '손익 맥락', eyebrow: 'PERFORMANCE' },
 ]
 
-export function AiPortfolioEvaluation({ portfolioRevision = 0, onUsageRecorded }: Props) {
+export function AiPortfolioEvaluation({ portfolioRevision = 0, holdingCount = null, onUsageRecorded }: Props) {
   const context = useOutletContext<AppRouteContext | null>()
   const showAdminDetails = context?.showAdminDetails ?? true
   const [evaluation, setEvaluation] = useState<PortfolioEvaluation | null>(null)
@@ -50,6 +51,7 @@ export function AiPortfolioEvaluation({ portfolioRevision = 0, onUsageRecorded }
   }, [portfolioRevision])
 
   async function requestEvaluation() {
+    if (holdingCount == null || holdingCount === 0) return
     requestRef.current?.abort()
     const controller = new AbortController()
     requestRef.current = controller
@@ -110,13 +112,21 @@ export function AiPortfolioEvaluation({ portfolioRevision = 0, onUsageRecorded }
       {!evaluation ? (
         <section className="portfolio-ai-empty">
           <div>
-            <strong>현재 보유 구성을 근거로 점검합니다.</strong>
-            <p>종목 집중도, 통화 노출, 분산 구조와 손익 맥락을 설명하며 매수·매도나 목표가를 추천하지 않습니다.</p>
+            <strong>{holdingCount === 0 ? '보유 종목을 등록하면 AI 평가를 시작할 수 있습니다.' : '현재 보유 구성을 근거로 점검합니다.'}</strong>
+            <p>{holdingCount === 0
+              ? '위의 포트폴리오에서 종목과 보유 정보를 먼저 등록해 주세요.'
+              : '종목 집중도, 통화 노출, 분산 구조와 손익 맥락을 설명하며 매수·매도나 목표가를 추천하지 않습니다.'}</p>
             {notice && <p className="panel-status-message" role="status">{notice}</p>}
           </div>
           {error && <p className="request-error" role="alert">{error}</p>}
-          <button type="button" onClick={() => void requestEvaluation()} disabled={loading}>
-            {loading ? '포트폴리오 분석 중…' : 'AI 포트폴리오 평가'}
+          <button type="button" onClick={() => void requestEvaluation()} disabled={loading || holdingCount == null || holdingCount === 0}>
+            {loading
+              ? '포트폴리오 분석 중…'
+              : holdingCount == null
+                ? '포트폴리오 확인 후 평가 가능'
+                : holdingCount === 0
+                  ? '보유 종목 등록 후 평가 가능'
+                  : 'AI 포트폴리오 평가'}
           </button>
         </section>
       ) : (

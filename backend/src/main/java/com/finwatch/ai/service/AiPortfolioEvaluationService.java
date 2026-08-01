@@ -27,9 +27,9 @@ import com.finwatch.ai.provider.AiProvider;
 import com.finwatch.ai.provider.AiProvider.PortfolioEvaluationResult;
 import com.finwatch.ai.provider.AiProvider.PortfolioEvaluationStatement;
 import com.finwatch.ai.provider.AiProviderException;
-import com.finwatch.ai.provider.PortfolioEvaluationResponseValidator;
 import com.finwatch.ai.repository.AiPortfolioEvaluationRepository;
 import com.finwatch.ai.repository.AiUsageLogRepository;
+import com.finwatch.ai.service.PortfolioEvaluationResultResolver.ResolvedPortfolioEvaluation;
 import com.finwatch.ai.service.PortfolioEvaluationSnapshotFactory.SnapshotBundle;
 
 import tools.jackson.databind.ObjectMapper;
@@ -43,7 +43,7 @@ public class AiPortfolioEvaluationService {
 
     private final PortfolioEvaluationSnapshotFactory snapshotFactory;
     private final AiProvider provider;
-    private final PortfolioEvaluationResponseValidator validator;
+    private final PortfolioEvaluationResultResolver resultResolver;
     private final AiPortfolioEvaluationRepository repository;
     private final AiUsageLogRepository usageLogs;
     private final AiUsageLogWriter usageLogWriter;
@@ -59,7 +59,7 @@ public class AiPortfolioEvaluationService {
     public AiPortfolioEvaluationService(
             PortfolioEvaluationSnapshotFactory snapshotFactory,
             AiProvider provider,
-            PortfolioEvaluationResponseValidator validator,
+            PortfolioEvaluationResultResolver resultResolver,
             AiPortfolioEvaluationRepository repository,
             AiUsageLogRepository usageLogs,
             AiUsageLogWriter usageLogWriter,
@@ -68,12 +68,12 @@ public class AiPortfolioEvaluationService {
             AiSingleFlight singleFlight,
             AiRequestGuard requestGuard,
             ObjectMapper objectMapper,
-            @Value("${app.ai.portfolio-prompt-version:portfolio-evaluation-v1}") String activePromptVersion,
+            @Value("${app.ai.portfolio-prompt-version:portfolio-evaluation-v2-grounded}") String activePromptVersion,
             @Value("${app.ai.portfolio-allowed-prompt-versions:}") String allowedPromptVersions,
             @Value("${app.ai.portfolio-cache-ttl:15m}") Duration cacheTtl) {
         this.snapshotFactory = snapshotFactory;
         this.provider = provider;
-        this.validator = validator;
+        this.resultResolver = resultResolver;
         this.repository = repository;
         this.usageLogs = usageLogs;
         this.usageLogWriter = usageLogWriter;
@@ -137,9 +137,16 @@ public class AiPortfolioEvaluationService {
         String requestId = UUID.randomUUID().toString();
         try {
             requestGuard.checkBudget();
-            PortfolioEvaluationResult result = validator.validate(
-                    provider.evaluatePortfolio(snapshot.input(), promptVersion),
-                    snapshot.input());
+            PortfolioEvaluationResult providerResult =
+                    provider.evaluatePortfolio(snapshot.input(), promptVersion);
+            ResolvedPortfolioEvaluation resolved = resultResolver.resolve(
+                    providerResult,
+                    snapshot.input(),
+                    provider.getClass().getSimpleName());
+            PortfolioEvaluationResult result = resolved.result();
+            String persistedCacheKey = resolved.fallbackUsed()
+                    ? key + ":fallback:" + requestId
+                    : key;
             BigDecimal estimatedCost = costs.calculate(
                     result.inputTokens(),
                     result.outputTokens());
@@ -154,7 +161,7 @@ public class AiPortfolioEvaluationService {
             List<String> limitations = mergeLimitations(
                     snapshot.input().serverDataLimitations(),
                     result.dataLimitations());
-            AiPortfolioEvaluation entity = repository.save(AiPortfolioEvaluation.create(
+            AiPortfolioEvaluation generated = AiPortfolioEvaluation.create(
                     snapshot.user(),
                     snapshot.input().snapshotAt(),
                     snapshot.input().windowStartedAt(),
@@ -177,8 +184,19 @@ public class AiPortfolioEvaluationService {
                     result.inputTokens(),
                     result.outputTokens(),
                     estimatedCost,
-                    key,
-                    generatedAt));
+                    persistedCacheKey,
+                    generatedAt);
+            AiPortfolioEvaluation entity = repository
+                    .findByUser_IdAndPositionsHashAndWindowStartedAtAndPromptVersion(
+                            userId,
+                            snapshot.positionsHash(),
+                            snapshot.input().windowStartedAt(),
+                            promptVersion)
+                    .map(existing -> {
+                        existing.replaceGeneratedResult(generated);
+                        return repository.save(existing);
+                    })
+                    .orElseGet(() -> repository.save(generated));
             int elapsed = elapsed(started);
             usageLogs.save(AiUsageLog.portfolioEvaluationSuccess(
                     requestId,
@@ -209,7 +227,9 @@ public class AiPortfolioEvaluationService {
                     estimatedCost,
                     zeroCost(),
                     elapsed);
-            cache.put(key, new PortfolioEvaluationCacheValue(response), cacheTtl);
+            if (!resolved.fallbackUsed()) {
+                cache.put(key, new PortfolioEvaluationCacheValue(response), cacheTtl);
+            }
             return response;
         } catch (RuntimeException exception) {
             usageLogWriter.saveFailure(AiUsageLog.failure(

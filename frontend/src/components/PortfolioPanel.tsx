@@ -15,13 +15,15 @@ import { isStreamingSession } from '../utils/marketSession'
 type Props = {
   liveQuotes: Record<string, LiveQuote>
   onPortfolioChanged?: () => void
+  onPortfolioLoaded?: (holdingCount: number | null) => void
 }
 
-export function PortfolioPanel({ liveQuotes, onPortfolioChanged }: Props) {
+export function PortfolioPanel({ liveQuotes, onPortfolioChanged, onPortfolioLoaded }: Props) {
   const context = useOutletContext<AppRouteContext | null>()
   const showAdminDetails = context?.showAdminDetails ?? true
   const realtimeFxRate = context?.realtimeFxRate ?? null
   const onPortfolioChangedRef = useRef(onPortfolioChanged)
+  const onPortfolioLoadedRef = useRef(onPortfolioLoaded)
   const compositionSignatureRef = useRef<string | null>(null)
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [stocks, setStocks] = useState<StockSummary[] | null>(null)
@@ -47,6 +49,10 @@ export function PortfolioPanel({ liveQuotes, onPortfolioChanged }: Props) {
   useEffect(() => {
     onPortfolioChangedRef.current = onPortfolioChanged
   }, [onPortfolioChanged])
+
+  useEffect(() => {
+    onPortfolioLoadedRef.current = onPortfolioLoaded
+  }, [onPortfolioLoaded])
 
   useEffect(() => {
     const query = searchQuery.trim()
@@ -118,6 +124,7 @@ export function PortfolioPanel({ liveQuotes, onPortfolioChanged }: Props) {
       const previousSignature = compositionSignatureRef.current
       compositionSignatureRef.current = nextSignature
       setPortfolio(loadedPortfolio)
+      onPortfolioLoadedRef.current?.(loadedPortfolio.holdings.length)
       if (previousSignature != null && previousSignature !== nextSignature) {
         onPortfolioChangedRef.current?.()
       }
@@ -240,6 +247,7 @@ export function PortfolioPanel({ liveQuotes, onPortfolioChanged }: Props) {
           : {}),
       })
       onPortfolioChangedRef.current?.()
+      onPortfolioLoadedRef.current?.(null)
       compositionSignatureRef.current = null
       setAveragePrice('')
       setPurchaseFxRate('')
@@ -270,6 +278,7 @@ export function PortfolioPanel({ liveQuotes, onPortfolioChanged }: Props) {
     try {
       await deleteHolding(holding.id)
       onPortfolioChangedRef.current?.()
+      onPortfolioLoadedRef.current?.(null)
       compositionSignatureRef.current = null
       setDeleteConfirmationId(null)
       const refreshed = await loadPortfolio()

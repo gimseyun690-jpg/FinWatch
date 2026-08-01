@@ -82,7 +82,7 @@ POST /api/v1/ai/news-summaries는 인증된 USER와 ADMIN이 사용할 수 있�
 
 ```json
 {
-  "promptVersion": "portfolio-evaluation-v1"
+  "promptVersion": "portfolio-evaluation-v2-grounded"
 }
 ```
 
@@ -405,7 +405,8 @@ Gemini RestClient에는 애플리케이션 수준의 명시적 연결·응답 �
 | 422 | NEWS_CONTENT_UNAVAILABLE | 전처리 후 본문 없음 |
 | 429 | AI_RATE_LIMITED | 사용자 한도 또는 공급자 429가 재시도 후 지속 |
 | 429 | AI_BUDGET_EXCEEDED | 설정된 비용 한도 도달 |
-| 502 | AI_RESPONSE_INVALID | 응답 누락·JSON·스키마·필드 검증 실패 |
+| 502 | AI_RESPONSE_INVALID | 응답 누락 또는 복구할 수 없는 구조·필드 검증 실패 |
+| 502 | AI_RESPONSE_INVALID_JSON | 공급자 응답 JSON 해석 실패 |
 | 502 | EXTERNAL_PROVIDER_ERROR | 재시도 후 공급자 오류 |
 | 503 | AI_REQUEST_IN_PROGRESS | 동일 키 생성 대기 제한 초과 |
 | 504 | AI_PROVIDER_TIMEOUT | 재시도 후 타임아웃 |
@@ -615,8 +616,8 @@ estimatedCost = inputCost + outputCost
 - 입력 제한: AI 공급자에는 평가액 상위 20개 종목만 전달하되 HHI와 집중도는 전체 보유 종목으로 계산하고 이 제한을 `dataLimitations`에 남긴다.
 - 근거: `P1` 포트폴리오 합계, `C1` 집중도, `FX1` 통화 노출, `H1..Hn` 종목별 비중·수익률을 사용한다.
 - 출력: headline·summary, diversification·concentration·currencyExposure·performanceContext, strengths·riskFactors·reviewPoints, dataLimitations를 구조화한다.
-- 검증: 존재하지 않는 evidence, 입력값에서 추적할 수 없는 숫자, 미래 가격·목표가·수익률 예측, 직접 매수·매도·교체 권고를 `AI_RESPONSE_INVALID`로 거절한다.
-- 캐시·영속화: `positionsHash + 15분 windowStartedAt + promptVersion`을 포함한 키로 Redis/메모리와 `ai_portfolio_evaluations`를 재사용한다.
+- 검증·안전 복구: 존재하지 않는 evidence, 입력값에서 추적할 수 없는 숫자, 미래 가격·목표가·수익률 예측, 직접 매수·매도·교체 권고를 검증한다. 공급자가 구조화 응답은 반환했지만 이 의미 검증을 통과하지 못한 경우에는 서버 계산 근거만 사용하는 보수적 설명으로 대체하고 `modelName`과 `dataLimitations`에 대체 사실을 표시한다. 공급자 인증·할당량·연결·JSON 해석 오류는 대체하지 않고 기존 오류 계약을 유지한다.
+- 캐시·영속화: 정상 검증 결과는 `positionsHash + 15분 windowStartedAt + promptVersion`을 포함한 키로 Redis/메모리와 `ai_portfolio_evaluations`를 재사용한다. 안전 대체 결과는 감사 추적을 위해 별도 키로 영속화하되 정상 캐시에 넣지 않는다. 같은 창에서 다시 요청하면 공급자를 재시도하고 동일한 평가 행을 최신 결과로 교체한다.
 - 사용량: MISS는 원 토큰·비용, HIT는 토큰·실제 비용 0과 원 생성 예상 비용만 절감액으로 기록하며 `portfolio_evaluation_id` FK를 연결한다.
 - UI: 환산이 완전할 때의 자산배분 도넛과 AI 평가가 같은 서버 계산 규칙을 사용한다. 환산이 불완전하면 부분 비중을 전체 구성처럼 표시하지 않고 AI에도 데이터 한계를 전달한다.
 - 안전: 결과는 구성 점검용 참고 정보이며 투자 권유가 아니다.

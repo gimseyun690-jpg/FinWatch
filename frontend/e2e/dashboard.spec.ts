@@ -525,7 +525,7 @@ async function mockApi(page: Page) {
         audit: {
           inputHash: 'input-hash',
           positionsHash: 'positions-hash',
-          promptVersion: 'portfolio-evaluation-v1',
+          promptVersion: 'portfolio-evaluation-v2-grounded',
           modelName: 'mock-portfolio-v1',
           cacheHit: false,
           inputTokens: 460,
@@ -994,6 +994,35 @@ test('portfolio renders allocation donut and evidence-linked AI composition revi
   await expect(aiCard).toContainText('보유 구성이 변경되어 이전 평가를 지웠습니다.')
 })
 
+test('empty portfolio explains the requirement before enabling AI evaluation', async ({ page }) => {
+  await page.route('**/api/v1/portfolios', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response({
+        baseCurrency: 'KRW',
+        baseCurrencyTotalPurchaseAmount: null,
+        baseCurrencyTotalEvaluationAmount: null,
+        baseCurrencyProfitLoss: null,
+        baseCurrencyReturnRate: null,
+        conversionComplete: false,
+        profitLossComplete: false,
+        fxRates: [],
+        currencySummaries: [],
+        holdings: [],
+      })),
+    })
+  })
+
+  await login(page)
+  await page.goto('/portfolio')
+
+  const aiCard = page.locator('.portfolio-ai-card')
+  await expect(aiCard).toContainText('보유 종목을 등록하면 AI 평가를 시작할 수 있습니다.')
+  await expect(aiCard.getByRole('button', { name: '보유 종목 등록 후 평가 가능' })).toBeDisabled()
+  await expect(aiCard.locator('.request-error')).toHaveCount(0)
+})
+
 test('portfolio refresh invalidates an AI review changed in another tab', async ({ page }) => {
   let externallyChanged = false
   await page.route('**/api/v1/portfolios', async (route) => {
@@ -1035,6 +1064,7 @@ test('portfolio refresh invalidates an AI review changed in another tab', async 
 
   await expect(aiCard.locator('.portfolio-ai-result')).toHaveCount(0)
   await expect(aiCard).toContainText('보유 구성이 변경되어 이전 평가를 지웠습니다.')
+  await expect(aiCard.getByRole('button', { name: '보유 종목 등록 후 평가 가능' })).toBeDisabled()
 })
 
 test('provider-timestamped FX frames update the header and portfolio together', async ({ page }) => {
