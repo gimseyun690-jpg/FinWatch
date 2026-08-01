@@ -744,7 +744,7 @@ test('US intraday REST data preserves its extended-session label on direct navig
   const globalSearch = page.getByPlaceholder('종목명 또는 심볼 검색')
   await globalSearch.fill('AAPL')
   await page.getByRole('option', { name: /AAPL/ }).click()
-  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
+  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL\/technical$/)
 
   await page.getByRole('button', { name: '1분봉', exact: true }).click()
 
