@@ -368,7 +368,7 @@ export function AppShell({ context }: Props) {
                 />
                 <span>상세모드</span>
               </label>
-              <PwaInstallButton />
+              <PwaInstallButton onBeforeOpen={() => setDrawerOpen(false)} />
               <button type="button" className="shell-logout" onClick={context.logout}>로그아웃</button>
             </div>
           </div>
