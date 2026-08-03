@@ -9,6 +9,7 @@ import type { LiveQuote } from '../types/realtime'
 import { DataStatusBadge } from './DataStatusBadge'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
 import { isStreamingSession, marketSessionClassName, marketSessionInfo } from '../utils/marketSession'
+import { canApplyLiveQuote } from '../utils/realtimeQuote'
 
 type Props = {
   selectedStock: StockRef
@@ -245,7 +246,7 @@ export function WatchlistPanel({
         <div className="stock-grid" aria-label="관심종목 목록">
           {items.map((stock) => {
             const candidateQuote = liveQuotes[realtimeInstrumentKey(stock.market, stock.symbol)]
-            const liveQuote = candidateQuote != null && (stock.asOf == null || new Date(candidateQuote.asOf) >= new Date(stock.asOf))
+            const liveQuote = canApplyLiveQuote(candidateQuote, { asOf: stock.asOf, source: stock.source })
               ? candidateQuote
               : undefined
             const streaming = isStreamingSession(liveQuote?.sessionStatus)

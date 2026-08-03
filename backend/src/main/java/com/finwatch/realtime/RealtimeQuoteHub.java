@@ -1,5 +1,6 @@
 package com.finwatch.realtime;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class RealtimeQuoteHub {
 
+    private static final Duration STREAM_SNAPSHOT_SKEW = Duration.ofMinutes(2);
+
     private final ConcurrentHashMap<String, LiveQuote> quotes = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, RealtimeFxRate> fxRates = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, RealtimeProviderStatus> providerStatuses = new ConcurrentHashMap<>();
@@ -25,9 +28,7 @@ public class RealtimeQuoteHub {
         }
         boolean[] accepted = {false};
         quotes.compute(quote.canonicalKey(), (key, current) -> {
-            if (current == null
-                    || quote.asOf().isAfter(current.asOf())
-                    || (quote.asOf().equals(current.asOf()) && !quote.equals(current))) {
+            if (shouldReplace(current, quote)) {
                 accepted[0] = true;
                 return quote;
             }
@@ -36,6 +37,28 @@ public class RealtimeQuoteHub {
         if (accepted[0]) {
             notifyListeners(new RealtimeEvent("quote", quote));
         }
+    }
+
+    private boolean shouldReplace(LiveQuote current, LiveQuote incoming) {
+        if (current == null) {
+            return true;
+        }
+
+        int currentPriority = sourcePriority(current.source());
+        int incomingPriority = sourcePriority(incoming.source());
+        if (incomingPriority != currentPriority) {
+            if (incomingPriority > currentPriority) {
+                return !incoming.asOf().plus(STREAM_SNAPSHOT_SKEW).isBefore(current.asOf());
+            }
+            return incoming.asOf().isAfter(current.asOf().plus(STREAM_SNAPSHOT_SKEW));
+        }
+
+        return incoming.asOf().isAfter(current.asOf())
+                || (incoming.asOf().equals(current.asOf()) && !incoming.equals(current));
+    }
+
+    private int sourcePriority(String source) {
+        return normalize(source).endsWith("_WS") ? 1 : 0;
     }
 
     public void publish(RealtimeFxRate fxRate) {

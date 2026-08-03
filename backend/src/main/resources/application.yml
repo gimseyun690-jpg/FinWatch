@@ -102,6 +102,8 @@ app:
   realtime:
     enabled: ${REALTIME_ENABLED:true}
     reconnect-max-delay: ${REALTIME_RECONNECT_MAX_DELAY:30s}
+    kis-stale-timeout: ${REALTIME_KIS_STALE_TIMEOUT:90s}
+    kis-stale-check-interval: ${REALTIME_KIS_STALE_CHECK_INTERVAL:15s}
     kis-max-subscriptions: ${REALTIME_KIS_MAX_SUBSCRIPTIONS:40}
     finnhub-max-subscriptions: ${REALTIME_FINNHUB_MAX_SUBSCRIPTIONS:50}
     selection-grace: ${REALTIME_SELECTION_GRACE:30s}

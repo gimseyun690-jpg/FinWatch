@@ -11,6 +11,7 @@ import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
 import { PortfolioAllocationDonut } from './PortfolioAllocationDonut'
 import { validRealtimeRate } from '../utils/realtimeFx'
 import { isStreamingSession } from '../utils/marketSession'
+import { canApplyLiveQuote } from '../utils/realtimeQuote'
 
 type Props = {
   liveQuotes: Record<string, LiveQuote>
@@ -653,7 +654,7 @@ function applyLiveQuotes(
 }
 
 function applyLiveQuote(holding: PortfolioHolding, quote?: LiveQuote): PortfolioHolding {
-  if (quote == null || !Number.isFinite(quote.price) || (holding.priceAsOf != null && new Date(quote.asOf) < new Date(holding.priceAsOf))) return holding
+  if (!canApplyLiveQuote(quote, { asOf: holding.priceAsOf, source: holding.priceSource })) return holding
   const evaluationAmount = holding.quantity * quote.price
   const profitLoss = evaluationAmount - holding.purchaseAmount
   return {

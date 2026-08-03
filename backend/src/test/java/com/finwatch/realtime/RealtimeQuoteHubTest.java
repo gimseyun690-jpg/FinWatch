@@ -40,6 +40,57 @@ class RealtimeQuoteHubTest {
     }
 
     @Test
+    void websocketTradeSupersedesNewerRestSnapshotAndCannotBeOverwrittenByRest() {
+        RealtimeQuoteHub hub = new RealtimeQuoteHub();
+        var events = new ArrayList<RealtimeEvent>();
+        hub.addListener(events::add);
+        Instant tradeTime = Instant.parse("2026-07-14T01:00:03Z");
+
+        hub.publish(quote("KRX", "005930", "85000", tradeTime.plusSeconds(2), "KIS_UNIFIED_REST", "SNAPSHOT"));
+        hub.publish(quote("KRX", "005930", "85100", tradeTime, "KIS_UNIFIED_WS", "LIVE"));
+        hub.publish(quote("KRX", "005930", "85200", tradeTime.plusSeconds(7), "KIS_UNIFIED_REST", "SNAPSHOT"));
+
+        assertThat(hub.find("KRX", "005930")).get().satisfies(quote -> {
+            assertThat(quote.price()).isEqualTo(new BigDecimal("85100"));
+            assertThat(quote.asOf()).isEqualTo(tradeTime);
+            assertThat(quote.source()).isEqualTo("KIS_UNIFIED_WS");
+        });
+        assertThat(events).hasSize(2);
+    }
+
+    @Test
+    void staleWebsocketTradeDoesNotReplaceNewerWebsocketTrade() {
+        RealtimeQuoteHub hub = new RealtimeQuoteHub();
+        var events = new ArrayList<RealtimeEvent>();
+        hub.addListener(events::add);
+        Instant newestTime = Instant.parse("2026-07-14T01:00:05Z");
+
+        hub.publish(quote("KRX", "005930", "85200", newestTime, "KIS_UNIFIED_WS", "LIVE"));
+        hub.publish(quote("KRX", "005930", "85100", newestTime.minusSeconds(1), "KIS_KRX_WS", "LIVE"));
+
+        assertThat(hub.find("KRX", "005930")).get().satisfies(quote -> {
+            assertThat(quote.price()).isEqualTo(new BigDecimal("85200"));
+            assertThat(quote.asOf()).isEqualTo(newestTime);
+            assertThat(quote.source()).isEqualTo("KIS_UNIFIED_WS");
+        });
+        assertThat(events).hasSize(1);
+    }
+
+    @Test
+    void freshRestSnapshotCanReplaceAStreamThatIsClearlyStale() {
+        RealtimeQuoteHub hub = new RealtimeQuoteHub();
+        Instant streamedAt = Instant.parse("2026-08-03T01:00:00Z");
+
+        hub.publish(quote("KRX", "005930", "81000", streamedAt, "KIS_UNIFIED_WS", "LIVE"));
+        hub.publish(quote(
+                "KRX", "005930", "81500", streamedAt.plusSeconds(181), "KIS_UNIFIED_REST", "SNAPSHOT"));
+
+        assertThat(hub.find("KRX", "005930")).get()
+                .extracting(LiveQuote::price)
+                .isEqualTo(new BigDecimal("81500"));
+    }
+
+    @Test
     void isolatesIdenticalSymbolsByMarketAndRejectsAmbiguousLegacyLookup() {
         RealtimeQuoteHub hub = new RealtimeQuoteHub();
         Instant asOf = Instant.parse("2026-07-14T01:00:01Z");
@@ -87,6 +138,16 @@ class RealtimeQuoteHubTest {
     }
 
     private LiveQuote quote(String market, String symbol, String price, Instant asOf) {
+        return quote(market, symbol, price, asOf, "TEST", "LIVE");
+    }
+
+    private LiveQuote quote(
+            String market,
+            String symbol,
+            String price,
+            Instant asOf,
+            String source,
+            String sessionStatus) {
         return new LiveQuote(
                 market,
                 symbol,
@@ -96,8 +157,8 @@ class RealtimeQuoteHubTest {
                 BigDecimal.ONE,
                 "KRW",
                 asOf,
-                "TEST",
-                "LIVE");
+                source,
+                sessionStatus);
     }
 
     private RealtimeFxRate fxRate(String rate, Instant asOf, Instant fetchedAt) {

@@ -39,6 +39,8 @@ public class KisRealtimeClient {
     private final URI websocketUri;
     private final Duration connectTimeout;
     private final Duration maxReconnectDelay;
+    private final Duration staleTimeout;
+    private final Duration staleCheckInterval;
     private final RestClient approvalClient;
     private final HttpClient websocketClient;
     private final ObjectMapper objectMapper;
@@ -48,6 +50,7 @@ public class KisRealtimeClient {
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
     private final AtomicBoolean connectionPending = new AtomicBoolean();
+    private final AtomicBoolean watchdogStarted = new AtomicBoolean();
     private final AtomicInteger reconnectAttempts = new AtomicInteger();
 
     private volatile List<String> symbols = List.of();
@@ -55,6 +58,9 @@ public class KisRealtimeClient {
     private volatile boolean stopped = true;
     private volatile String cachedApprovalKey;
     private volatile Instant approvalKeyExpiresAt = Instant.EPOCH;
+    private volatile Instant lastInboundAt = Instant.EPOCH;
+    private volatile Instant lastTickAt = Instant.EPOCH;
+    private volatile boolean streamConfirmed;
 
     public KisRealtimeClient(
             @Value("${app.data.kis.app-key:}") String appKey,
@@ -67,6 +73,8 @@ public class KisRealtimeClient {
             @Value("${app.data.connect-timeout:3s}") Duration connectTimeout,
             @Value("${app.data.read-timeout:10s}") Duration readTimeout,
             @Value("${app.realtime.reconnect-max-delay:30s}") Duration maxReconnectDelay,
+            @Value("${app.realtime.kis-stale-timeout:90s}") Duration staleTimeout,
+            @Value("${app.realtime.kis-stale-check-interval:15s}") Duration staleCheckInterval,
             ObjectMapper objectMapper,
             KisMarketDataClient marketDataClient,
             RealtimeQuoteHub hub) {
@@ -74,6 +82,8 @@ public class KisRealtimeClient {
         this.appSecret = appSecret;
         this.connectTimeout = connectTimeout;
         this.maxReconnectDelay = maxReconnectDelay;
+        this.staleTimeout = positiveOrDefault(staleTimeout, Duration.ofSeconds(90));
+        this.staleCheckInterval = positiveOrDefault(staleCheckInterval, Duration.ofSeconds(15));
         boolean prod = "prod".equalsIgnoreCase(environment);
         this.websocketUri = URI.create((prod ? prodWebsocketUrl : paperWebsocketUrl) + "/tryitout");
         this.approvalClient = ProviderRestClientFactory.create(
@@ -101,6 +111,7 @@ public class KisRealtimeClient {
             hub.updateProvider(PROVIDER, "ERROR", "KIS_APP_KEY와 KIS_APP_SECRET이 필요합니다.");
             return;
         }
+        startWatchdog();
         scheduler.execute(() -> {
             seedSnapshots();
             connect();
@@ -134,10 +145,13 @@ public class KisRealtimeClient {
         if (approvalKey == null || approvalKey.isBlank()) {
             return;
         }
-        removals.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "2"), true));
+        removals.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "0"), true));
         seedSnapshots(additions);
         additions.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "1"), true));
-        hub.updateProvider(PROVIDER, "CONNECTED", connectionMessage(desired.size()));
+        if (desired.isEmpty()) {
+            streamConfirmed = false;
+            hub.updateProvider(PROVIDER, "IDLE", connectionMessage(0));
+        }
     }
 
     public List<String> subscribedSymbols() {
@@ -184,7 +198,7 @@ public class KisRealtimeClient {
     }
 
     private void connect() {
-        if (stopped || !connectionPending.compareAndSet(false, true)) {
+        if (stopped || activeSocket != null || !connectionPending.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -237,13 +251,20 @@ public class KisRealtimeClient {
     }
 
     private void scheduleReconnect() {
+        scheduleReconnect(null);
+    }
+
+    private void scheduleReconnect(String reason) {
         if (stopped || !reconnectScheduled.compareAndSet(false, true)) {
             return;
         }
         int attempt = reconnectAttempts.incrementAndGet();
         long maxSeconds = Math.max(1, maxReconnectDelay.toSeconds());
         long delay = Math.min(maxSeconds, 1L << Math.min(attempt - 1, 5));
-        hub.updateProvider(PROVIDER, "RECONNECTING", delay + "초 후 다시 연결합니다.");
+        String message = reason == null || reason.isBlank()
+                ? delay + "초 후 다시 연결합니다."
+                : reason + " · " + delay + "초 후 다시 연결합니다.";
+        hub.updateProvider(PROVIDER, "RECONNECTING", message);
         scheduler.schedule(() -> {
             reconnectScheduled.set(false);
             connect();
@@ -277,10 +298,19 @@ public class KisRealtimeClient {
                 .toList()));
     }
 
-    private void handleMessage(WebSocket socket, String message) {
+    void handleMessage(WebSocket socket, String message, Instant receivedAt) {
+        if (activeSocket != socket) {
+            return;
+        }
+        recordInbound(socket, receivedAt);
         if (message.startsWith("0|")) {
-            for (LiveQuote quote : KisTradeMessageParser.parse(message)) {
+            List<LiveQuote> quotes = KisTradeMessageParser.parse(message);
+            for (LiveQuote quote : quotes) {
                 hub.publish(quote);
+            }
+            if (!quotes.isEmpty()) {
+                lastTickAt = receivedAt;
+                confirmStream(socket);
             }
             return;
         }
@@ -300,7 +330,13 @@ public class KisRealtimeClient {
             }
             String resultCode = root.path("body").path("rt_cd").asText("0");
             if (!"0".equals(resultCode)) {
+                streamConfirmed = false;
                 hub.updateProvider(PROVIDER, "DEGRADED", root.path("body").path("msg1").asText("KIS 구독 오류"));
+                return;
+            }
+            String transactionId = root.path("header").path("tr_id").asText();
+            if (domesticMarket.realtimeTrId().equals(transactionId)) {
+                confirmStream(socket);
             }
         } catch (RuntimeException ignored) {
             // Unknown provider control messages are ignored without dropping the stream.
@@ -322,6 +358,106 @@ public class KisRealtimeClient {
                 : subscriptionCount + "개 " + domesticMarket.displayName() + " 종목 체결 구독 중";
     }
 
+    private void startWatchdog() {
+        if (!watchdogStarted.compareAndSet(false, true)) {
+            return;
+        }
+        long intervalMillis = Math.max(1_000, staleCheckInterval.toMillis());
+        scheduler.scheduleWithFixedDelay(
+                this::safeCheckLiveness,
+                intervalMillis,
+                intervalMillis,
+                TimeUnit.MILLISECONDS);
+    }
+
+    private void safeCheckLiveness() {
+        try {
+            checkLiveness(Instant.now());
+        } catch (RuntimeException exception) {
+            hub.updateProvider(PROVIDER, "DEGRADED", "KIS 실시간 상태 확인 실패: " + safeMessage(exception));
+        }
+    }
+
+    void checkLiveness(Instant now) {
+        WebSocket socket = activeSocket;
+        Instant lastInbound = lastInboundAt;
+        if (socket == null || symbols.isEmpty() || lastInbound.equals(Instant.EPOCH)) {
+            return;
+        }
+        Duration silence = Duration.between(lastInbound, now);
+        if (silence.isNegative() || silence.compareTo(staleTimeout) <= 0 || activeSocket != socket) {
+            return;
+        }
+
+        activeSocket = null;
+        connectionPending.set(false);
+        streamConfirmed = false;
+        String reason = "KIS 실시간 수신이 " + Math.max(1, silence.toSeconds()) + "초 동안 없어 연결을 교체합니다.";
+        hub.updateProvider(PROVIDER, "DEGRADED", reason);
+        socket.abort();
+        scheduleReconnect(reason);
+    }
+
+    void registerOpenSocket(WebSocket socket, Instant openedAt) {
+        activeSocket = socket;
+        lastInboundAt = openedAt;
+        lastTickAt = Instant.EPOCH;
+        streamConfirmed = false;
+    }
+
+    private void recordInbound(WebSocket socket, Instant receivedAt) {
+        if (activeSocket == socket) {
+            lastInboundAt = receivedAt;
+        }
+    }
+
+    private void confirmStream(WebSocket socket) {
+        if (activeSocket != socket || streamConfirmed) {
+            return;
+        }
+        streamConfirmed = true;
+        reconnectAttempts.set(0);
+        reconnectScheduled.set(false);
+        hub.updateProvider(PROVIDER, "CONNECTED", connectionMessage(symbols.size()));
+    }
+
+    Instant lastInboundAt() {
+        return lastInboundAt;
+    }
+
+    Instant lastTickAt() {
+        return lastTickAt;
+    }
+
+    void handleSocketOpen(WebSocket webSocket, String approvalKey, Instant openedAt) {
+        connectionPending.set(false);
+        registerOpenSocket(webSocket, openedAt);
+        webSocket.request(1);
+        hub.updateProvider(
+                PROVIDER,
+                symbols.isEmpty() ? "IDLE" : "SUBSCRIBING",
+                symbols.isEmpty() ? connectionMessage(0) : "KIS 구독 승인을 기다리는 중");
+        CompletableFuture<?> subscriptions = CompletableFuture.completedFuture(null);
+        for (String symbol : symbols) {
+            subscriptions = subscriptions.thenCompose(ignored -> webSocket.sendText(
+                    subscriptionMessage(approvalKey, symbol),
+                    true));
+        }
+        subscriptions.whenComplete((ignored, error) -> {
+            if (error != null && activeSocket == webSocket) {
+                hub.updateProvider(PROVIDER, "ERROR", "KIS 구독 요청 실패: " + safeMessage(error));
+                activeSocket = null;
+                streamConfirmed = false;
+                webSocket.abort();
+                scheduleReconnect();
+            }
+        });
+    }
+
+    private Duration positiveOrDefault(Duration value, Duration fallback) {
+        return value == null || value.isNegative() || value.isZero() ? fallback : value;
+    }
+
     private final class Listener implements WebSocket.Listener {
 
         private final String approvalKey;
@@ -333,26 +469,12 @@ public class KisRealtimeClient {
 
         @Override
         public void onOpen(WebSocket webSocket) {
-            connectionPending.set(false);
-            activeSocket = webSocket;
-            reconnectAttempts.set(0);
-            reconnectScheduled.set(false);
-            webSocket.request(1);
-            CompletableFuture<?> subscriptions = CompletableFuture.completedFuture(null);
-            for (String symbol : symbols) {
-                subscriptions = subscriptions.thenCompose(ignored -> webSocket.sendText(
-                        subscriptionMessage(approvalKey, symbol),
-                        true));
+            if (stopped) {
+                connectionPending.set(false);
+                webSocket.abort();
+                return;
             }
-            subscriptions.whenComplete((ignored, error) -> {
-                if (error == null) {
-                    hub.updateProvider(PROVIDER, "CONNECTED", connectionMessage(symbols.size()));
-                } else {
-                    hub.updateProvider(PROVIDER, "ERROR", "KIS 구독 요청 실패: " + safeMessage(error));
-                    webSocket.abort();
-                    scheduleReconnect();
-                }
-            });
+            handleSocketOpen(webSocket, approvalKey, Instant.now());
         }
 
         @Override
@@ -361,7 +483,7 @@ public class KisRealtimeClient {
             if (last) {
                 String message = buffer.toString();
                 buffer.setLength(0);
-                handleMessage(webSocket, message);
+                handleMessage(webSocket, message, Instant.now());
             }
             webSocket.request(1);
             return CompletableFuture.completedFuture(null);
@@ -369,11 +491,10 @@ public class KisRealtimeClient {
 
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-            connectionPending.set(false);
-            if (activeSocket == webSocket) {
+            if (activeSocket == webSocket && !stopped) {
+                connectionPending.set(false);
                 activeSocket = null;
-            }
-            if (!stopped) {
+                streamConfirmed = false;
                 hub.updateProvider(PROVIDER, "DISCONNECTED", "KIS 연결 종료: " + statusCode);
                 scheduleReconnect();
             }
@@ -382,11 +503,10 @@ public class KisRealtimeClient {
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
-            connectionPending.set(false);
-            if (activeSocket == webSocket) {
+            if (activeSocket == webSocket && !stopped) {
+                connectionPending.set(false);
                 activeSocket = null;
-            }
-            if (!stopped) {
+                streamConfirmed = false;
                 hub.updateProvider(PROVIDER, "ERROR", "KIS 스트림 오류: " + safeMessage(error));
                 scheduleReconnect();
             }

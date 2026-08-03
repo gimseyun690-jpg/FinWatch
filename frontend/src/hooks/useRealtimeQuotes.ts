@@ -10,6 +10,7 @@ import type {
   RealtimeSnapshot,
 } from '../types/realtime'
 import { realtimeInstrumentKey } from '../utils/realtimeInstrument'
+import { preferredQuote } from '../utils/realtimeQuote'
 
 type RealtimeEvent = {
   type: 'snapshot' | 'quote' | 'status' | 'candle' | 'candles' | 'subscription' | 'fx'
@@ -87,9 +88,11 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
           let next = current
           for (const quote of Object.values(quoteUpdates)) {
             const key = realtimeInstrumentKey(quote.market, quote.symbol)
-            if (sameQuote(current[key], quote)) continue
+            const existing = next[key]
+            const preferred = preferredQuote(existing, quote)
+            if (preferred === existing || sameQuote(existing, preferred)) continue
             if (next === current) next = { ...current }
-            next[key] = quote
+            next[key] = preferred
           }
           return next
         })
@@ -113,33 +116,48 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
     const connect = () => {
       if (disposed) return
       setConnection(attempt === 0 ? 'connecting' : 'reconnecting')
-      socket = new WebSocket(websocketUrl())
-      socketRef.current = socket
+      const connectionSocket = new WebSocket(websocketUrl())
+      socket = connectionSocket
+      socketRef.current = connectionSocket
 
-      socket.onopen = () => {
+      connectionSocket.onopen = () => {
+        if (disposed || socketRef.current !== connectionSocket) {
+          connectionSocket.close(1000, 'superseded')
+          return
+        }
         attempt = 0
         setConnection('connected')
         const currentStock = selectedStockRef.current
         if (currentStock) {
-          socket?.send(JSON.stringify({ type: 'select', market: currentStock.market, symbol: currentStock.symbol }))
+          connectionSocket.send(JSON.stringify({ type: 'select', market: currentStock.market, symbol: currentStock.symbol }))
         }
       }
 
-      socket.onmessage = (message) => {
+      connectionSocket.onmessage = (message) => {
+        if (disposed || socketRef.current !== connectionSocket) return
         try {
           const event = JSON.parse(String(message.data)) as RealtimeEvent
           if (event.type === 'snapshot') {
             const snapshot = event.data as RealtimeSnapshot
-            setQuotes(Object.fromEntries(snapshot.quotes.map((quote) => [
-              realtimeInstrumentKey(quote.market, quote.symbol),
-              quote,
-            ])))
+            setQuotes((current) => {
+              let next = current
+              for (const quote of snapshot.quotes) {
+                const key = realtimeInstrumentKey(quote.market, quote.symbol)
+                const existing = next[key]
+                const preferred = preferredQuote(existing, quote)
+                if (preferred === existing || sameQuote(existing, preferred)) continue
+                if (next === current) next = { ...current }
+                next[key] = preferred
+              }
+              return next
+            })
             setProviders(Object.fromEntries(snapshot.providers.map((status) => [status.provider, status])))
             return
           }
           if (event.type === 'quote') {
             const quote = event.data as LiveQuote
-            pendingQuotes[realtimeInstrumentKey(quote.market, quote.symbol)] = quote
+            const key = realtimeInstrumentKey(quote.market, quote.symbol)
+            pendingQuotes[key] = preferredQuote(pendingQuotes[key], quote)
             scheduleRealtimeFlush()
             return
           }
@@ -177,16 +195,22 @@ export function useRealtimeQuotes(enabled: boolean, selectedStock?: StockRef) {
         }
       }
 
-      socket.onclose = () => {
-        if (socketRef.current === socket) socketRef.current = null
+      connectionSocket.onclose = () => {
+        if (socketRef.current !== connectionSocket) return
+        socketRef.current = null
         if (disposed) return
         attempt += 1
         setConnection('reconnecting')
         const delay = Math.min(15_000, 1_000 * 2 ** Math.min(attempt - 1, 4))
-        reconnectTimer = window.setTimeout(connect, delay)
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = null
+          connect()
+        }, delay)
       }
 
-      socket.onerror = () => socket?.close()
+      connectionSocket.onerror = () => {
+        if (socketRef.current === connectionSocket) connectionSocket.close()
+      }
     }
 
     connect()

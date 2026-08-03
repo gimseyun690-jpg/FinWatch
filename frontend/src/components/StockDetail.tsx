@@ -22,6 +22,7 @@ import type { IntradayCandle, LiveQuote } from '../types/realtime'
 import { DataStatusBadge, type DataStatus } from './DataStatusBadge'
 import { InteractiveStockChart } from './InteractiveStockChart'
 import { marketSourceLabel } from '../utils/marketSource'
+import { canApplyLiveQuote } from '../utils/realtimeQuote'
 import { isStreamingSession, marketSessionClassName, marketSessionInfo } from '../utils/marketSession'
 
 type DetailState = {
@@ -297,7 +298,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
     candle.market.toUpperCase() === readyStock.market.toUpperCase()
     && candle.symbol.toUpperCase() === readyStock.symbol.toUpperCase()
   ))
-  const effectiveLiveQuote = quoteMatchesInstrument && liveQuote != null && new Date(liveQuote.asOf) >= new Date(readyStock.asOf)
+  const effectiveLiveQuote = quoteMatchesInstrument && canApplyLiveQuote(liveQuote, { asOf: readyStock.asOf, source: readyStock.source })
     ? liveQuote
     : undefined
   const stock: ReadyStock = effectiveLiveQuote == null ? readyStock : {
