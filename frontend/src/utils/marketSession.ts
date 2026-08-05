@@ -104,36 +104,46 @@ export function marketSessionInfo(
 
   if (!isUs && !isKrx) return null
 
+  let resolved: MarketSessionInfo | null = null
   const normalized = normalizedSession(status)
 
   if (normalized && normalized !== 'SNAPSHOT' && normalized !== 'UNKNOWN') {
     switch (normalized) {
-      case 'CLOSED':
-      case 'CLOSE':
-        return { phase: 'CLOSED', label: '장 마감', streaming: false }
       case 'PRE_MARKET':
       case 'PREMARKET':
-        return { phase: 'PRE_MARKET', label: isKrx ? '장전' : '프리마켓', streaming: true }
+        resolved = { phase: 'PRE_MARKET', label: isKrx ? '장전' : '프리마켓', streaming: true }
+        break
       case 'AFTER_MARKET':
       case 'AFTER_HOURS':
       case 'POST_MARKET':
       case 'POSTMARKET':
-        return { phase: 'AFTER_HOURS', label: isKrx ? '애프터장' : '애프터마켓', streaming: true }
+        resolved = { phase: 'AFTER_HOURS', label: isKrx ? '애프터장' : '애프터마켓', streaming: true }
+        break
+      case 'CLOSED':
+      case 'CLOSE':
       case 'LIVE':
       case 'OPEN':
       case 'REGULAR':
       case 'MARKET_OPEN':
-        return { phase: 'REGULAR', label: '정규장', streaming: true }
+        return null
       default:
         break
     }
   }
 
-  // Fallback: Resolve session from time (asOf timestamp or current time)
-  const date = asOf ? new Date(asOf) : new Date()
-  if (Number.isNaN(date.getTime())) return null
+  if (!resolved) {
+    const date = asOf ? new Date(asOf) : new Date()
+    if (Number.isNaN(date.getTime())) return null
+    resolved = isKrx ? resolveKrxSessionFromTime(date) : resolveUsSessionFromTime(date)
+  }
 
-  return isKrx ? resolveKrxSessionFromTime(date) : resolveUsSessionFromTime(date)
+  // Only display session badges for extended hours (PRE_MARKET or AFTER_HOURS).
+  // Hide badge completely during regular trading hours and when the market is closed.
+  if (resolved.phase === 'REGULAR' || resolved.phase === 'CLOSED') {
+    return null
+  }
+
+  return resolved
 }
 
 export function marketSessionClassName(phase: MarketSessionPhase) {
