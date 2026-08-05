@@ -12,10 +12,10 @@ public class KrxMarketSessionResolver {
 
     static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
-    private static final LocalTime PRE_MARKET_OPEN = LocalTime.of(8, 30);
+    private static final LocalTime PRE_MARKET_OPEN = LocalTime.of(8, 0);
     private static final LocalTime REGULAR_OPEN = LocalTime.of(9, 0);
     private static final LocalTime REGULAR_CLOSE = LocalTime.of(15, 30);
-    private static final LocalTime AFTER_HOURS_CLOSE = LocalTime.of(18, 0);
+    private static final LocalTime AFTER_HOURS_CLOSE = LocalTime.of(20, 0);
 
     public MarketSessionStatus resolve(Instant tradeTime) {
         if (tradeTime == null) {

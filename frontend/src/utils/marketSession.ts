@@ -45,16 +45,16 @@ function resolveKrxSessionFromTime(date: Date): MarketSessionInfo {
   }
 
   const timeMinutes = hour * 60 + minute
-  // 08:30 ~ 09:00 KST: PRE_MARKET (장전)
-  if (timeMinutes >= 8 * 60 + 30 && timeMinutes < 9 * 60) {
-    return { phase: 'PRE_MARKET', label: '장전', streaming: true }
+  // 08:00 ~ 09:00 KST: PRE_MARKET (프리마켓)
+  if (timeMinutes >= 8 * 60 && timeMinutes < 9 * 60) {
+    return { phase: 'PRE_MARKET', label: '프리마켓', streaming: true }
   }
   // 09:00 ~ 15:30 KST: REGULAR (정규장)
   if (timeMinutes >= 9 * 60 && timeMinutes < 15 * 60 + 30) {
     return { phase: 'REGULAR', label: '정규장', streaming: true }
   }
-  // 15:30 ~ 18:00 KST: AFTER_HOURS (애프터장)
-  if (timeMinutes >= 15 * 60 + 30 && timeMinutes < 18 * 60) {
+  // 15:30 ~ 20:00 KST: AFTER_HOURS (애프터장)
+  if (timeMinutes >= 15 * 60 + 30 && timeMinutes < 20 * 60) {
     return { phase: 'AFTER_HOURS', label: '애프터장', streaming: true }
   }
   return { phase: 'CLOSED', label: '장 마감', streaming: false }
@@ -111,7 +111,7 @@ export function marketSessionInfo(
     switch (normalized) {
       case 'PRE_MARKET':
       case 'PREMARKET':
-        resolved = { phase: 'PRE_MARKET', label: isKrx ? '장전' : '프리마켓', streaming: true }
+        resolved = { phase: 'PRE_MARKET', label: '프리마켓', streaming: true }
         break
       case 'AFTER_MARKET':
       case 'AFTER_HOURS':
