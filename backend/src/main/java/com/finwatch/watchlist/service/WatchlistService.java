@@ -60,7 +60,7 @@ public class WatchlistService {
                     var stock = stockQueryService.getStock(
                             item.getStock().getMarket(),
                             item.getStock().getSymbol());
-                    String sessionStatus = marketSessionResolver.resolve(stock.market(), stock.asOf()).name();
+                    String sessionStatus = marketSessionResolver.resolve(stock.market(), java.time.Instant.now()).name();
                     return WatchlistItemResponse.from(item, stock, sessionStatus);
                 })
                 .toList();
@@ -81,7 +81,7 @@ public class WatchlistService {
             prepareStockData(stock.getMarket(), stock.getSymbol());
         });
         var detail = stockQueryService.getStock(stock.getMarket(), stock.getSymbol());
-        String sessionStatus = marketSessionResolver.resolve(detail.market(), detail.asOf()).name();
+        String sessionStatus = marketSessionResolver.resolve(detail.market(), java.time.Instant.now()).name();
         return WatchlistItemResponse.from(watchlist, detail, sessionStatus);
     }
 

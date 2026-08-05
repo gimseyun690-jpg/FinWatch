@@ -249,8 +249,8 @@ export function WatchlistPanel({
             const liveQuote = canApplyLiveQuote(candidateQuote, { asOf: stock.asOf, source: stock.source })
               ? candidateQuote
               : undefined
-            const streaming = isStreamingSession(liveQuote?.sessionStatus)
-            const session = marketSessionInfo(stock.market, liveQuote?.sessionStatus, liveQuote?.asOf ?? stock.asOf)
+            const streaming = isStreamingSession(liveQuote?.sessionStatus ?? stock.sessionStatus)
+            const session = marketSessionInfo(stock.market, liveQuote?.sessionStatus ?? stock.sessionStatus, liveQuote?.asOf ?? stock.asOf)
             const price = liveQuote?.price ?? stock.price
             const changeRate = liveQuote?.changeRate ?? stock.changeRate
             const key = stockKey(stock)
