@@ -231,7 +231,7 @@ public class ExternalDataSyncService {
                     stock.getSymbol(),
                     today.minusDays(MARKET_LOOKBACK_DAYS),
                     today);
-            if (!series.items().isEmpty()) {
+            if (series != null && !series.items().isEmpty()) {
                 return persistBars(stock, series.items(), "KIS_OVERSEAS", NEW_YORK, US_CLOSE);
             }
         } catch (ProviderException exception) {
@@ -244,7 +244,7 @@ public class ExternalDataSyncService {
                     stock.getSymbol(),
                     today.minusDays(MARKET_LOOKBACK_DAYS),
                     today);
-            if (!series.items().isEmpty()) {
+            if (series != null && !series.items().isEmpty()) {
                 return persistBars(stock, series.items(), "FINNHUB", NEW_YORK, US_CLOSE);
             }
             return ProviderSyncResult.fallback(
