@@ -26,6 +26,7 @@ import com.finwatch.data.provider.FinnhubMarketDataClient;
 import com.finwatch.data.provider.KisMarketDataClient;
 import com.finwatch.data.provider.NaverNewsSearchClient;
 import com.finwatch.data.provider.ProviderException;
+import com.finwatch.data.provider.YahooFinanceMarketDataClient;
 import com.finwatch.data.provider.ProviderResponses.Bar;
 import com.finwatch.data.provider.ProviderResponses.BarSeries;
 import com.finwatch.data.provider.ProviderResponses.CompanyNewsItem;
@@ -48,6 +49,7 @@ class ExternalDataSyncServiceTest {
     private NaverNewsSearchClient naverNewsSearchClient;
     private FinnhubNewsClient finnhubNewsClient;
     private FinnhubMarketDataClient finnhubMarketDataClient;
+    private YahooFinanceMarketDataClient yahooFinanceMarketDataClient;
 
     @BeforeEach
     void setUp() {
@@ -58,6 +60,7 @@ class ExternalDataSyncServiceTest {
         naverNewsSearchClient = mock(NaverNewsSearchClient.class);
         finnhubNewsClient = mock(FinnhubNewsClient.class);
         finnhubMarketDataClient = mock(FinnhubMarketDataClient.class);
+        yahooFinanceMarketDataClient = mock(YahooFinanceMarketDataClient.class);
     }
 
     @Test
@@ -249,7 +252,8 @@ class ExternalDataSyncServiceTest {
                 kisMarketDataClient,
                 naverNewsSearchClient,
                 finnhubNewsClient,
-                finnhubMarketDataClient);
+                finnhubMarketDataClient,
+                yahooFinanceMarketDataClient);
     }
 
     private Stock stock(Long id, String symbol, String name, String market) {

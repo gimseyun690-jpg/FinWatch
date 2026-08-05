@@ -25,6 +25,7 @@ import com.finwatch.data.provider.ProviderException;
 import com.finwatch.data.provider.ProviderResponses.Bar;
 import com.finwatch.data.provider.ProviderResponses.CompanyNewsItem;
 import com.finwatch.data.provider.ProviderResponses.NewsItem;
+import com.finwatch.data.provider.YahooFinanceMarketDataClient;
 import com.finwatch.data.sync.DataSyncResponses.DataSyncResponse;
 import com.finwatch.data.sync.DataSyncResponses.ProviderSyncResult;
 import com.finwatch.data.sync.DataSyncResponses.StockSyncResult;
@@ -55,6 +56,7 @@ public class ExternalDataSyncService {
     private final NaverNewsSearchClient naverNewsSearchClient;
     private final FinnhubNewsClient finnhubNewsClient;
     private final FinnhubMarketDataClient finnhubMarketDataClient;
+    private final YahooFinanceMarketDataClient yahooFinanceMarketDataClient;
 
     public ExternalDataSyncService(
             @Value("${app.data.mode:DEMO}") String dataMode,
@@ -64,7 +66,8 @@ public class ExternalDataSyncService {
             KisMarketDataClient kisMarketDataClient,
             NaverNewsSearchClient naverNewsSearchClient,
             FinnhubNewsClient finnhubNewsClient,
-            FinnhubMarketDataClient finnhubMarketDataClient) {
+            FinnhubMarketDataClient finnhubMarketDataClient,
+            YahooFinanceMarketDataClient yahooFinanceMarketDataClient) {
         this.dataMode = DataMode.from(dataMode);
         this.stockRepository = stockRepository;
         this.marketPriceRepository = marketPriceRepository;
@@ -73,6 +76,7 @@ public class ExternalDataSyncService {
         this.naverNewsSearchClient = naverNewsSearchClient;
         this.finnhubNewsClient = finnhubNewsClient;
         this.finnhubMarketDataClient = finnhubMarketDataClient;
+        this.yahooFinanceMarketDataClient = yahooFinanceMarketDataClient;
     }
 
     @Transactional
@@ -119,9 +123,13 @@ public class ExternalDataSyncService {
             return kisMarketDataClient.getDomesticQuote(stock.getSymbol());
         } else if (isUsMarket(stock.getMarket())) {
             try {
-                return kisMarketDataClient.getOverseasQuote(stock.getMarket(), stock.getSymbol());
-            } catch (RuntimeException fallbackException) {
-                return finnhubMarketDataClient.quote(stock.getSymbol());
+                return yahooFinanceMarketDataClient.quote(stock.getSymbol());
+            } catch (RuntimeException yahooFailure) {
+                try {
+                    return kisMarketDataClient.getOverseasQuote(stock.getMarket(), stock.getSymbol());
+                } catch (RuntimeException fallbackException) {
+                    return finnhubMarketDataClient.quote(stock.getSymbol());
+                }
             }
         }
         return null;

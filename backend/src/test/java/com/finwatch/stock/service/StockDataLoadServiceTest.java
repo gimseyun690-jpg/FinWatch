@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import com.finwatch.data.provider.FinnhubMarketDataClient;
 import com.finwatch.data.provider.KisMarketDataClient;
+import com.finwatch.data.provider.YahooFinanceMarketDataClient;
 import com.finwatch.data.sync.DataSyncResponses.DataSyncResponse;
 import com.finwatch.data.sync.DataSyncResponses.ProviderSyncResult;
 import com.finwatch.data.sync.DataSyncResponses.StockSyncResult;
@@ -41,6 +42,7 @@ class StockDataLoadServiceTest {
     private DisclosureSyncService disclosureSyncService;
     private KisMarketDataClient kisMarketDataClient;
     private FinnhubMarketDataClient finnhubMarketDataClient;
+    private YahooFinanceMarketDataClient yahooFinanceMarketDataClient;
     private Stock stock;
     private StockDataLoadService service;
 
@@ -53,6 +55,7 @@ class StockDataLoadServiceTest {
         disclosureSyncService = mock(DisclosureSyncService.class);
         kisMarketDataClient = mock(KisMarketDataClient.class);
         finnhubMarketDataClient = mock(FinnhubMarketDataClient.class);
+        yahooFinanceMarketDataClient = mock(YahooFinanceMarketDataClient.class);
         stock = mock(Stock.class);
         when(stock.getId()).thenReturn(1L);
         when(stock.getMarket()).thenReturn("KRX");
@@ -131,6 +134,7 @@ class StockDataLoadServiceTest {
                 disclosureSyncService,
                 kisMarketDataClient,
                 finnhubMarketDataClient,
+                yahooFinanceMarketDataClient,
                 new RealtimeQuoteHub(),
                 Duration.ofSeconds(15),
                 Duration.ofHours(12),
