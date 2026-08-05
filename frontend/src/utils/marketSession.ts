@@ -53,9 +53,9 @@ function resolveKrxSessionFromTime(date: Date): MarketSessionInfo {
   if (timeMinutes >= 9 * 60 && timeMinutes < 15 * 60 + 30) {
     return { phase: 'REGULAR', label: '정규장', streaming: true }
   }
-  // 15:30 ~ 20:00 KST: AFTER_HOURS (애프터장)
+  // 15:30 ~ 20:00 KST: AFTER_HOURS (애프터마켓)
   if (timeMinutes >= 15 * 60 + 30 && timeMinutes < 20 * 60) {
-    return { phase: 'AFTER_HOURS', label: '애프터장', streaming: true }
+    return { phase: 'AFTER_HOURS', label: '애프터마켓', streaming: true }
   }
   return { phase: 'CLOSED', label: '장 마감', streaming: false }
 }
@@ -117,7 +117,7 @@ export function marketSessionInfo(
       case 'AFTER_HOURS':
       case 'POST_MARKET':
       case 'POSTMARKET':
-        resolved = { phase: 'AFTER_HOURS', label: isKrx ? '애프터장' : '애프터마켓', streaming: true }
+        resolved = { phase: 'AFTER_HOURS', label: '애프터마켓', streaming: true }
         break
       case 'CLOSED':
       case 'CLOSE':
