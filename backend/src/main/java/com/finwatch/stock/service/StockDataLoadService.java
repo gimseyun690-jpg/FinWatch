@@ -307,6 +307,11 @@ public class StockDataLoadService {
                     .filter(asOf -> asOf.isAfter(now.minus(quoteFreshness)))
                     .orElseGet(() -> successfulAsOf(stock, resource, quoteFreshness, now));
         }
+        if (resource == DataLoadResource.DAILY_PRICES) {
+            if (marketPriceRepository.countByStockIdAndInterval(stock.getId(), "1D") < 60) {
+                return null;
+            }
+        }
         Duration freshness = resource == DataLoadResource.DAILY_PRICES ? dailyPriceFreshness : newsFreshness;
         return successfulAsOf(stock, resource, freshness, now);
     }

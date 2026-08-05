@@ -83,11 +83,11 @@ public class TechnicalExplanationSnapshotFactory {
                 prices.add(virtualBar);
             }
         }
-        if (prices.size() < 60) {
+        if (prices.isEmpty()) {
             throw new TechnicalExplanationException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "TECHNICAL_DATA_INSUFFICIENT",
-                    "기술지표 해설에는 완성된 일봉이 최소 60개 필요합니다.");
+                    "기술지표 해설을 생성하기 위한 일봉 데이터가 없습니다.");
         }
         validatePrices(prices);
 

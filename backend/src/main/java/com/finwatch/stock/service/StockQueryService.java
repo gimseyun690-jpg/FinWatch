@@ -181,7 +181,7 @@ public class StockQueryService {
             }
         }
         final List<MarketPrice> prices = extendedPrices;
-        if (prices.size() < 60) {
+        if (prices.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "기술적 분석 데이터가 부족합니다.");
         }
 
