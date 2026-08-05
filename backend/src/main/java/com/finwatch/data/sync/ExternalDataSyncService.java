@@ -118,7 +118,11 @@ public class ExternalDataSyncService {
         if ("KRX".equalsIgnoreCase(stock.getMarket())) {
             return kisMarketDataClient.getDomesticQuote(stock.getSymbol());
         } else if (isUsMarket(stock.getMarket())) {
-            return finnhubMarketDataClient.quote(stock.getSymbol());
+            try {
+                return kisMarketDataClient.getOverseasQuote(stock.getMarket(), stock.getSymbol());
+            } catch (RuntimeException fallbackException) {
+                return finnhubMarketDataClient.quote(stock.getSymbol());
+            }
         }
         return null;
     }
@@ -219,20 +223,7 @@ public class ExternalDataSyncService {
     }
 
     private ProviderSyncResult syncUsPrices(Stock stock) {
-        ProviderException finnhubFailure = null;
-        try {
-            LocalDate today = LocalDate.now(NEW_YORK);
-            var series = finnhubMarketDataClient.dailyBars(
-                    stock.getSymbol(),
-                    today.minusDays(MARKET_LOOKBACK_DAYS),
-                    today);
-            if (!series.items().isEmpty()) {
-                return persistBars(stock, series.items(), "FINNHUB", NEW_YORK, US_CLOSE);
-            }
-        } catch (ProviderException exception) {
-            finnhubFailure = exception;
-        }
-
+        ProviderException kisFailure = null;
         try {
             LocalDate today = LocalDate.now(NEW_YORK);
             var series = kisMarketDataClient.getOverseasDailyBars(
@@ -243,16 +234,29 @@ public class ExternalDataSyncService {
             if (!series.items().isEmpty()) {
                 return persistBars(stock, series.items(), "KIS_OVERSEAS", NEW_YORK, US_CLOSE);
             }
+        } catch (ProviderException exception) {
+            kisFailure = exception;
+        }
+
+        try {
+            LocalDate today = LocalDate.now(NEW_YORK);
+            var series = finnhubMarketDataClient.dailyBars(
+                    stock.getSymbol(),
+                    today.minusDays(MARKET_LOOKBACK_DAYS),
+                    today);
+            if (!series.items().isEmpty()) {
+                return persistBars(stock, series.items(), "FINNHUB", NEW_YORK, US_CLOSE);
+            }
             return ProviderSyncResult.fallback(
-                    "FINNHUB+KIS_OVERSEAS",
+                    "KIS_OVERSEAS+FINNHUB",
                     "미국 일봉 공급자가 이 종목의 가격 이력을 반환하지 않았습니다.");
-        } catch (ProviderException kisFailure) {
-            String finnhubMessage = finnhubFailure == null
-                    ? "Finnhub 일봉 응답이 비어 있습니다."
-                    : fallbackMessage(finnhubFailure);
+        } catch (ProviderException finnhubFailure) {
+            String kisMessage = kisFailure == null
+                    ? "KIS 해외 일봉 응답이 비어 있습니다."
+                    : fallbackMessage(kisFailure);
             return ProviderSyncResult.fallback(
-                    "FINNHUB+KIS_OVERSEAS",
-                    finnhubMessage + " KIS 해외 일봉 fallback: " + fallbackMessage(kisFailure));
+                    "KIS_OVERSEAS+FINNHUB",
+                    kisMessage + " Finnhub 해외 일봉 fallback: " + fallbackMessage(finnhubFailure));
         }
     }
 

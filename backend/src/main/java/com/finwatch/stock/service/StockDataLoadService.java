@@ -224,8 +224,13 @@ public class StockDataLoadService {
                 var domesticMarket = kisMarketDataClient.domesticMarket();
                 provider = domesticMarket == null ? "KIS" : domesticMarket.persistenceSource();
             } else {
-                quote = finnhubMarketDataClient.quote(stock.getSymbol());
-                provider = "FINNHUB";
+                try {
+                    quote = kisMarketDataClient.getOverseasQuote(stock.getMarket(), stock.getSymbol());
+                    provider = "KIS_OVERSEAS";
+                } catch (RuntimeException fallbackException) {
+                    quote = finnhubMarketDataClient.quote(stock.getSymbol());
+                    provider = "FINNHUB";
+                }
             }
             quoteHub.publish(new LiveQuote(
                     stock.getMarket(),
