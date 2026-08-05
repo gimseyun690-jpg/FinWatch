@@ -100,7 +100,7 @@ function resolveUsSessionFromTime(date: Date): MarketSessionInfo {
 export function marketSessionInfo(
   market: string,
   status?: string | null,
-  asOf?: string | null,
+  _asOf?: string | null,
 ): MarketSessionInfo | null {
   const normalizedMarket = market.trim().toUpperCase()
   const isUs = usMarkets.has(normalizedMarket)
@@ -136,11 +136,8 @@ export function marketSessionInfo(
   }
 
   if (!resolved) {
-    if (!asOf) return null
-    const date = new Date(asOf)
-    if (Number.isNaN(date.getTime())) return null
-    // Ensure quote timestamp is recent (within 24 hours) to prevent stale trade dates
-    if (Math.abs(Date.now() - date.getTime()) > 24 * 60 * 60 * 1000) return null
+    // Fallback to current wall-clock time when status is SNAPSHOT or unflagged
+    const date = new Date()
     resolved = isKrx ? resolveKrxSessionFromTime(date) : resolveUsSessionFromTime(date)
   }
 
