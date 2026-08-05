@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 import com.finwatch.data.provider.FinnhubMarketDataClient;
 import com.finwatch.data.provider.KisMarketDataClient;
 import com.finwatch.data.provider.ProviderResponses.Quote;
-import com.finwatch.data.provider.YahooFinanceMarketDataClient;
 import com.finwatch.data.sync.DataMode;
 import com.finwatch.data.sync.DataSyncResponses.ProviderSyncResult;
 import com.finwatch.data.sync.ExternalDataSyncService;
@@ -52,7 +51,6 @@ public class StockDataLoadService {
     private final DisclosureSyncService disclosureSyncService;
     private final KisMarketDataClient kisMarketDataClient;
     private final FinnhubMarketDataClient finnhubMarketDataClient;
-    private final YahooFinanceMarketDataClient yahooFinanceMarketDataClient;
     private final RealtimeQuoteHub quoteHub;
     private final Duration quoteFreshness;
     private final Duration dailyPriceFreshness;
@@ -71,7 +69,6 @@ public class StockDataLoadService {
             DisclosureSyncService disclosureSyncService,
             KisMarketDataClient kisMarketDataClient,
             FinnhubMarketDataClient finnhubMarketDataClient,
-            YahooFinanceMarketDataClient yahooFinanceMarketDataClient,
             RealtimeQuoteHub quoteHub,
             @Value("${app.data.load.quote-freshness:15s}") Duration quoteFreshness,
             @Value("${app.data.load.daily-price-freshness:12h}") Duration dailyPriceFreshness,
@@ -84,7 +81,6 @@ public class StockDataLoadService {
         this.disclosureSyncService = disclosureSyncService;
         this.kisMarketDataClient = kisMarketDataClient;
         this.finnhubMarketDataClient = finnhubMarketDataClient;
-        this.yahooFinanceMarketDataClient = yahooFinanceMarketDataClient;
         this.quoteHub = quoteHub;
         this.quoteFreshness = quoteFreshness;
         this.dailyPriceFreshness = dailyPriceFreshness;
@@ -229,16 +225,11 @@ public class StockDataLoadService {
                 provider = domesticMarket == null ? "KIS" : domesticMarket.persistenceSource();
             } else {
                 try {
-                    quote = yahooFinanceMarketDataClient.quote(stock.getSymbol());
-                    provider = "YAHOO";
-                } catch (RuntimeException yahooFailure) {
-                    try {
-                        quote = kisMarketDataClient.getOverseasQuote(stock.getMarket(), stock.getSymbol());
-                        provider = "KIS_OVERSEAS";
-                    } catch (RuntimeException fallbackException) {
-                        quote = finnhubMarketDataClient.quote(stock.getSymbol());
-                        provider = "FINNHUB";
-                    }
+                    quote = kisMarketDataClient.getOverseasQuote(stock.getMarket(), stock.getSymbol());
+                    provider = "KIS_OVERSEAS";
+                } catch (RuntimeException fallbackException) {
+                    quote = finnhubMarketDataClient.quote(stock.getSymbol());
+                    provider = "FINNHUB";
                 }
             }
             quoteHub.publish(new LiveQuote(
