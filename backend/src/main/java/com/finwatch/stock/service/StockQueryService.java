@@ -164,8 +164,23 @@ public class StockQueryService {
     }
 
     private TechnicalAnalysis getTechnicalAnalysis(Stock stock) {
-        List<MarketPrice> prices = marketPriceRepository
+        List<MarketPrice> dbPrices = marketPriceRepository
                 .findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), DAILY_INTERVAL);
+        var liveQuote = realtimeQuoteHub.find(stock.getMarket(), stock.getSymbol());
+        List<MarketPrice> extendedPrices = dbPrices;
+        if (liveQuote.isPresent() && liveQuote.get().price() != null) {
+            var quote = liveQuote.get();
+            if (dbPrices.isEmpty() || quote.asOf().isAfter(dbPrices.getLast().getRecordedAt())) {
+                MarketPrice virtualBar = MarketPrice.create(
+                        stock, DAILY_INTERVAL,
+                        quote.price(), quote.price(), quote.price(), quote.price(),
+                        quote.volume() != null ? quote.volume() : BigDecimal.ZERO,
+                        quote.asOf(), quote.source() != null ? quote.source() : "live");
+                extendedPrices = new java.util.ArrayList<>(dbPrices);
+                extendedPrices.add(virtualBar);
+            }
+        }
+        final List<MarketPrice> prices = extendedPrices;
         if (prices.size() < 60) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "기술적 분석 데이터가 부족합니다.");
         }

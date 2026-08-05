@@ -321,7 +321,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
   const effectiveSessionStatus = effectiveLiveQuote?.sessionStatus
     ?? (latestPointIsCurrent ? latestIntradayPoint?.sessionStatus : undefined)
   const streaming = isStreamingSession(effectiveSessionStatus)
-  const session = marketSessionInfo(stock.market, effectiveSessionStatus)
+  const session = marketSessionInfo(stock.market, effectiveSessionStatus, effectiveLiveQuote?.asOf ?? stock.asOf)
   const dataStatus: DataStatus = detail.source === 'DEMO' || stock.status === 'DEMO_ONLY'
     ? 'DEMO'
     : streaming

@@ -250,7 +250,7 @@ export function WatchlistPanel({
               ? candidateQuote
               : undefined
             const streaming = isStreamingSession(liveQuote?.sessionStatus)
-            const session = marketSessionInfo(stock.market, liveQuote?.sessionStatus)
+            const session = marketSessionInfo(stock.market, liveQuote?.sessionStatus, liveQuote?.asOf ?? stock.asOf)
             const price = liveQuote?.price ?? stock.price
             const changeRate = liveQuote?.changeRate ?? stock.changeRate
             const key = stockKey(stock)

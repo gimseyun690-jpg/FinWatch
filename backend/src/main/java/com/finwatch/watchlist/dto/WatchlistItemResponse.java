@@ -18,9 +18,10 @@ public record WatchlistItemResponse(
         Instant asOf,
         String source,
         String dataAvailability,
-        Instant addedAt) {
+        Instant addedAt,
+        String sessionStatus) {
 
-    public static WatchlistItemResponse from(Watchlist watchlist, CanonicalStockDetail stock) {
+    public static WatchlistItemResponse from(Watchlist watchlist, CanonicalStockDetail stock, String sessionStatus) {
         return new WatchlistItemResponse(
                 watchlist.getId(),
                 stock.symbol(),
@@ -33,6 +34,7 @@ public record WatchlistItemResponse(
                 stock.asOf(),
                 stock.source(),
                 stock.dataAvailability(),
-                watchlist.getCreatedAt());
+                watchlist.getCreatedAt(),
+                sessionStatus);
     }
 }

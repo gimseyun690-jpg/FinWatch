@@ -49,6 +49,7 @@ export type CanonicalStockDetail = StockCatalogItem & {
   volume: number | null
   asOf: string | null
   source: string | null
+  sessionStatus?: string | null
 }
 
 export type StockSummary = {
@@ -62,6 +63,7 @@ export type StockSummary = {
   volume: number
   asOf: string
   source: string
+  sessionStatus?: string | null
 }
 
 export type PricePoint = {
