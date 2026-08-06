@@ -4,6 +4,7 @@ import java.util.Locale;
 
 public enum MarketSessionStatus {
     LIVE(true),
+    DAY_MARKET(true),
     PRE_MARKET(true),
     REGULAR(true),
     AFTER_HOURS(true),

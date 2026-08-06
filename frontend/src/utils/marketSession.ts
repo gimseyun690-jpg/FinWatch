@@ -1,8 +1,8 @@
-export type MarketSessionPhase = 'PRE_MARKET' | 'REGULAR' | 'AFTER_HOURS' | 'CLOSED'
+export type MarketSessionPhase = 'DAY_MARKET' | 'PRE_MARKET' | 'REGULAR' | 'AFTER_HOURS' | 'CLOSED'
 
 export type MarketSessionInfo = {
   phase: MarketSessionPhase
-  label: '프리마켓' | '정규장' | '애프터마켓' | '장 마감' | '애프터장' | '장전'
+  label: '데이마켓' | '프리마켓' | '정규장' | '애프터마켓' | '장 마감' | '애프터장' | '장전'
   streaming: boolean
 }
 
@@ -17,6 +17,8 @@ export function isStreamingSession(status?: string | null) {
   const normalized = normalizedSession(status)
   return normalized === 'LIVE'
     || normalized === 'OPEN'
+    || normalized === 'DAY_MARKET'
+    || normalized === 'DAYMARKET'
     || normalized === 'PRE_MARKET'
     || normalized === 'PREMARKET'
     || normalized === 'REGULAR'
@@ -94,6 +96,10 @@ function resolveUsSessionFromTime(date: Date): MarketSessionInfo {
   if (timeSeconds > 16 * 3600 && timeSeconds < 20 * 3600) {
     return { phase: 'AFTER_HOURS', label: '애프터마켓', streaming: true }
   }
+  // 20:00:01 ~ 03:59:59 ET: DAY_MARKET (데이마켓 / 주간거래)
+  if (timeSeconds >= 20 * 3600 || timeSeconds < 4 * 3600) {
+    return { phase: 'DAY_MARKET', label: '데이마켓', streaming: true }
+  }
   return { phase: 'CLOSED', label: '장 마감', streaming: false }
 }
 
@@ -113,6 +119,10 @@ export function marketSessionInfo(
 
   if (normalized && normalized !== 'SNAPSHOT' && normalized !== 'UNKNOWN') {
     switch (normalized) {
+      case 'DAY_MARKET':
+      case 'DAYMARKET':
+        resolved = { phase: 'DAY_MARKET', label: '데이마켓', streaming: true }
+        break
       case 'PRE_MARKET':
       case 'PREMARKET':
         resolved = { phase: 'PRE_MARKET', label: '프리마켓', streaming: true }
@@ -141,7 +151,14 @@ export function marketSessionInfo(
     resolved = isKrx ? resolveKrxSessionFromTime(date) : resolveUsSessionFromTime(date)
   }
 
-  // Only display session badges for extended hours (PRE_MARKET or AFTER_HOURS).
+  // Only display session badges for extended hours (DAY_MARKET, PRE_MARKET or AFTER_HOURS).
+  // Hide badge completely during regular trading hours and when the market is closed.
+  if (resolved.phase === 'REGULAR' || resolved.phase === 'CLOSED') {
+    return null
+  }
+
+  return resolved
+}RS).
   // Hide badge completely during regular trading hours and when the market is closed.
   if (resolved.phase === 'REGULAR' || resolved.phase === 'CLOSED') {
     return null

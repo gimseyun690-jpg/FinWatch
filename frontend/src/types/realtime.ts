@@ -1,4 +1,5 @@
 export type MarketSessionStatus =
+  | 'DAY_MARKET'
   | 'PRE_MARKET'
   | 'REGULAR'
   | 'AFTER_HOURS'
