@@ -89,18 +89,20 @@ public class RealtimeQuoteFallbackPoller {
 
         Instant now = Instant.now();
 
-        // 1. Poll US symbols if in DAY_MARKET or if quote is stale (> 4s)
+        // 1. Poll US symbols if session is streaming and quote is stale (> 4s)
         List<String> usSymbols = plan.usSymbols();
         for (String symbol : usSymbols) {
             MarketSessionStatus session = usSessionResolver.resolve(now);
+            if (!session.isStreaming()) {
+                continue;
+            }
             var currentQuoteOpt = hub.find("NASDAQ", symbol)
                     .or(() -> hub.find("NYSE", symbol))
                     .or(() -> hub.find(symbol));
 
-            boolean isDayMarket = session == MarketSessionStatus.DAY_MARKET;
             boolean isStale = currentQuoteOpt.map(q -> Duration.between(q.asOf(), now).toSeconds() >= 4).orElse(true);
 
-            if (isDayMarket || isStale) {
+            if (isStale) {
                 pollOverseasStock(symbol, now, session);
             }
         }

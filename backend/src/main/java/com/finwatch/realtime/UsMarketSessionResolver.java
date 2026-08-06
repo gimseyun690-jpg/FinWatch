@@ -38,9 +38,6 @@ public class UsMarketSessionResolver {
         if (!time.isBefore(REGULAR_CLOSE) && time.isBefore(AFTER_HOURS_CLOSE)) {
             return MarketSessionStatus.AFTER_HOURS;
         }
-        if (!time.isBefore(AFTER_HOURS_CLOSE) || time.isBefore(PRE_MARKET_OPEN)) {
-            return MarketSessionStatus.DAY_MARKET;
-        }
         return MarketSessionStatus.CLOSED;
     }
 }

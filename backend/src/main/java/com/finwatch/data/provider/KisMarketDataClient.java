@@ -236,39 +236,36 @@ public class KisMarketDataClient {
 
     public Quote getOverseasQuote(String market, String symbol) {
         validateOverseasSymbol(symbol);
-        String baseCode = overseasExchangeCode(market);
-        List<String> codesToTry = List.of(baseCode + "D", baseCode);
+        String exchangeCode = overseasExchangeCode(market);
 
-        // 1차: 해외주식 현재가 API (HHDFS76190000) - 데이마켓 및 정규장 코드 시도
-        for (String exchangeCode : codesToTry) {
-            try {
-                Map<String, Object> response = get(
-                        "/uapi/overseas-price/v1/quotations/price",
-                        "HHDFS76190000",
-                        Map.of(
-                                "AUTH", "",
-                                "EXCD", exchangeCode,
-                                "SYMB", symbol));
-                Map<String, Object> output = objectMap(response.get("output"));
-                BigDecimal price = decimal(output, "last");
-                if (price.signum() > 0) {
-                    BigDecimal change = decimal(output, "diff");
-                    BigDecimal changeRate = decimal(output, "rate");
-                    BigDecimal volume = decimal(output, "tvol");
-                    return new Quote(symbol, price, change, changeRate, volume, "USD", "KIS_OVERSEAS", Instant.now());
-                }
-            } catch (ProviderException ignored) {
-                // 특정 EXCD 코드 거부 시 다음 코드로 진행
+        // 1차: 해외주식 현재가 API (HHDFS76190000) - 프리마켓/애프터마켓 실시간 체결가 포함
+        try {
+            Map<String, Object> response = get(
+                    "/uapi/overseas-price/v1/quotations/price",
+                    "HHDFS76190000",
+                    Map.of(
+                            "AUTH", "",
+                            "EXCD", exchangeCode,
+                            "SYMB", symbol));
+            Map<String, Object> output = objectMap(response.get("output"));
+            BigDecimal price = decimal(output, "last");
+            if (price.signum() > 0) {
+                BigDecimal change = decimal(output, "diff");
+                BigDecimal changeRate = decimal(output, "rate");
+                BigDecimal volume = decimal(output, "tvol");
+                return new Quote(symbol, price, change, changeRate, volume, "USD", "KIS_OVERSEAS", Instant.now());
             }
+        } catch (ProviderException ignored) {
+            // HHDFS76190000 실패 시 HHDFS76200200으로 fallback
         }
 
-        // 2차: 해외주식 현재가 상세 API (HHDFS76200200) - 기본 시세
+        // 2차: 해외주식 현재가 상세 API (HHDFS76200200) - 정규장 종가/기본 시세
         Map<String, Object> response = get(
                 "/uapi/overseas-price/v1/quotations/price_detail",
                 "HHDFS76200200",
                 Map.of(
                         "AUTH", "",
-                        "EXCD", baseCode,
+                        "EXCD", exchangeCode,
                         "SYMB", symbol));
         Map<String, Object> output = objectMap(response.get("output"));
         BigDecimal price = decimal(output, "last");

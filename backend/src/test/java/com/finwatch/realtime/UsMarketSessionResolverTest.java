@@ -19,8 +19,7 @@ class UsMarketSessionResolverTest {
         assertThat(resolve("2026-07-14T19:59:59.999Z")).isEqualTo(MarketSessionStatus.REGULAR);
         assertThat(resolve("2026-07-14T20:00:00Z")).isEqualTo(MarketSessionStatus.AFTER_HOURS);
         assertThat(resolve("2026-07-14T23:59:59.999Z")).isEqualTo(MarketSessionStatus.AFTER_HOURS);
-        assertThat(resolve("2026-07-15T00:00:00Z")).isEqualTo(MarketSessionStatus.DAY_MARKET);
-        assertThat(resolve("2026-07-15T07:59:59.999Z")).isEqualTo(MarketSessionStatus.DAY_MARKET);
+        assertThat(resolve("2026-07-15T00:00:00Z")).isEqualTo(MarketSessionStatus.CLOSED);
     }
 
     @Test
