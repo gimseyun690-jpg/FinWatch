@@ -158,13 +158,6 @@ export function marketSessionInfo(
   }
 
   return resolved
-}RS).
-  // Hide badge completely during regular trading hours and when the market is closed.
-  if (resolved.phase === 'REGULAR' || resolved.phase === 'CLOSED') {
-    return null
-  }
-
-  return resolved
 }
 
 export function marketSessionClassName(phase: MarketSessionPhase) {
