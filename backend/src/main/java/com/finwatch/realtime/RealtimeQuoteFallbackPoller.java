@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import com.finwatch.data.provider.FinnhubMarketDataClient;
 import com.finwatch.data.provider.KisMarketDataClient;
 import com.finwatch.data.provider.ProviderException;
 
@@ -29,6 +30,7 @@ public class RealtimeQuoteFallbackPoller {
     private final boolean enabled;
     private final Duration pollInterval;
     private final KisMarketDataClient kisMarketDataClient;
+    private final FinnhubMarketDataClient finnhubMarketDataClient;
     private final UsMarketSessionResolver usSessionResolver;
     private final RealtimeSubscriptionManager subscriptionManager;
     private final RealtimeQuoteHub hub;
@@ -41,12 +43,14 @@ public class RealtimeQuoteFallbackPoller {
             @Value("${app.realtime.fallback-polling-enabled:true}") boolean fallbackPollingEnabled,
             @Value("${app.realtime.fallback-poll-interval:4s}") Duration pollInterval,
             KisMarketDataClient kisMarketDataClient,
+            FinnhubMarketDataClient finnhubMarketDataClient,
             UsMarketSessionResolver usSessionResolver,
             RealtimeSubscriptionManager subscriptionManager,
             RealtimeQuoteHub hub) {
         this.enabled = realtimeEnabled && fallbackPollingEnabled && "LIVE".equalsIgnoreCase(dataMode);
         this.pollInterval = pollInterval.isNegative() || pollInterval.isZero() ? Duration.ofSeconds(4) : pollInterval;
         this.kisMarketDataClient = kisMarketDataClient;
+        this.finnhubMarketDataClient = finnhubMarketDataClient;
         this.usSessionResolver = usSessionResolver;
         this.subscriptionManager = subscriptionManager;
         this.hub = hub;
@@ -114,13 +118,14 @@ public class RealtimeQuoteFallbackPoller {
     }
 
     private void pollOverseasStock(String symbol, Instant asOf, MarketSessionStatus session) {
+        String market = "NASDAQ";
+        var existing = hub.find(symbol);
+        if (existing.isPresent()) {
+            market = existing.get().market();
+        }
+
+        // 1차: KIS 해외주식 시세 API (HHDFS76190000 / HHDFS76200200)
         try {
-            // Default to NASDAQ if market not specified
-            String market = "NASDAQ";
-            var existing = hub.find(symbol);
-            if (existing.isPresent()) {
-                market = existing.get().market();
-            }
             var quote = kisMarketDataClient.getOverseasQuote(market, symbol);
             if (quote != null && quote.price() != null && quote.price().signum() > 0) {
                 hub.publish(new LiveQuote(
@@ -134,9 +139,30 @@ public class RealtimeQuoteFallbackPoller {
                         asOf,
                         "KIS_OVERSEAS_POLL",
                         session.name()));
+                return;
             }
-        } catch (ProviderException ignored) {
-            // Silently ignore single symbol REST errors
+        } catch (RuntimeException ignored) {
+            // KIS API가 거절/에러 시 Finnhub 대체 폴백으로 진행
+        }
+
+        // 2차: Finnhub REST 시세 API (해외주식 백업)
+        try {
+            var quote = finnhubMarketDataClient.quote(symbol);
+            if (quote != null && quote.price() != null && quote.price().signum() > 0) {
+                hub.publish(new LiveQuote(
+                        market,
+                        symbol,
+                        quote.price(),
+                        quote.change(),
+                        quote.changeRate(),
+                        quote.volume(),
+                        quote.currency(),
+                        asOf,
+                        "FINNHUB_POLL",
+                        session.name()));
+            }
+        } catch (RuntimeException ignored) {
+            // 단일 종목 폴링 예외 무시
         }
     }
 
