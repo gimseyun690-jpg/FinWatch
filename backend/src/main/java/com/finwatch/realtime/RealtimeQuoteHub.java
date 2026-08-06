@@ -50,6 +50,11 @@ public class RealtimeQuoteHub {
             if (incomingPriority > currentPriority) {
                 return !incoming.asOf().plus(STREAM_SNAPSHOT_SKEW).isBefore(current.asOf());
             }
+            if ("DAY_MARKET".equalsIgnoreCase(incoming.sessionStatus())
+                    || Duration.between(current.asOf(), incoming.asOf()).toSeconds() >= 3) {
+                return incoming.asOf().isAfter(current.asOf())
+                        || (incoming.asOf().equals(current.asOf()) && !incoming.equals(current));
+            }
             return incoming.asOf().isAfter(current.asOf().plus(STREAM_SNAPSHOT_SKEW));
         }
 

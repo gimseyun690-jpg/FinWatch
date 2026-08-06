@@ -8,13 +8,18 @@ import org.springframework.stereotype.Component;
 public class RealtimeQuoteOrchestrator {
 
     private final RealtimeSubscriptionManager subscriptionManager;
+    private final RealtimeQuoteFallbackPoller fallbackPoller;
 
-    public RealtimeQuoteOrchestrator(RealtimeSubscriptionManager subscriptionManager) {
+    public RealtimeQuoteOrchestrator(
+            RealtimeSubscriptionManager subscriptionManager,
+            RealtimeQuoteFallbackPoller fallbackPoller) {
         this.subscriptionManager = subscriptionManager;
+        this.fallbackPoller = fallbackPoller;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void start() {
         subscriptionManager.start();
+        fallbackPoller.start();
     }
 }
