@@ -38,6 +38,7 @@ class RealtimeSubscriptionManagerTest {
         PortfolioHoldingRepository holdingRepository = mock(PortfolioHoldingRepository.class);
         PriceAlertRepository alertRepository = mock(PriceAlertRepository.class);
         KisRealtimeClient kisClient = mock(KisRealtimeClient.class);
+        KisOverseasRealtimeClient kisOverseasClient = mock(KisOverseasRealtimeClient.class);
         FinnhubRealtimeClient finnhubClient = mock(FinnhubRealtimeClient.class);
         Stock watchlistStock = stock("KRX", "005930");
         Stock selectedStock = stock("KRX", "000660");
@@ -48,7 +49,7 @@ class RealtimeSubscriptionManagerTest {
         when(stockRepository.findByMarketAndSymbolAndActiveTrue("KRX", "000660"))
                 .thenReturn(Optional.of(selectedStock));
         manager = manager(
-                stockRepository, watchlistRepository, holdingRepository, alertRepository, kisClient, finnhubClient,
+                stockRepository, watchlistRepository, holdingRepository, alertRepository, kisClient, kisOverseasClient, finnhubClient,
                 1, Duration.ofSeconds(30));
 
         assertThat(manager.select("session-1", "krx", "000660").accepted()).isTrue();
@@ -76,7 +77,7 @@ class RealtimeSubscriptionManagerTest {
                 .thenReturn(Optional.of(selected));
         manager = manager(
                 stockRepository, watchlistRepository, holdingRepository, alertRepository,
-                mock(KisRealtimeClient.class), mock(FinnhubRealtimeClient.class),
+                mock(KisRealtimeClient.class), mock(KisOverseasRealtimeClient.class), mock(FinnhubRealtimeClient.class),
                 40, Duration.ZERO);
 
         manager.select("session-1", "KRX", "000660");
@@ -95,6 +96,7 @@ class RealtimeSubscriptionManagerTest {
         PortfolioHoldingRepository holdingRepository = mock(PortfolioHoldingRepository.class);
         PriceAlertRepository alertRepository = mock(PriceAlertRepository.class);
         KisRealtimeClient kisClient = mock(KisRealtimeClient.class);
+        KisOverseasRealtimeClient kisOverseasClient = mock(KisOverseasRealtimeClient.class);
         FinnhubRealtimeClient finnhubClient = mock(FinnhubRealtimeClient.class);
         Stock nasdaqDuplicate = stock("NASDAQ", "DUP");
         Stock nyseDuplicate = stock("NYSE", "DUP");
@@ -104,7 +106,7 @@ class RealtimeSubscriptionManagerTest {
         when(alertRepository.findDistinctActiveStocksForRealtime(AlertStatus.ACTIVE)).thenReturn(List.of());
         manager = manager(
                 stockRepository, watchlistRepository, holdingRepository, alertRepository,
-                kisClient, finnhubClient, 40, Duration.ZERO);
+                kisClient, kisOverseasClient, finnhubClient, 40, Duration.ZERO);
 
         manager.reconcileNow();
 
@@ -119,13 +121,14 @@ class RealtimeSubscriptionManagerTest {
             PortfolioHoldingRepository holdingRepository,
             PriceAlertRepository alertRepository,
             KisRealtimeClient kisClient,
+            KisOverseasRealtimeClient kisOverseasClient,
             FinnhubRealtimeClient finnhubClient,
             int kisLimit,
             Duration grace) {
         return new RealtimeSubscriptionManager(
                 "LIVE", true, kisLimit, 50, grace, Duration.ofSeconds(15),
                 stockRepository, watchlistRepository, holdingRepository, alertRepository,
-                kisClient, finnhubClient, new RealtimeQuoteHub());
+                kisClient, kisOverseasClient, finnhubClient, new RealtimeQuoteHub());
     }
 
     private Stock stock(String market, String symbol) {

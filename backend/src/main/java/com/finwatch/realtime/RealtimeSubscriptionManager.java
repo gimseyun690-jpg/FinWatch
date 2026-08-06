@@ -36,6 +36,7 @@ public class RealtimeSubscriptionManager {
     private final PortfolioHoldingRepository holdingRepository;
     private final PriceAlertRepository alertRepository;
     private final KisRealtimeClient kisRealtimeClient;
+    private final KisOverseasRealtimeClient kisOverseasRealtimeClient;
     private final FinnhubRealtimeClient finnhubRealtimeClient;
     private final RealtimeQuoteHub hub;
     private final int kisLimit;
@@ -61,6 +62,7 @@ public class RealtimeSubscriptionManager {
             PortfolioHoldingRepository holdingRepository,
             PriceAlertRepository alertRepository,
             KisRealtimeClient kisRealtimeClient,
+            KisOverseasRealtimeClient kisOverseasRealtimeClient,
             FinnhubRealtimeClient finnhubRealtimeClient,
             RealtimeQuoteHub hub) {
         this.active = enabled && "LIVE".equalsIgnoreCase(dataMode);
@@ -69,6 +71,7 @@ public class RealtimeSubscriptionManager {
         this.holdingRepository = holdingRepository;
         this.alertRepository = alertRepository;
         this.kisRealtimeClient = kisRealtimeClient;
+        this.kisOverseasRealtimeClient = kisOverseasRealtimeClient;
         this.finnhubRealtimeClient = finnhubRealtimeClient;
         this.hub = hub;
         this.kisLimit = Math.max(1, Math.min(40, kisLimit));
@@ -86,6 +89,7 @@ public class RealtimeSubscriptionManager {
     public void start() {
         if (!active) {
             hub.updateProvider("KIS", "DISABLED", "DATA_MODE=LIVE와 REALTIME_ENABLED=true에서 연결됩니다.");
+            hub.updateProvider("KIS_OVERSEAS", "DISABLED", "DATA_MODE=LIVE와 REALTIME_ENABLED=true에서 연결됩니다.");
             hub.updateProvider("FINNHUB", "DISABLED", "DATA_MODE=LIVE와 REALTIME_ENABLED=true에서 연결됩니다.");
             return;
         }
@@ -170,9 +174,11 @@ public class RealtimeSubscriptionManager {
         finnhubRealtimeClient.updateInstrumentMarkets(usMarkets);
         if (providerClientsStarted.compareAndSet(false, true)) {
             kisRealtimeClient.start(krx);
+            kisOverseasRealtimeClient.start(us, usMarkets);
             finnhubRealtimeClient.start(us);
         } else {
             kisRealtimeClient.updateSubscriptions(krx);
+            kisOverseasRealtimeClient.updateSubscriptions(us, usMarkets);
             finnhubRealtimeClient.updateSubscriptions(us);
         }
     }
@@ -250,6 +256,7 @@ public class RealtimeSubscriptionManager {
         scheduler.shutdownNow();
         if (providerClientsStarted.get()) {
             kisRealtimeClient.stop();
+            kisOverseasRealtimeClient.stop();
             finnhubRealtimeClient.stop();
         }
     }
