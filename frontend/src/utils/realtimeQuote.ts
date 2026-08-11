@@ -24,6 +24,7 @@ function isStreamingSource(value?: QuoteReference | null) {
     || session === 'OPEN'
     || session === 'REGULAR'
     || session === 'MARKET_OPEN'
+    || session === 'US_DAYTIME'
     || session === 'PRE_MARKET'
     || session === 'PREMARKET'
     || session === 'AFTER_MARKET'

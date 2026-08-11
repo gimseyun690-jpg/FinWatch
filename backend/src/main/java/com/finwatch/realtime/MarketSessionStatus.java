@@ -7,6 +7,7 @@ public enum MarketSessionStatus {
     PRE_MARKET(true),
     REGULAR(true),
     AFTER_HOURS(true),
+    US_DAYTIME(true),
     CLOSED(false),
     SNAPSHOT(false),
     UNKNOWN(false);

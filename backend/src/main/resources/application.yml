@@ -105,6 +105,7 @@ app:
     kis-stale-timeout: ${REALTIME_KIS_STALE_TIMEOUT:90s}
     kis-stale-check-interval: ${REALTIME_KIS_STALE_CHECK_INTERVAL:15s}
     kis-max-subscriptions: ${REALTIME_KIS_MAX_SUBSCRIPTIONS:40}
+    kis-overseas-max-subscriptions: ${REALTIME_KIS_OVERSEAS_MAX_SUBSCRIPTIONS:40}
     finnhub-max-subscriptions: ${REALTIME_FINNHUB_MAX_SUBSCRIPTIONS:50}
     selection-grace: ${REALTIME_SELECTION_GRACE:30s}
     subscription-refresh: ${REALTIME_SUBSCRIPTION_REFRESH:15s}

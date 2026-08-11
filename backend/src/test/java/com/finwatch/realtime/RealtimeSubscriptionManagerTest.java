@@ -1,6 +1,7 @@
 package com.finwatch.realtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,6 +24,7 @@ import com.finwatch.watchlist.repository.WatchlistRepository;
 class RealtimeSubscriptionManagerTest {
 
     private RealtimeSubscriptionManager manager;
+    private KisOverseasRealtimeClient kisOverseasClient;
 
     @AfterEach
     void tearDown() {
@@ -57,6 +59,11 @@ class RealtimeSubscriptionManagerTest {
         assertThat(manager.currentPlan().krxSymbols()).containsExactly("000660");
         assertThat(manager.currentPlan().usSymbols()).containsExactly("AAPL");
         verify(kisClient).start(List.of("000660"));
+        verify(kisOverseasClient).start(argThat(subscriptions -> subscriptions.size() == 1
+                && subscriptions.getFirst().market().equals("NASDAQ")
+                && subscriptions.getFirst().symbol().equals("AAPL")
+                && (subscriptions.getFirst().trKey().equals("DNASAAPL")
+                        || subscriptions.getFirst().trKey().equals("RBAQAAPL"))));
         verify(finnhubClient).updateInstrumentMarkets(Map.of("AAPL", "NASDAQ"));
         verify(finnhubClient).start(List.of("AAPL"));
     }
@@ -122,10 +129,12 @@ class RealtimeSubscriptionManagerTest {
             FinnhubRealtimeClient finnhubClient,
             int kisLimit,
             Duration grace) {
+        kisOverseasClient = mock(KisOverseasRealtimeClient.class);
         return new RealtimeSubscriptionManager(
-                "LIVE", true, kisLimit, 50, grace, Duration.ofSeconds(15),
+                "LIVE", true, kisLimit, 40, 50, grace, Duration.ofSeconds(15),
                 stockRepository, watchlistRepository, holdingRepository, alertRepository,
-                kisClient, finnhubClient, new RealtimeQuoteHub());
+                kisClient, kisOverseasClient, finnhubClient,
+                new KisUsDaytimeSessionResolver(), new RealtimeQuoteHub());
     }
 
     private Stock stock(String market, String symbol) {

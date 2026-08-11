@@ -91,6 +91,26 @@ class RealtimeQuoteHubTest {
     }
 
     @Test
+    void keepsKisOverseasTradeAheadOfFinnhubUntilTheKisTradeIsStale() {
+        RealtimeQuoteHub hub = new RealtimeQuoteHub();
+        Instant kisTradeAt = Instant.parse("2026-08-11T13:30:00Z");
+
+        hub.publish(quote("NASDAQ", "AAPL", "214.00", kisTradeAt, "KIS_OVERSEAS_WS", "REGULAR"));
+        hub.publish(quote("NASDAQ", "AAPL", "215.00", kisTradeAt.plusSeconds(20), "FINNHUB_WS", "REGULAR"));
+
+        assertThat(hub.find("NASDAQ", "AAPL")).get()
+                .extracting(LiveQuote::source)
+                .isEqualTo("KIS_OVERSEAS_WS");
+
+        hub.publish(quote("NASDAQ", "AAPL", "216.00", kisTradeAt.plusSeconds(121), "FINNHUB_WS", "REGULAR"));
+
+        assertThat(hub.find("NASDAQ", "AAPL")).get().satisfies(quote -> {
+            assertThat(quote.price()).isEqualByComparingTo("216.00");
+            assertThat(quote.source()).isEqualTo("FINNHUB_WS");
+        });
+    }
+
+    @Test
     void isolatesIdenticalSymbolsByMarketAndRejectsAmbiguousLegacyLookup() {
         RealtimeQuoteHub hub = new RealtimeQuoteHub();
         Instant asOf = Instant.parse("2026-07-14T01:00:01Z");

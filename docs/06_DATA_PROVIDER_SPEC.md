@@ -21,7 +21,7 @@ FinWatch는 거래 체결용 시세 시스템이 아니다. 화면에 표시하�
 ### 현재 구현
 
 - `DATA_MODE=DEMO`에서는 Flyway 데모 데이터만 사용하고 `LIVE`에서는 KIS 국내·해외 일봉과 NAVER API HUB·Finnhub 뉴스를 온디맨드 동기화한다.
-- KIS REST KRX+NXT 통합 현재가와 `H0UNCNT0` 국내 통합 체결, Finnhub Quote와 trade WebSocket을 서버에서 구독한다.
+- KIS REST KRX+NXT 통합 현재가와 `H0UNCNT0` 국내 통합 체결, `HDFSCNT0` 해외 체결 WebSocket을 서버에서 구독한다. Finnhub trade WebSocket은 미국 시세의 보조 경로다.
 - 실시간 틱은 별도 DB 행을 계속 만들지 않고 인메모리 허브의 종목별 최신 값만 교체한다. 종목·관심종목 REST 응답도 유효한 허브 값을 우선한다.
 - 브라우저는 `/ws/quotes`에서 연결 직후 snapshot과 이후 quote/status 이벤트를 받고 자동 재연결한다.
 - 가격 이력은 DB의 실제 `1D`를 사용하고 `1W`·`1M`은 거래소 현지 주·월 경계로 서버에서 집계한다. 선택 종목의 최신 캔들 close/high/low는 수신 틱으로 보정한다.
@@ -94,7 +94,7 @@ DG-0부터 DG-4까지 통과하기 전에는 운영 환경에서 `LIVE` 모드�
 
 | 내부 ID | 공급자 | 확정 용도 | 사용하지 않는 용도 |
 |---|---|---|---|
-| `kis` | 한국투자증권 KIS Open API | KRX+NXT 통합 현재가·일봉 OHLCV·`H0UNCNT0` 실시간 체결, 미국 일봉 OHLCV fallback | 미국 실시간 체결, 뉴스, 주문·자동매매 |
+| `kis` | 한국투자증권 KIS Open API | KRX+NXT 통합 현재가·일봉 OHLCV·`H0UNCNT0` 실시간 체결, 미국 `HDFSCNT0` 체결과 미국 일봉 OHLCV fallback | 뉴스, 주문·자동매매 |
 | `naver-api-hub` | NAVER API HUB 뉴스 검색 | 국내 종목 뉴스 발견, 제목·description·원문 URL·발행 시각 | 언론사 본문 전문 제공 |
 | `finnhub` | Finnhub Quote / Stock Candles / WebSocket / Company News | 미국 현재가·계정 권한 범위의 일봉·실시간 체결과 미국 종목 뉴스 발견 | KRX 시세, 언론사 본문 전문 제공 |
 | `opendart` | 금융감독원 Open DART | 국내 기업 공시 목록·원문과 구조화 재무·주요공시 | 일반 언론 뉴스 |
@@ -105,7 +105,7 @@ AI 공급자는 `GeminiAiProvider`, 개발·테스트 대역은 `MockAiProvider`
 
 선정 이유:
 
-1. KIS는 국내 체결과 일봉을 담당하며, 미국 일봉은 Finnhub Stock Candles를 우선 사용하되 무료 키의 권한 오류 시 KIS 해외 일봉으로 fallback한다. Finnhub는 미국 Quote·trade 스트림을 계속 담당한다.
+1. KIS는 국내 체결과 일봉, 미국 `HDFSCNT0` 체결을 우선 담당한다. 일반 미국 종목은 거래소별 `D...` 키, KIS 미국 주간거래는 `R...` 키로 분리 구독하며 Finnhub Quote·trade는 KIS 체결이 2분 이상 오래된 경우에만 보조 경로가 된다. 미국 프리·애프터마켓의 실제 수신은 실전 승인키 거래시간에 별도 증적을 남겨 검증한다.
 2. NAVER API HUB는 국내 뉴스 검색, Finnhub는 미국 회사 뉴스 발견에도 사용하여 검색 품질과 종목 연관성을 확보한다.
 3. 검색 API가 제공하지 않는 전문은 Open DART·SEC EDGAR·기업 공식 출처부터 확보하여 Gemini의 실제 본문 분석 의미를 유지한다.
 4. 언론사 전체 웹 크롤링과 주문 API는 포트폴리오 MVP 범위에서 제외해 법적·보안·운영 위험을 줄인다.
@@ -113,11 +113,14 @@ AI 공급자는 `GeminiAiProvider`, 개발·테스트 대역은 `MockAiProvider`
 실시간 전달은 다음 구조로 고정한다.
 
 ```text
-KIS H0UNCNT0 KRX+NXT 통합 WebSocket + Finnhub trade WebSocket
+KIS H0UNCNT0 KRX+NXT 통합 WebSocket + KIS HDFSCNT0 미국 체결 WebSocket
   -> Spring Boot provider adapters
   -> in-memory latest quote hub
   -> FinWatch /ws/quotes
   -> React 상세 차트·관심종목
+
+Finnhub trade WebSocket
+  -> KIS 해외 체결이 2분 이상 stale일 때만 미국 시세 fallback
 
 KIS REST + Finnhub Quote
   -> 시작 시 현재가 snapshot
@@ -131,7 +134,7 @@ Finnhub Stock Candles (계정 권한이 있을 때)
   -> 기술적 분석·기간 차트
 ```
 
-KIS App Secret과 WebSocket 접속키를 프런트엔드에 전달하지 않는다. FinWatch는 조회 전용 API만 구현하며 주문·잔고·자동매매 endpoint는 호출하지 않는다.
+KIS App Secret과 WebSocket 접속키를 프런트엔드에 전달하지 않는다. `HDFSCNT0` 해외 실시간은 `KIS_ENV=prod`와 실전 App Key/App Secret으로만 연결하며, FinWatch는 조회 전용 API만 구현하고 주문·잔고·자동매매 endpoint는 호출하지 않는다.
 
 ## 4. 데이터 모드와 DEMO 정책
 

@@ -2,6 +2,7 @@ export type MarketSessionStatus =
   | 'PRE_MARKET'
   | 'REGULAR'
   | 'AFTER_HOURS'
+  | 'US_DAYTIME'
   | 'CLOSED'
   | 'UNKNOWN'
   | 'LIVE'

@@ -36,9 +36,12 @@ public class RealtimeSubscriptionManager {
     private final PortfolioHoldingRepository holdingRepository;
     private final PriceAlertRepository alertRepository;
     private final KisRealtimeClient kisRealtimeClient;
+    private final KisOverseasRealtimeClient kisOverseasRealtimeClient;
     private final FinnhubRealtimeClient finnhubRealtimeClient;
+    private final KisUsDaytimeSessionResolver kisUsDaytimeSessionResolver;
     private final RealtimeQuoteHub hub;
     private final int kisLimit;
+    private final int kisOverseasLimit;
     private final int finnhubLimit;
     private final Duration selectionGrace;
     private final Duration refreshInterval;
@@ -53,6 +56,7 @@ public class RealtimeSubscriptionManager {
             @Value("${app.data.mode:DEMO}") String dataMode,
             @Value("${app.realtime.enabled:true}") boolean enabled,
             @Value("${app.realtime.kis-max-subscriptions:40}") int kisLimit,
+            @Value("${app.realtime.kis-overseas-max-subscriptions:40}") int kisOverseasLimit,
             @Value("${app.realtime.finnhub-max-subscriptions:50}") int finnhubLimit,
             @Value("${app.realtime.selection-grace:30s}") Duration selectionGrace,
             @Value("${app.realtime.subscription-refresh:15s}") Duration refreshInterval,
@@ -61,7 +65,9 @@ public class RealtimeSubscriptionManager {
             PortfolioHoldingRepository holdingRepository,
             PriceAlertRepository alertRepository,
             KisRealtimeClient kisRealtimeClient,
+            KisOverseasRealtimeClient kisOverseasRealtimeClient,
             FinnhubRealtimeClient finnhubRealtimeClient,
+            KisUsDaytimeSessionResolver kisUsDaytimeSessionResolver,
             RealtimeQuoteHub hub) {
         this.active = enabled && "LIVE".equalsIgnoreCase(dataMode);
         this.stockRepository = stockRepository;
@@ -69,9 +75,12 @@ public class RealtimeSubscriptionManager {
         this.holdingRepository = holdingRepository;
         this.alertRepository = alertRepository;
         this.kisRealtimeClient = kisRealtimeClient;
+        this.kisOverseasRealtimeClient = kisOverseasRealtimeClient;
         this.finnhubRealtimeClient = finnhubRealtimeClient;
+        this.kisUsDaytimeSessionResolver = kisUsDaytimeSessionResolver;
         this.hub = hub;
         this.kisLimit = Math.max(1, Math.min(40, kisLimit));
+        this.kisOverseasLimit = Math.max(1, Math.min(40, kisOverseasLimit));
         this.finnhubLimit = Math.max(1, finnhubLimit);
         this.selectionGrace = selectionGrace.isNegative() ? Duration.ZERO : selectionGrace;
         this.refreshInterval = refreshInterval.isNegative() || refreshInterval.isZero()
@@ -85,6 +94,7 @@ public class RealtimeSubscriptionManager {
 
     public void start() {
         if (!active) {
+            hub.updateProvider("KIS_OVERSEAS", "DISABLED", "Overseas KIS real-time is disabled outside LIVE mode.");
             hub.updateProvider("KIS", "DISABLED", "DATA_MODE=LIVE와 REALTIME_ENABLED=true에서 연결됩니다.");
             hub.updateProvider("FINNHUB", "DISABLED", "DATA_MODE=LIVE와 REALTIME_ENABLED=true에서 연결됩니다.");
             return;
@@ -166,13 +176,16 @@ public class RealtimeSubscriptionManager {
                 .toList();
         Map<String, String> usMarkets = usInstrumentMarkets(ordered);
         List<String> us = List.copyOf(usMarkets.keySet());
+        List<KisOverseasSubscription> kisOverseas = kisOverseasSubscriptions(usMarkets, now);
         currentPlan = new SubscriptionPlan(krx, us, now);
         finnhubRealtimeClient.updateInstrumentMarkets(usMarkets);
         if (providerClientsStarted.compareAndSet(false, true)) {
             kisRealtimeClient.start(krx);
+            kisOverseasRealtimeClient.start(kisOverseas);
             finnhubRealtimeClient.start(us);
         } else {
             kisRealtimeClient.updateSubscriptions(krx);
+            kisOverseasRealtimeClient.updateSubscriptions(kisOverseas);
             finnhubRealtimeClient.updateSubscriptions(us);
         }
     }
@@ -216,16 +229,29 @@ public class RealtimeSubscriptionManager {
         Map<String, String> result = new LinkedHashMap<>();
         for (Candidate candidate : ordered) {
             String market = normalize(candidate.stock().getMarket());
-            if (!"NASDAQ".equals(market) && !"NYSE".equals(market)) {
+            if (!"NASDAQ".equals(market) && !"NYSE".equals(market) && !"AMEX".equals(market)) {
                 continue;
             }
             String symbol = normalize(candidate.stock().getSymbol());
-            if (!result.containsKey(symbol) && result.size() >= finnhubLimit) {
+            if (!result.containsKey(symbol) && result.size() >= Math.max(kisOverseasLimit, finnhubLimit)) {
                 continue;
             }
             result.merge(symbol, market, (current, incoming) -> current.equals(incoming) ? current : "UNKNOWN");
         }
         return java.util.Collections.unmodifiableMap(result);
+    }
+
+    private List<KisOverseasSubscription> kisOverseasSubscriptions(Map<String, String> markets, Instant now) {
+        boolean daytime = kisUsDaytimeSessionResolver.isOpen(now);
+        return markets.entrySet().stream()
+                .filter(entry -> "NASDAQ".equals(entry.getValue())
+                        || "NYSE".equals(entry.getValue())
+                        || "AMEX".equals(entry.getValue()))
+                .limit(kisOverseasLimit)
+                .map(entry -> daytime
+                        ? KisOverseasSubscription.daytime(entry.getValue(), entry.getKey())
+                        : KisOverseasSubscription.standard(entry.getValue(), entry.getKey()))
+                .toList();
     }
 
     private String canonical(Stock stock) {
@@ -250,6 +276,7 @@ public class RealtimeSubscriptionManager {
         scheduler.shutdownNow();
         if (providerClientsStarted.get()) {
             kisRealtimeClient.stop();
+            kisOverseasRealtimeClient.stop();
             finnhubRealtimeClient.stop();
         }
     }

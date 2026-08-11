@@ -58,7 +58,14 @@ public class RealtimeQuoteHub {
     }
 
     private int sourcePriority(String source) {
-        return normalize(source).endsWith("_WS") ? 1 : 0;
+        String normalized = normalize(source);
+        if ("KIS_OVERSEAS_WS".equals(normalized)) {
+            return 3;
+        }
+        if (normalized.endsWith("_WS")) {
+            return 2;
+        }
+        return 0;
     }
 
     public void publish(RealtimeFxRate fxRate) {

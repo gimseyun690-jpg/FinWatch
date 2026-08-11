@@ -320,6 +320,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .market-session-badge.pre-market { border-color: color-mix(in srgb, var(--cyan) 35%, var(--border)); color: var(--cyan); }
 .market-session-badge.regular { border-color: color-mix(in srgb, var(--green) 35%, var(--border)); color: var(--green); }
 .market-session-badge.after-hours { border-color: color-mix(in srgb, var(--amber) 35%, var(--border)); color: var(--amber); }
+.market-session-badge.us-daytime { border-color: color-mix(in srgb, #a78bfa 40%, var(--border)); color: #c4b5fd; }
 .market-session-badge.closed { color: var(--text-muted); }
 .stock-card-main > strong { display: block; overflow: hidden; margin-bottom: 6px; font-size: 22px; text-overflow: ellipsis; white-space: nowrap; }
 .live-quote-label { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; margin-left: 6px; color: var(--green); font-size: 10px; font-weight: 750; letter-spacing: .04em; }
