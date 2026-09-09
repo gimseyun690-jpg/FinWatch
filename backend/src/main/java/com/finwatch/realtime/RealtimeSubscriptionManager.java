@@ -36,7 +36,6 @@ public class RealtimeSubscriptionManager {
     private final PortfolioHoldingRepository holdingRepository;
     private final PriceAlertRepository alertRepository;
     private final KisRealtimeClient kisRealtimeClient;
-    private final KisOverseasRealtimeClient kisOverseasRealtimeClient;
     private final FinnhubRealtimeClient finnhubRealtimeClient;
     private final KisUsDaytimeSessionResolver kisUsDaytimeSessionResolver;
     private final RealtimeQuoteHub hub;
@@ -65,7 +64,6 @@ public class RealtimeSubscriptionManager {
             PortfolioHoldingRepository holdingRepository,
             PriceAlertRepository alertRepository,
             KisRealtimeClient kisRealtimeClient,
-            KisOverseasRealtimeClient kisOverseasRealtimeClient,
             FinnhubRealtimeClient finnhubRealtimeClient,
             KisUsDaytimeSessionResolver kisUsDaytimeSessionResolver,
             RealtimeQuoteHub hub) {
@@ -75,7 +73,6 @@ public class RealtimeSubscriptionManager {
         this.holdingRepository = holdingRepository;
         this.alertRepository = alertRepository;
         this.kisRealtimeClient = kisRealtimeClient;
-        this.kisOverseasRealtimeClient = kisOverseasRealtimeClient;
         this.finnhubRealtimeClient = finnhubRealtimeClient;
         this.kisUsDaytimeSessionResolver = kisUsDaytimeSessionResolver;
         this.hub = hub;
@@ -176,16 +173,18 @@ public class RealtimeSubscriptionManager {
                 .toList();
         Map<String, String> usMarkets = usInstrumentMarkets(ordered);
         List<String> us = List.copyOf(usMarkets.keySet());
-        List<KisOverseasSubscription> kisOverseas = kisOverseasSubscriptions(usMarkets, now);
+        int remainingKisCapacity = Math.max(0, 40 - krx.size());
+        List<KisOverseasSubscription> kisOverseas = kisOverseasSubscriptions(
+                usMarkets,
+                now,
+                Math.min(kisOverseasLimit, remainingKisCapacity));
         currentPlan = new SubscriptionPlan(krx, us, now);
         finnhubRealtimeClient.updateInstrumentMarkets(usMarkets);
         if (providerClientsStarted.compareAndSet(false, true)) {
-            kisRealtimeClient.start(krx);
-            kisOverseasRealtimeClient.start(kisOverseas);
+            kisRealtimeClient.start(krx, kisOverseas);
             finnhubRealtimeClient.start(us);
         } else {
-            kisRealtimeClient.updateSubscriptions(krx);
-            kisOverseasRealtimeClient.updateSubscriptions(kisOverseas);
+            kisRealtimeClient.updateSubscriptions(krx, kisOverseas);
             finnhubRealtimeClient.updateSubscriptions(us);
         }
     }
@@ -241,13 +240,16 @@ public class RealtimeSubscriptionManager {
         return java.util.Collections.unmodifiableMap(result);
     }
 
-    private List<KisOverseasSubscription> kisOverseasSubscriptions(Map<String, String> markets, Instant now) {
+    private List<KisOverseasSubscription> kisOverseasSubscriptions(
+            Map<String, String> markets,
+            Instant now,
+            int limit) {
         boolean daytime = kisUsDaytimeSessionResolver.isOpen(now);
         return markets.entrySet().stream()
                 .filter(entry -> "NASDAQ".equals(entry.getValue())
                         || "NYSE".equals(entry.getValue())
                         || "AMEX".equals(entry.getValue()))
-                .limit(kisOverseasLimit)
+                .limit(limit)
                 .map(entry -> daytime
                         ? KisOverseasSubscription.daytime(entry.getValue(), entry.getKey())
                         : KisOverseasSubscription.standard(entry.getValue(), entry.getKey()))
@@ -276,7 +278,6 @@ public class RealtimeSubscriptionManager {
         scheduler.shutdownNow();
         if (providerClientsStarted.get()) {
             kisRealtimeClient.stop();
-            kisOverseasRealtimeClient.stop();
             finnhubRealtimeClient.stop();
         }
     }

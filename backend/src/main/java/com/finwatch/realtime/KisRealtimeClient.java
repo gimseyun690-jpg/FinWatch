@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,9 +34,11 @@ import tools.jackson.databind.ObjectMapper;
 public class KisRealtimeClient {
 
     private static final String PROVIDER = "KIS";
+    private static final String OVERSEAS_PROVIDER = "KIS_OVERSEAS";
 
     private final String appKey;
     private final String appSecret;
+    private final boolean production;
     private final URI websocketUri;
     private final Duration connectTimeout;
     private final Duration maxReconnectDelay;
@@ -46,6 +49,7 @@ public class KisRealtimeClient {
     private final ObjectMapper objectMapper;
     private final KisMarketDataClient marketDataClient;
     private final KisDomesticMarket domesticMarket;
+    private final UsMarketSessionResolver usMarketSessionResolver = new UsMarketSessionResolver();
     private final RealtimeQuoteHub hub;
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
@@ -54,13 +58,15 @@ public class KisRealtimeClient {
     private final AtomicInteger reconnectAttempts = new AtomicInteger();
 
     private volatile List<String> symbols = List.of();
+    private volatile List<KisOverseasSubscription> overseasSubscriptions = List.of();
     private volatile WebSocket activeSocket;
     private volatile boolean stopped = true;
     private volatile String cachedApprovalKey;
     private volatile Instant approvalKeyExpiresAt = Instant.EPOCH;
     private volatile Instant lastInboundAt = Instant.EPOCH;
     private volatile Instant lastTickAt = Instant.EPOCH;
-    private volatile boolean streamConfirmed;
+    private volatile boolean domesticStreamConfirmed;
+    private volatile boolean overseasStreamConfirmed;
 
     public KisRealtimeClient(
             @Value("${app.data.kis.app-key:}") String appKey,
@@ -84,10 +90,10 @@ public class KisRealtimeClient {
         this.maxReconnectDelay = maxReconnectDelay;
         this.staleTimeout = positiveOrDefault(staleTimeout, Duration.ofSeconds(90));
         this.staleCheckInterval = positiveOrDefault(staleCheckInterval, Duration.ofSeconds(15));
-        boolean prod = "prod".equalsIgnoreCase(environment);
-        this.websocketUri = URI.create((prod ? prodWebsocketUrl : paperWebsocketUrl) + "/tryitout");
+        this.production = "prod".equalsIgnoreCase(environment);
+        this.websocketUri = URI.create((production ? prodWebsocketUrl : paperWebsocketUrl) + "/tryitout");
         this.approvalClient = ProviderRestClientFactory.create(
-                prod ? prodBaseUrl : paperBaseUrl,
+                production ? prodBaseUrl : paperBaseUrl,
                 connectTimeout,
                 readTimeout);
         this.websocketClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
@@ -105,11 +111,19 @@ public class KisRealtimeClient {
     }
 
     public void start(List<String> symbols) {
+        start(symbols, List.of());
+    }
+
+    public void start(List<String> symbols, List<KisOverseasSubscription> desiredOverseasSubscriptions) {
         this.symbols = normalize(symbols);
+        this.overseasSubscriptions = normalizeOverseas(desiredOverseasSubscriptions);
         stopped = false;
         if (appKey.isBlank() || appSecret.isBlank()) {
             hub.updateProvider(PROVIDER, "ERROR", "KIS_APP_KEY와 KIS_APP_SECRET이 필요합니다.");
             return;
+        }
+        if (!production) {
+            hub.updateProvider(OVERSEAS_PROVIDER, "DISABLED", "KIS 해외 실시간은 KIS_ENV=prod에서 연결됩니다.");
         }
         startWatchdog();
         scheduler.execute(() -> {
@@ -119,9 +133,18 @@ public class KisRealtimeClient {
     }
 
     public void updateSubscriptions(List<String> desiredSymbols) {
+        updateSubscriptions(desiredSymbols, overseasSubscriptions);
+    }
+
+    public void updateSubscriptions(
+            List<String> desiredSymbols,
+            List<KisOverseasSubscription> desiredOverseasSubscriptions) {
         List<String> desired = normalize(desiredSymbols);
         List<String> previous = symbols;
+        List<KisOverseasSubscription> desiredOverseas = normalizeOverseas(desiredOverseasSubscriptions);
+        List<KisOverseasSubscription> previousOverseas = overseasSubscriptions;
         symbols = desired;
+        overseasSubscriptions = desiredOverseas;
         if (stopped) {
             return;
         }
@@ -133,6 +156,14 @@ public class KisRealtimeClient {
         Set<String> desiredSet = Set.copyOf(desired);
         List<String> additions = desired.stream().filter(symbol -> !previousSet.contains(symbol)).toList();
         List<String> removals = previous.stream().filter(symbol -> !desiredSet.contains(symbol)).toList();
+        Map<String, KisOverseasSubscription> previousOverseasByKey = overseasByKey(previousOverseas);
+        Map<String, KisOverseasSubscription> desiredOverseasByKey = overseasByKey(desiredOverseas);
+        List<KisOverseasSubscription> overseasAdditions = desiredOverseas.stream()
+                .filter(subscription -> !previousOverseasByKey.containsKey(subscription.trKey()))
+                .toList();
+        List<KisOverseasSubscription> overseasRemovals = previousOverseas.stream()
+                .filter(subscription -> !desiredOverseasByKey.containsKey(subscription.trKey()))
+                .toList();
         WebSocket socket = activeSocket;
         if (socket == null) {
             scheduler.execute(() -> {
@@ -146,11 +177,23 @@ public class KisRealtimeClient {
             return;
         }
         removals.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "0"), true));
+        if (production) {
+            overseasRemovals.forEach(subscription -> socket.sendText(
+                    overseasSubscriptionMessage(approvalKey, subscription, "0"), true));
+        }
         seedSnapshots(additions);
         additions.forEach(symbol -> socket.sendText(subscriptionMessage(approvalKey, symbol, "1"), true));
+        if (production) {
+            overseasAdditions.forEach(subscription -> socket.sendText(
+                    overseasSubscriptionMessage(approvalKey, subscription, "1"), true));
+        }
         if (desired.isEmpty()) {
-            streamConfirmed = false;
+            domesticStreamConfirmed = false;
             hub.updateProvider(PROVIDER, "IDLE", connectionMessage(0));
+        }
+        if (desiredOverseas.isEmpty() && production) {
+            overseasStreamConfirmed = false;
+            hub.updateProvider(OVERSEAS_PROVIDER, "IDLE", overseasConnectionMessage(0));
         }
     }
 
@@ -167,6 +210,7 @@ public class KisRealtimeClient {
         }
         scheduler.shutdownNow();
         hub.updateProvider(PROVIDER, "DISCONNECTED", "실시간 구독을 종료했습니다.");
+        hub.updateProvider(OVERSEAS_PROVIDER, "DISCONNECTED", "KIS 해외 실시간 구독을 종료했습니다.");
     }
 
     private void seedSnapshots() {
@@ -214,12 +258,14 @@ public class KisRealtimeClient {
                         if (error != null) {
                             connectionPending.set(false);
                             hub.updateProvider(PROVIDER, "ERROR", "KIS WebSocket 연결 실패: " + safeMessage(error));
+                            hub.updateProvider(OVERSEAS_PROVIDER, "ERROR", "KIS 단일 WebSocket 연결 실패: " + safeMessage(error));
                             scheduleReconnect();
                         }
                     });
         } catch (RuntimeException exception) {
             connectionPending.set(false);
             hub.updateProvider(PROVIDER, "ERROR", "KIS 실시간 인증 실패: " + safeMessage(exception));
+            hub.updateProvider(OVERSEAS_PROVIDER, "ERROR", "KIS 단일 세션 인증 실패: " + safeMessage(exception));
             scheduleReconnect();
         }
     }
@@ -267,6 +313,7 @@ public class KisRealtimeClient {
         hub.updateProvider(PROVIDER, "RECONNECTING", message);
         scheduler.schedule(() -> {
             reconnectScheduled.set(false);
+            seedSnapshots();
             connect();
         }, delay, TimeUnit.SECONDS);
     }
@@ -287,6 +334,21 @@ public class KisRealtimeClient {
                         "tr_key", symbol))));
     }
 
+    private String overseasSubscriptionMessage(
+            String approvalKey,
+            KisOverseasSubscription subscription,
+            String type) {
+        return objectMapper.writeValueAsString(Map.of(
+                "header", Map.of(
+                        "approval_key", approvalKey,
+                        "custtype", "P",
+                        "tr_type", type,
+                        "content-type", "utf-8"),
+                "body", Map.of("input", Map.of(
+                        "tr_id", KisOverseasTradeMessageParser.TRANSACTION_ID,
+                        "tr_key", subscription.trKey()))));
+    }
+
     private List<String> normalize(List<String> values) {
         if (values == null) {
             return List.of();
@@ -296,6 +358,45 @@ public class KisRealtimeClient {
                 .map(value -> value.trim().toUpperCase(java.util.Locale.ROOT))
                 .limit(40)
                 .toList()));
+    }
+
+    private List<KisOverseasSubscription> normalizeOverseas(List<KisOverseasSubscription> desired) {
+        if (desired == null || desired.isEmpty() || !production) {
+            return List.of();
+        }
+        Map<String, KisOverseasSubscription> unique = new LinkedHashMap<>();
+        desired.stream()
+                .filter(java.util.Objects::nonNull)
+                .forEach(subscription -> {
+                    if (unique.size() < 40) {
+                        unique.putIfAbsent(subscription.trKey(), subscription);
+                    }
+                });
+        return List.copyOf(unique.values());
+    }
+
+    private Map<String, KisOverseasSubscription> overseasByKey(List<KisOverseasSubscription> values) {
+        Map<String, KisOverseasSubscription> result = new LinkedHashMap<>();
+        values.forEach(subscription -> result.put(subscription.trKey(), subscription));
+        return result;
+    }
+
+    private KisOverseasSubscription overseasSubscriptionFor(String providerSymbol) {
+        String normalized = providerSymbol == null
+                ? ""
+                : providerSymbol.trim().toUpperCase(java.util.Locale.ROOT);
+        List<KisOverseasSubscription> matches = overseasSubscriptions.stream()
+                .filter(subscription -> normalized.equals(subscription.symbol())
+                        || normalized.equals(subscription.trKey())
+                        || subscription.trKey().endsWith(normalized))
+                .toList();
+        return matches.size() == 1 ? matches.getFirst() : null;
+    }
+
+    private String overseasSessionStatus(KisOverseasSubscription subscription, Instant asOf) {
+        return "AUTO".equals(subscription.sessionStatus())
+                ? usMarketSessionResolver.resolve(asOf).name()
+                : subscription.sessionStatus();
     }
 
     void handleMessage(WebSocket socket, String message, Instant receivedAt) {
@@ -310,7 +411,40 @@ public class KisRealtimeClient {
             }
             if (!quotes.isEmpty()) {
                 lastTickAt = receivedAt;
-                confirmStream(socket);
+                confirmDomesticStream(socket);
+                return;
+            }
+            List<KisOverseasTradeMessageParser.KisOverseasTrade> overseasTrades =
+                    KisOverseasTradeMessageParser.parse(message, receivedAt);
+            boolean overseasPublished = false;
+            for (KisOverseasTradeMessageParser.KisOverseasTrade trade : overseasTrades) {
+                if (!trade.providerTimestamp()) {
+                    continue;
+                }
+                KisOverseasSubscription subscription = overseasSubscriptionFor(trade.providerSymbol());
+                if (subscription == null) {
+                    continue;
+                }
+                String sessionStatus = overseasSessionStatus(subscription, trade.asOf());
+                if (!MarketSessionStatus.isStreaming(sessionStatus)) {
+                    continue;
+                }
+                hub.publish(new LiveQuote(
+                        subscription.market(),
+                        subscription.symbol(),
+                        trade.price(),
+                        trade.change(),
+                        trade.changeRate(),
+                        trade.volume(),
+                        "USD",
+                        trade.asOf(),
+                        "KIS_OVERSEAS_WS",
+                        sessionStatus));
+                overseasPublished = true;
+            }
+            if (overseasPublished) {
+                lastTickAt = receivedAt;
+                confirmOverseasStream(socket);
             }
             return;
         }
@@ -328,15 +462,27 @@ public class KisRealtimeClient {
                 }
                 return;
             }
+            String transactionId = root.path("header").path("tr_id").asText();
             String resultCode = root.path("body").path("rt_cd").asText("0");
             if (!"0".equals(resultCode)) {
-                streamConfirmed = false;
-                hub.updateProvider(PROVIDER, "DEGRADED", root.path("body").path("msg1").asText("KIS 구독 오류"));
+                String messageText = root.path("body").path("msg1").asText("KIS 구독 오류");
+                if (isApprovalRejection(messageText)) {
+                    recycleRejectedApproval(socket, messageText);
+                    return;
+                }
+                if (KisOverseasTradeMessageParser.TRANSACTION_ID.equals(transactionId)) {
+                    overseasStreamConfirmed = false;
+                    hub.updateProvider(OVERSEAS_PROVIDER, "DEGRADED", messageText);
+                } else {
+                    domesticStreamConfirmed = false;
+                    hub.updateProvider(PROVIDER, "DEGRADED", messageText);
+                }
                 return;
             }
-            String transactionId = root.path("header").path("tr_id").asText();
             if (domesticMarket.realtimeTrId().equals(transactionId)) {
-                confirmStream(socket);
+                confirmDomesticStream(socket);
+            } else if (KisOverseasTradeMessageParser.TRANSACTION_ID.equals(transactionId)) {
+                confirmOverseasStream(socket);
             }
         } catch (RuntimeException ignored) {
             // Unknown provider control messages are ignored without dropping the stream.
@@ -358,6 +504,36 @@ public class KisRealtimeClient {
                 : subscriptionCount + "개 " + domesticMarket.displayName() + " 종목 체결 구독 중";
     }
 
+    private String overseasConnectionMessage(int subscriptionCount) {
+        return subscriptionCount == 0
+                ? "KIS 해외 연결됨 · 구독 종목 없음"
+                : subscriptionCount + "개 미국 종목 KIS HDFSCNT0 체결 구독 중";
+    }
+
+    private boolean isApprovalRejection(String message) {
+        String normalized = message == null ? "" : message.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("invalid approval")
+                || normalized.contains("approval key")
+                || normalized.contains("approval_key")
+                || normalized.contains("접속키");
+    }
+
+    private void recycleRejectedApproval(WebSocket socket, String message) {
+        if (activeSocket != socket) {
+            return;
+        }
+        cachedApprovalKey = null;
+        approvalKeyExpiresAt = Instant.EPOCH;
+        activeSocket = null;
+        connectionPending.set(false);
+        domesticStreamConfirmed = false;
+        overseasStreamConfirmed = false;
+        hub.updateProvider(PROVIDER, "RECONNECTING", message + " · 새 승인키로 다시 연결합니다.");
+        hub.updateProvider(OVERSEAS_PROVIDER, "RECONNECTING", "KIS 단일 세션 승인키를 갱신합니다.");
+        socket.abort();
+        scheduleReconnect("KIS 승인키 거절");
+    }
+
     private void startWatchdog() {
         if (!watchdogStarted.compareAndSet(false, true)) {
             return;
@@ -375,13 +551,15 @@ public class KisRealtimeClient {
             checkLiveness(Instant.now());
         } catch (RuntimeException exception) {
             hub.updateProvider(PROVIDER, "DEGRADED", "KIS 실시간 상태 확인 실패: " + safeMessage(exception));
+            hub.updateProvider(OVERSEAS_PROVIDER, "DEGRADED", "KIS 단일 세션 상태 확인 실패: " + safeMessage(exception));
         }
     }
 
     void checkLiveness(Instant now) {
         WebSocket socket = activeSocket;
         Instant lastInbound = lastInboundAt;
-        if (socket == null || symbols.isEmpty() || lastInbound.equals(Instant.EPOCH)) {
+        if (socket == null || (symbols.isEmpty() && overseasSubscriptions.isEmpty())
+                || lastInbound.equals(Instant.EPOCH)) {
             return;
         }
         Duration silence = Duration.between(lastInbound, now);
@@ -391,9 +569,11 @@ public class KisRealtimeClient {
 
         activeSocket = null;
         connectionPending.set(false);
-        streamConfirmed = false;
+        domesticStreamConfirmed = false;
+        overseasStreamConfirmed = false;
         String reason = "KIS 실시간 수신이 " + Math.max(1, silence.toSeconds()) + "초 동안 없어 연결을 교체합니다.";
         hub.updateProvider(PROVIDER, "DEGRADED", reason);
+        hub.updateProvider(OVERSEAS_PROVIDER, "DEGRADED", reason);
         socket.abort();
         scheduleReconnect(reason);
     }
@@ -402,7 +582,8 @@ public class KisRealtimeClient {
         activeSocket = socket;
         lastInboundAt = openedAt;
         lastTickAt = Instant.EPOCH;
-        streamConfirmed = false;
+        domesticStreamConfirmed = false;
+        overseasStreamConfirmed = false;
     }
 
     private void recordInbound(WebSocket socket, Instant receivedAt) {
@@ -411,14 +592,24 @@ public class KisRealtimeClient {
         }
     }
 
-    private void confirmStream(WebSocket socket) {
-        if (activeSocket != socket || streamConfirmed) {
+    private void confirmDomesticStream(WebSocket socket) {
+        if (activeSocket != socket || domesticStreamConfirmed) {
             return;
         }
-        streamConfirmed = true;
+        domesticStreamConfirmed = true;
         reconnectAttempts.set(0);
         reconnectScheduled.set(false);
         hub.updateProvider(PROVIDER, "CONNECTED", connectionMessage(symbols.size()));
+    }
+
+    private void confirmOverseasStream(WebSocket socket) {
+        if (activeSocket != socket || overseasStreamConfirmed) {
+            return;
+        }
+        overseasStreamConfirmed = true;
+        reconnectAttempts.set(0);
+        reconnectScheduled.set(false);
+        hub.updateProvider(OVERSEAS_PROVIDER, "CONNECTED", overseasConnectionMessage(overseasSubscriptions.size()));
     }
 
     Instant lastInboundAt() {
@@ -437,17 +628,34 @@ public class KisRealtimeClient {
                 PROVIDER,
                 symbols.isEmpty() ? "IDLE" : "SUBSCRIBING",
                 symbols.isEmpty() ? connectionMessage(0) : "KIS 구독 승인을 기다리는 중");
+        if (production) {
+            hub.updateProvider(
+                    OVERSEAS_PROVIDER,
+                    overseasSubscriptions.isEmpty() ? "IDLE" : "SUBSCRIBING",
+                    overseasSubscriptions.isEmpty()
+                            ? overseasConnectionMessage(0)
+                            : "KIS 해외 구독 승인을 기다리는 중");
+        }
         CompletableFuture<?> subscriptions = CompletableFuture.completedFuture(null);
         for (String symbol : symbols) {
             subscriptions = subscriptions.thenCompose(ignored -> webSocket.sendText(
                     subscriptionMessage(approvalKey, symbol),
                     true));
         }
+        if (production) {
+            for (KisOverseasSubscription overseasSubscription : overseasSubscriptions) {
+                subscriptions = subscriptions.thenCompose(ignored -> webSocket.sendText(
+                        overseasSubscriptionMessage(approvalKey, overseasSubscription, "1"),
+                        true));
+            }
+        }
         subscriptions.whenComplete((ignored, error) -> {
             if (error != null && activeSocket == webSocket) {
                 hub.updateProvider(PROVIDER, "ERROR", "KIS 구독 요청 실패: " + safeMessage(error));
+                hub.updateProvider(OVERSEAS_PROVIDER, "ERROR", "KIS 해외 구독 요청 실패: " + safeMessage(error));
                 activeSocket = null;
-                streamConfirmed = false;
+                domesticStreamConfirmed = false;
+                overseasStreamConfirmed = false;
                 webSocket.abort();
                 scheduleReconnect();
             }
@@ -494,8 +702,10 @@ public class KisRealtimeClient {
             if (activeSocket == webSocket && !stopped) {
                 connectionPending.set(false);
                 activeSocket = null;
-                streamConfirmed = false;
+                domesticStreamConfirmed = false;
+                overseasStreamConfirmed = false;
                 hub.updateProvider(PROVIDER, "DISCONNECTED", "KIS 연결 종료: " + statusCode);
+                hub.updateProvider(OVERSEAS_PROVIDER, "DISCONNECTED", "KIS 단일 연결 종료: " + statusCode);
                 scheduleReconnect();
             }
             return CompletableFuture.completedFuture(null);
@@ -506,8 +716,10 @@ public class KisRealtimeClient {
             if (activeSocket == webSocket && !stopped) {
                 connectionPending.set(false);
                 activeSocket = null;
-                streamConfirmed = false;
+                domesticStreamConfirmed = false;
+                overseasStreamConfirmed = false;
                 hub.updateProvider(PROVIDER, "ERROR", "KIS 스트림 오류: " + safeMessage(error));
+                hub.updateProvider(OVERSEAS_PROVIDER, "ERROR", "KIS 단일 스트림 오류: " + safeMessage(error));
                 scheduleReconnect();
             }
         }

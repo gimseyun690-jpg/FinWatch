@@ -16,6 +16,12 @@ FinWatch가 Finnhub 미국 주식 체결을 프리마켓·정규장·애프터�
 - [NYSE 거래시간·캘린더](https://www.nyse.com/trade/hours-calendars): 연도별 휴장·조기 종료와 거래소별 세션
 - [Finnhub WebSocket Trades](https://finnhub.io/docs/api/websocket-trades): `t`는 공급자 Unix millisecond timestamp이고 한 frame에 여러 trade가 올 수 있음
 
+KIS 연결 계약:
+
+- 국내·해외 상품을 합쳐 WebSocket 한 세션만 사용한다. `H0STCNT0`/NXT 국내 체결과 `HDFSCNT0` 해외 체결을 동일 연결에서 구독한다.
+- 국내·해외 KIS 구독 수 합계는 40개 이하로 제한하고, 한도를 넘는 미국 종목은 Finnhub 스트림을 fallback으로 사용한다.
+- `invalid approval` 또는 접속키 거절 응답을 받으면 캐시된 승인키를 폐기하고 단일 세션 전체를 새 승인키로 재연결한다.
+
 거래소가 23/5 또는 야간 세션 규칙을 공표했더라도 실제 개시일·대상 종목·Finnhub entitlement를 검증하기 전에는 20:00~다음 날 04:00 ET 체결을 `AFTER_HOURS`로 확대 해석하지 않는다.
 
 ## 2. 단계별 범위와 완료 표현

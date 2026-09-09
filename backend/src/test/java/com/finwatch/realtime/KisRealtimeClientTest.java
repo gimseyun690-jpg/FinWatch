@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -111,6 +112,54 @@ class KisRealtimeClientTest {
         }
     }
 
+    @Test
+    void carriesDomesticAndOverseasSubscriptionsOnOneSocket() {
+        Fixture fixture = fixture();
+        try {
+            fixture.client().updateSubscriptions(
+                    List.of("005930"),
+                    List.of(KisOverseasSubscription.daytime("NASDAQ", "AAPL")));
+            fixture.client().handleSocketOpen(
+                    fixture.socket(), "approval", Instant.parse("2026-08-03T00:00:00Z"));
+
+            verify(fixture.socket(), times(2)).sendText(anyString(), eq(true));
+            assertThat(provider(fixture.hub(), "KIS").state()).isEqualTo("SUBSCRIBING");
+            assertThat(provider(fixture.hub(), "KIS_OVERSEAS").state()).isEqualTo("SUBSCRIBING");
+
+            fixture.client().handleMessage(
+                    fixture.socket(), overseasTick(), Instant.parse("2026-08-03T00:00:02Z"));
+
+            assertThat(provider(fixture.hub(), "KIS_OVERSEAS").state()).isEqualTo("CONNECTED");
+            LiveQuote quote = fixture.hub().find("NASDAQ", "AAPL").orElseThrow();
+            assertThat(quote.price()).isEqualByComparingTo("215.25");
+            assertThat(quote.source()).isEqualTo("KIS_OVERSEAS_WS");
+            assertThat(quote.sessionStatus()).isEqualTo("US_DAYTIME");
+        } finally {
+            fixture.client().stop();
+        }
+    }
+
+    @Test
+    void invalidApprovalAbortsSharedSocketAndRefreshesBothProviderStates() {
+        Fixture fixture = fixture();
+        try {
+            fixture.client().updateSubscriptions(
+                    List.of("005930"),
+                    List.of(KisOverseasSubscription.daytime("NASDAQ", "AAPL")));
+            fixture.client().handleSocketOpen(
+                    fixture.socket(), "approval", Instant.parse("2026-08-03T00:00:00Z"));
+
+            fixture.client().handleMessage(
+                    fixture.socket(), invalidApproval(), Instant.parse("2026-08-03T00:00:01Z"));
+
+            verify(fixture.socket()).abort();
+            assertThat(provider(fixture.hub(), "KIS").state()).isEqualTo("RECONNECTING");
+            assertThat(provider(fixture.hub(), "KIS_OVERSEAS").state()).isEqualTo("RECONNECTING");
+        } finally {
+            fixture.client().stop();
+        }
+    }
+
     private Fixture fixture() {
         WebSocket socket = mockSocket();
         RealtimeQuoteHub hub = new RealtimeQuoteHub();
@@ -141,8 +190,12 @@ class KisRealtimeClientTest {
     }
 
     private RealtimeProviderStatus provider(RealtimeQuoteHub hub) {
+        return provider(hub, "KIS");
+    }
+
+    private RealtimeProviderStatus provider(RealtimeQuoteHub hub, String name) {
         return hub.snapshot().providers().stream()
-                .filter(status -> "KIS".equals(status.provider()))
+                .filter(status -> name.equals(status.provider()))
                 .findFirst()
                 .orElseThrow();
     }
@@ -156,6 +209,12 @@ class KisRealtimeClientTest {
     private String failedAck() {
         return """
                 {"header":{"tr_id":"H0STCNT0"},"body":{"rt_cd":"1","msg1":"subscription rejected"}}
+                """;
+    }
+
+    private String invalidApproval() {
+        return """
+                {"header":{"tr_id":"H0STCNT0"},"body":{"rt_cd":"1","msg1":"invalid approval"}}
                 """;
     }
 
@@ -177,6 +236,20 @@ class KisRealtimeClientTest {
         fields[13] = "12345";
         fields[33] = "20260803";
         return "0|H0STCNT0|001|" + String.join("^", fields);
+    }
+
+    private String overseasTick() {
+        String[] fields = new String[25];
+        java.util.Arrays.fill(fields, "");
+        fields[0] = "AAPL";
+        fields[5] = "20260803";
+        fields[6] = "120002";
+        fields[10] = "215.25";
+        fields[11] = "2";
+        fields[12] = "1.25";
+        fields[13] = "0.58";
+        fields[19] = "12345";
+        return "0|HDFSCNT0|001|" + String.join("^", fields);
     }
 
     private record Fixture(KisRealtimeClient client, WebSocket socket, RealtimeQuoteHub hub) {

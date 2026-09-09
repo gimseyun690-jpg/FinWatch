@@ -20,7 +20,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import com.finwatch.data.provider.ProviderRestClientFactory;
@@ -28,11 +27,11 @@ import com.finwatch.data.provider.ProviderRestClientFactory;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * KIS HDFSCNT0 client for US stocks. This is intentionally separate from the
- * domestic KIS client: its transaction id, subscription key, and 25-field
- * payload contract are different.
+ * Legacy standalone HDFSCNT0 client retained for focused parser/client tests.
+ * Production wiring uses {@link KisRealtimeClient} so domestic and overseas
+ * subscriptions share KIS's single allowed WebSocket session.
  */
-@Component
+@Deprecated(forRemoval = false)
 public class KisOverseasRealtimeClient {
 
     private static final String PROVIDER = "KIS_OVERSEAS";

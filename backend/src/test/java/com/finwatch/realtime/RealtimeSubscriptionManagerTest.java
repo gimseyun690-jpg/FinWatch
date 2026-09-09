@@ -2,6 +2,7 @@ package com.finwatch.realtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,7 +25,6 @@ import com.finwatch.watchlist.repository.WatchlistRepository;
 class RealtimeSubscriptionManagerTest {
 
     private RealtimeSubscriptionManager manager;
-    private KisOverseasRealtimeClient kisOverseasClient;
 
     @AfterEach
     void tearDown() {
@@ -58,8 +58,7 @@ class RealtimeSubscriptionManagerTest {
 
         assertThat(manager.currentPlan().krxSymbols()).containsExactly("000660");
         assertThat(manager.currentPlan().usSymbols()).containsExactly("AAPL");
-        verify(kisClient).start(List.of("000660"));
-        verify(kisOverseasClient).start(argThat(subscriptions -> subscriptions.size() == 1
+        verify(kisClient).start(eq(List.of("000660")), argThat(subscriptions -> subscriptions.size() == 1
                 && subscriptions.getFirst().market().equals("NASDAQ")
                 && subscriptions.getFirst().symbol().equals("AAPL")
                 && (subscriptions.getFirst().trKey().equals("DNASAAPL")
@@ -129,11 +128,10 @@ class RealtimeSubscriptionManagerTest {
             FinnhubRealtimeClient finnhubClient,
             int kisLimit,
             Duration grace) {
-        kisOverseasClient = mock(KisOverseasRealtimeClient.class);
         return new RealtimeSubscriptionManager(
                 "LIVE", true, kisLimit, 40, 50, grace, Duration.ofSeconds(15),
                 stockRepository, watchlistRepository, holdingRepository, alertRepository,
-                kisClient, kisOverseasClient, finnhubClient,
+                kisClient, finnhubClient,
                 new KisUsDaytimeSessionResolver(), new RealtimeQuoteHub());
     }
 
