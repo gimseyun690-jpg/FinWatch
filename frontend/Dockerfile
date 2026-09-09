@@ -11,13 +11,16 @@ COPY frontend/ ./
 ENV VITE_APP_VERSION=$APP_VERSION
 RUN pnpm build
 
-FROM nginxinc/nginx-unprivileged:1.31.1-alpine3.23@sha256:cc300bd2e8776708a8c2c8686a74f06eadf221c5ce01e85d0e821955d7a730ab AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.5-alpine3.24 AS runtime
 ARG APP_VERSION=dev
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="FinWatch Web" \
       org.opencontainers.image.version="$APP_VERSION" \
       org.opencontainers.image.revision="$VCS_REF" \
       org.opencontainers.image.source="https://github.com/gimseyun690-jpg/FinWatch"
+
+USER root
+RUN apk upgrade --no-cache
 
 COPY deploy/nginx/portfolio.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /workspace/frontend/dist /usr/share/nginx/html
