@@ -26,7 +26,7 @@ class KisTradeMessageParserTest {
         assertThat(quote.volume()).isEqualByComparingTo("12345678");
         assertThat(quote.asOf()).isEqualTo(Instant.parse("2026-07-14T01:15:30Z"));
         assertThat(quote.source()).isEqualTo("KIS_KRX_WS");
-        assertThat(quote.sessionStatus()).isEqualTo("LIVE");
+        assertThat(quote.sessionStatus()).isEqualTo("REGULAR");
     }
 
     @Test

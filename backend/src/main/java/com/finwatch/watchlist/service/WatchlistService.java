@@ -23,6 +23,8 @@ import com.finwatch.watchlist.domain.Watchlist;
 import com.finwatch.watchlist.dto.WatchlistItemResponse;
 import com.finwatch.watchlist.repository.WatchlistRepository;
 
+import com.finwatch.realtime.MarketSessionResolver;
+
 @Service
 public class WatchlistService {
 
@@ -32,6 +34,7 @@ public class WatchlistService {
     private final StockQueryService stockQueryService;
     private final StockDataLoadService stockDataLoadService;
     private final RealtimeSubscriptionManager realtimeSubscriptionManager;
+    private final MarketSessionResolver marketSessionResolver;
 
     public WatchlistService(
             WatchlistRepository watchlistRepository,
@@ -39,23 +42,27 @@ public class WatchlistService {
             StockRepository stockRepository,
             StockQueryService stockQueryService,
             StockDataLoadService stockDataLoadService,
-            RealtimeSubscriptionManager realtimeSubscriptionManager) {
+            RealtimeSubscriptionManager realtimeSubscriptionManager,
+            MarketSessionResolver marketSessionResolver) {
         this.watchlistRepository = watchlistRepository;
         this.appUserRepository = appUserRepository;
         this.stockRepository = stockRepository;
         this.stockQueryService = stockQueryService;
         this.stockDataLoadService = stockDataLoadService;
         this.realtimeSubscriptionManager = realtimeSubscriptionManager;
+        this.marketSessionResolver = marketSessionResolver;
     }
 
     @Transactional(readOnly = true)
     public List<WatchlistItemResponse> getWatchlist(Long userId) {
         return watchlistRepository.findAllWithStockByUserId(userId).stream()
-                .map(item -> WatchlistItemResponse.from(
-                        item,
-                        stockQueryService.getStock(
-                                item.getStock().getMarket(),
-                                item.getStock().getSymbol())))
+                .map(item -> {
+                    var stock = stockQueryService.getStock(
+                            item.getStock().getMarket(),
+                            item.getStock().getSymbol());
+                    String sessionStatus = marketSessionResolver.resolve(stock.market(), java.time.Instant.now()).name();
+                    return WatchlistItemResponse.from(item, stock, sessionStatus);
+                })
                 .toList();
     }
 
@@ -73,9 +80,9 @@ public class WatchlistService {
             realtimeSubscriptionManager.requestRefresh();
             prepareStockData(stock.getMarket(), stock.getSymbol());
         });
-        return WatchlistItemResponse.from(
-                watchlist,
-                stockQueryService.getStock(stock.getMarket(), stock.getSymbol()));
+        var detail = stockQueryService.getStock(stock.getMarket(), stock.getSymbol());
+        String sessionStatus = marketSessionResolver.resolve(detail.market(), java.time.Instant.now()).name();
+        return WatchlistItemResponse.from(watchlist, detail, sessionStatus);
     }
 
     @Transactional

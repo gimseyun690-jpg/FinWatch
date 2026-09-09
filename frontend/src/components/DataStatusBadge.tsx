@@ -12,7 +12,7 @@ export type DataStatus =
 const labels: Record<DataStatus, string> = {
   LIVE: '실시간',
   DELAYED: '지연',
-  REFERENCE: '참고값',
+  REFERENCE: '기준 환율',
   STALE: '갱신 지연',
   DEMO: '시연 데이터',
   PARTIAL: '일부 준비',

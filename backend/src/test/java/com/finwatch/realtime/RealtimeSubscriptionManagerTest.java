@@ -61,8 +61,7 @@ class RealtimeSubscriptionManagerTest {
         verify(kisClient).start(eq(List.of("000660")), argThat(subscriptions -> subscriptions.size() == 1
                 && subscriptions.getFirst().market().equals("NASDAQ")
                 && subscriptions.getFirst().symbol().equals("AAPL")
-                && (subscriptions.getFirst().trKey().equals("DNASAAPL")
-                        || subscriptions.getFirst().trKey().equals("RBAQAAPL"))));
+                && subscriptions.getFirst().trKey().equals("DNASAAPL")));
         verify(finnhubClient).updateInstrumentMarkets(Map.of("AAPL", "NASDAQ"));
         verify(finnhubClient).start(List.of("AAPL"));
     }
@@ -131,8 +130,7 @@ class RealtimeSubscriptionManagerTest {
         return new RealtimeSubscriptionManager(
                 "LIVE", true, kisLimit, 40, 50, grace, Duration.ofSeconds(15),
                 stockRepository, watchlistRepository, holdingRepository, alertRepository,
-                kisClient, finnhubClient,
-                new KisUsDaytimeSessionResolver(), new RealtimeQuoteHub());
+                kisClient, finnhubClient, new RealtimeQuoteHub());
     }
 
     private Stock stock(String market, String symbol) {

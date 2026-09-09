@@ -11,4 +11,5 @@ export type WatchlistItem = {
   source: string | null
   dataAvailability: 'READY' | 'PARTIAL' | 'METADATA_ONLY' | 'UNAVAILABLE'
   addedAt: string
+  sessionStatus?: string | null
 }

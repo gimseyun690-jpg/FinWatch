@@ -31,30 +31,12 @@ public record KisOverseasSubscription(
                 "AUTO");
     }
 
-    public static KisOverseasSubscription daytime(String market, String symbol) {
-        String normalizedMarket = normalize(market);
-        return new KisOverseasSubscription(
-                normalizedMarket,
-                symbol,
-                daytimePrefix(normalizedMarket) + normalize(symbol),
-                MarketSessionStatus.US_DAYTIME.name());
-    }
-
     private static String standardPrefix(String market) {
         return switch (market) {
             case "NASDAQ" -> "DNAS";
             case "NYSE" -> "DNYS";
             case "AMEX" -> "DAMS";
             default -> throw new IllegalArgumentException("Unsupported KIS overseas market: " + market);
-        };
-    }
-
-    private static String daytimePrefix(String market) {
-        return switch (market) {
-            case "NASDAQ" -> "RBAQ";
-            case "NYSE" -> "RBAY";
-            case "AMEX" -> "RBAA";
-            default -> throw new IllegalArgumentException("Unsupported KIS US daytime market: " + market);
         };
     }
 

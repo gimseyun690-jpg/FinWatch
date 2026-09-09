@@ -1377,7 +1377,7 @@ export function InteractiveStockChart({
       : selectedDrawingId
         ? '선을 선택했습니다. 핸들을 드래그하거나 Delete 키로 삭제할 수 있습니다.'
         : null
-  const session = interval === '1m' ? marketSessionInfo(market, sessionStatus) : null
+  const session = interval === '1m' ? marketSessionInfo(market, sessionStatus, items.at(-1)?.time) : null
 
   return (
     <div

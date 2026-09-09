@@ -30,12 +30,23 @@ public class TechnicalAnalysisCalculator {
     }
 
     public Result calculateMarket(List<Candle> candles) {
-        if (candles.size() < 60) {
-            throw new IllegalArgumentException("기술적 분석에는 최소 60개의 가격 데이터가 필요합니다.");
+        if (candles == null || candles.isEmpty()) {
+            throw new IllegalArgumentException("기술적 분석에는 최소 1개의 가격 데이터가 필요합니다.");
         }
 
-        List<BigDecimal> closes = candles.stream().map(Candle::close).toList();
-        List<BigDecimal> volumes = candles.stream().map(Candle::volume).toList();
+        List<Candle> paddedCandles = candles;
+        if (candles.size() < 60) {
+            paddedCandles = new ArrayList<>(60);
+            Candle first = candles.getFirst();
+            int needed = 60 - candles.size();
+            for (int i = 0; i < needed; i++) {
+                paddedCandles.add(first);
+            }
+            paddedCandles.addAll(candles);
+        }
+
+        List<BigDecimal> closes = paddedCandles.stream().map(Candle::close).toList();
+        List<BigDecimal> volumes = paddedCandles.stream().map(Candle::volume).toList();
         BigDecimal latest = closes.getLast();
         BigDecimal ma5 = simpleMovingAverage(closes, MOVING_AVERAGE_SHORT_PERIOD);
         BigDecimal ma20 = simpleMovingAverage(closes, MOVING_AVERAGE_MEDIUM_PERIOD);

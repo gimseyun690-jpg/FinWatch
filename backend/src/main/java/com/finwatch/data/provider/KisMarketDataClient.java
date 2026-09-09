@@ -234,14 +234,56 @@ public class KisMarketDataClient {
         return List.copyOf(bars);
     }
 
+    public Quote getOverseasQuote(String market, String symbol) {
+        validateOverseasSymbol(symbol);
+        String exchangeCode = overseasExchangeCode(market);
+
+        // 1차: 해외주식 현재가 API (HHDFS76190000) - 프리마켓/애프터마켓 실시간 체결가 포함
+        try {
+            Map<String, Object> response = get(
+                    "/uapi/overseas-price/v1/quotations/price",
+                    "HHDFS76190000",
+                    Map.of(
+                            "AUTH", "",
+                            "EXCD", exchangeCode,
+                            "SYMB", symbol));
+            Map<String, Object> output = objectMap(response.get("output"));
+            BigDecimal price = decimal(output, "last");
+            if (price.signum() > 0) {
+                BigDecimal change = decimal(output, "diff");
+                BigDecimal changeRate = decimal(output, "rate");
+                BigDecimal volume = decimal(output, "tvol");
+                return new Quote(symbol, price, change, changeRate, volume, "USD", "KIS_OVERSEAS", Instant.now());
+            }
+        } catch (ProviderException ignored) {
+            // HHDFS76190000 실패 시 HHDFS76200200으로 fallback
+        }
+
+        // 2차: 해외주식 현재가 상세 API (HHDFS76200200) - 정규장 종가/기본 시세
+        Map<String, Object> response = get(
+                "/uapi/overseas-price/v1/quotations/price_detail",
+                "HHDFS76200200",
+                Map.of(
+                        "AUTH", "",
+                        "EXCD", exchangeCode,
+                        "SYMB", symbol));
+        Map<String, Object> output = objectMap(response.get("output"));
+        BigDecimal price = decimal(output, "last");
+        if (price.signum() <= 0) {
+            price = decimal(output, "base");
+        }
+        BigDecimal change = decimal(output, "diff");
+        BigDecimal changeRate = decimal(output, "rate");
+        BigDecimal volume = decimal(output, "tvol");
+        return new Quote(symbol, price, change, changeRate, volume, "USD", "KIS_OVERSEAS", Instant.now());
+    }
+
     private String overseasExchangeCode(String market) {
         return switch (market == null ? "" : market.trim().toUpperCase(Locale.ROOT)) {
             case "NASDAQ" -> "NAS";
             case "NYSE" -> "NYS";
-            default -> throw new ProviderException(
-                    HttpStatus.BAD_REQUEST,
-                    "KIS_OVERSEAS_MARKET_INVALID",
-                    "KIS 해외 일봉은 NASDAQ과 NYSE를 지원합니다.");
+            case "AMEX", "ARCA" -> "AMS";
+            default -> "NAS";
         };
     }
 

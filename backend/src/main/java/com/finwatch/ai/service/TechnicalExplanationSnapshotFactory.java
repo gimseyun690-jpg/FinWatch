@@ -28,6 +28,8 @@ import com.finwatch.technical.TechnicalAnalysisCalculator;
 
 import tools.jackson.databind.ObjectMapper;
 
+import com.finwatch.realtime.RealtimeQuoteHub;
+
 @Component
 public class TechnicalExplanationSnapshotFactory {
 
@@ -35,16 +37,19 @@ public class TechnicalExplanationSnapshotFactory {
     private final StockRepository stockRepository;
     private final MarketPriceRepository marketPriceRepository;
     private final StockQueryService stockQueryService;
+    private final RealtimeQuoteHub realtimeQuoteHub;
     private final ObjectMapper objectMapper;
 
     public TechnicalExplanationSnapshotFactory(
             StockRepository stockRepository,
             MarketPriceRepository marketPriceRepository,
             StockQueryService stockQueryService,
+            RealtimeQuoteHub realtimeQuoteHub,
             ObjectMapper objectMapper) {
         this.stockRepository = stockRepository;
         this.marketPriceRepository = marketPriceRepository;
         this.stockQueryService = stockQueryService;
+        this.realtimeQuoteHub = realtimeQuoteHub;
         this.objectMapper = objectMapper;
     }
 
@@ -65,11 +70,24 @@ public class TechnicalExplanationSnapshotFactory {
         Stock stock = findStock(market, symbol);
         List<MarketPrice> prices = marketPriceRepository
                 .findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), INTERVAL);
-        if (prices.size() < 60) {
+        var liveQuote = realtimeQuoteHub.find(stock.getMarket(), stock.getSymbol());
+        if (liveQuote.isPresent() && liveQuote.get().price() != null) {
+            var quote = liveQuote.get();
+            if (prices.isEmpty() || quote.asOf().isAfter(prices.getLast().getRecordedAt())) {
+                MarketPrice virtualBar = MarketPrice.create(
+                        stock, INTERVAL,
+                        quote.price(), quote.price(), quote.price(), quote.price(),
+                        quote.volume() != null ? quote.volume() : BigDecimal.ZERO,
+                        quote.asOf(), quote.source() != null ? quote.source() : "live");
+                prices = new ArrayList<>(prices);
+                prices.add(virtualBar);
+            }
+        }
+        if (prices.isEmpty()) {
             throw new TechnicalExplanationException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "TECHNICAL_DATA_INSUFFICIENT",
-                    "기술지표 해설에는 완성된 일봉이 최소 60개 필요합니다.");
+                    "기술지표 해설을 생성하기 위한 일봉 데이터가 없습니다.");
         }
         validatePrices(prices);
 

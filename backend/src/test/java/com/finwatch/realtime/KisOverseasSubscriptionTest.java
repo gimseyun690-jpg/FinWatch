@@ -7,9 +7,8 @@ import org.junit.jupiter.api.Test;
 class KisOverseasSubscriptionTest {
 
     @Test
-    void buildsNormalAndDaytimeKeysWithoutGuessingTheMarket() {
+    void buildsStandardKeysWithoutGuessingTheMarket() {
         assertThat(KisOverseasSubscription.standard("nasdaq", "aapl").trKey()).isEqualTo("DNASAAPL");
-        assertThat(KisOverseasSubscription.daytime("nasdaq", "aapl").trKey()).isEqualTo("RBAQAAPL");
-        assertThat(KisOverseasSubscription.daytime("nyse", "brk.b").trKey()).isEqualTo("RBAYBRK.B");
+        assertThat(KisOverseasSubscription.standard("nyse", "brk.b").trKey()).isEqualTo("DNYSBRK.B");
     }
 }

@@ -118,7 +118,7 @@ class KisRealtimeClientTest {
         try {
             fixture.client().updateSubscriptions(
                     List.of("005930"),
-                    List.of(KisOverseasSubscription.daytime("NASDAQ", "AAPL")));
+                    List.of(KisOverseasSubscription.standard("NASDAQ", "AAPL")));
             fixture.client().handleSocketOpen(
                     fixture.socket(), "approval", Instant.parse("2026-08-03T00:00:00Z"));
 
@@ -133,7 +133,7 @@ class KisRealtimeClientTest {
             LiveQuote quote = fixture.hub().find("NASDAQ", "AAPL").orElseThrow();
             assertThat(quote.price()).isEqualByComparingTo("215.25");
             assertThat(quote.source()).isEqualTo("KIS_OVERSEAS_WS");
-            assertThat(quote.sessionStatus()).isEqualTo("US_DAYTIME");
+            assertThat(quote.sessionStatus()).isEqualTo("REGULAR");
         } finally {
             fixture.client().stop();
         }
@@ -145,7 +145,7 @@ class KisRealtimeClientTest {
         try {
             fixture.client().updateSubscriptions(
                     List.of("005930"),
-                    List.of(KisOverseasSubscription.daytime("NASDAQ", "AAPL")));
+                    List.of(KisOverseasSubscription.standard("NASDAQ", "AAPL")));
             fixture.client().handleSocketOpen(
                     fixture.socket(), "approval", Instant.parse("2026-08-03T00:00:00Z"));
 
@@ -243,7 +243,7 @@ class KisRealtimeClientTest {
         java.util.Arrays.fill(fields, "");
         fields[0] = "AAPL";
         fields[5] = "20260803";
-        fields[6] = "120002";
+        fields[6] = "230002";
         fields[10] = "215.25";
         fields[11] = "2";
         fields[12] = "1.25";

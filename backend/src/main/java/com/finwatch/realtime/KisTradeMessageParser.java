@@ -49,6 +49,8 @@ public final class KisTradeMessageParser {
             String signCode = values[offset + 3].trim();
             BigDecimal change = signed(decimal(values[offset + 4]), signCode);
             BigDecimal changeRate = signed(decimal(values[offset + 5]), signCode);
+            Instant tradeTime = timestamp(values[offset + 33], values[offset + 1]);
+            MarketSessionStatus sessionStatus = SESSION_RESOLVER.resolve(tradeTime);
             quotes.add(new LiveQuote(
                     "KRX",
                     symbol,
@@ -57,12 +59,14 @@ public final class KisTradeMessageParser {
                     changeRate,
                     decimal(values[offset + 13]),
                     "KRW",
-                    timestamp(values[offset + 33], values[offset + 1]),
+                    tradeTime,
                     domesticMarket.websocketSource(),
-                    "LIVE"));
+                    sessionStatus.name()));
         }
         return List.copyOf(quotes);
     }
+
+    private static final KrxMarketSessionResolver SESSION_RESOLVER = new KrxMarketSessionResolver();
 
     private static BigDecimal signed(BigDecimal value, String signCode) {
         if (("4".equals(signCode) || "5".equals(signCode)) && value.signum() > 0) {

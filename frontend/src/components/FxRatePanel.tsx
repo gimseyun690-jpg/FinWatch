@@ -113,7 +113,7 @@ export function FxRatePanel() {
         <strong>{rate.rate.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
         <span className={(rate.changeRate ?? 0) >= 0 ? 'profit' : 'down'}>{signed(rate.changeRate)}</span>
         <span className="fx-status-wrapper">
-          {showAdminDetails && status !== 'REFERENCE' && <DataStatusBadge status={status} />}
+          {showAdminDetails && <DataStatusBadge status={status} />}
         </span>
         {showAdminDetails ? (
           <small style={{ justifySelf: 'end', textAlign: 'right' }}>{rate.source} · 기준 {new Date(rate.asOf).toLocaleString('ko-KR')} · 갱신 {new Date(rate.fetchedAt).toLocaleTimeString('ko-KR')}</small>
@@ -152,7 +152,6 @@ export function FxRatePanel() {
 function fxStatus(rate: FxRate, refreshFailed: boolean): DataStatus {
   if (refreshFailed || rate.freshness === 'STALE') return 'STALE'
   if (rate.rateType === 'DEMO') return 'DEMO'
-  if (rate.rateType === 'REFERENCE') return 'REFERENCE'
   if (rate.rateType === 'DELAYED' || rate.freshness === 'DELAYED') return 'DELAYED'
   return 'LIVE'
 }
