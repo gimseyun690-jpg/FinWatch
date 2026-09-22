@@ -4,6 +4,8 @@ services:
   frontend:
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE must be a SHA tag or digest}
     restart: unless-stopped
+    mem_limit: 192m
+    pids_limit: 128
     depends_on:
       backend:
         condition: service_healthy
@@ -38,8 +40,15 @@ services:
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE must be a SHA tag or digest}
     restart: unless-stopped
+    mem_limit: 1024m
+    mem_reservation: 512m
+    pids_limit: 512
     env_file:
       - ${FINWATCH_RUNTIME_ENV_FILE:-/run/finwatch/portfolio.env}
+    environment:
+      JAVA_TOOL_OPTIONS: >-
+        -Xms128m -Xmx640m -XX:MaxMetaspaceSize=192m
+        -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC
     expose:
       - "8080"
     depends_on:
@@ -68,9 +77,12 @@ services:
   redis:
     image: ${REDIS_IMAGE:?REDIS_IMAGE must be digest-pinned}
     restart: unless-stopped
+    mem_limit: 320m
+    mem_reservation: 192m
+    pids_limit: 128
     env_file:
       - ${FINWATCH_RUNTIME_ENV_FILE:-/run/finwatch/portfolio.env}
-    command: ["/bin/sh", "-c", "exec redis-server --save '' --appendonly no --maxmemory 384mb --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    command: ["/bin/sh", "-c", "exec redis-server --save '' --appendonly no --maxmemory 256mb --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
     expose:
       - "6379"
     read_only: true

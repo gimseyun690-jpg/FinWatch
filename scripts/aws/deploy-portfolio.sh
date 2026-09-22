@@ -80,8 +80,15 @@ ln -sfn "$release_root" "$install_root/current"
 
 install -m 0644 "$release_root/deploy/systemd/finwatch-cert-renew.service" /etc/systemd/system/
 install -m 0644 "$release_root/deploy/systemd/finwatch-cert-renew.timer" /etc/systemd/system/
+install -m 0644 "$release_root/deploy/systemd/finwatch-health-watchdog.service" /etc/systemd/system/
+install -m 0644 "$release_root/deploy/systemd/finwatch-health-watchdog.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now finwatch-cert-renew.timer
+systemctl enable --now finwatch-health-watchdog.timer
+
+# The host is intentionally small. Remove only images that are not referenced by
+# a container and have been unused for at least seven days.
+docker image prune --all --force --filter until=168h >/dev/null
 
 backend_digest="$(docker image inspect "$BACKEND_IMAGE" --format '{{index .RepoDigests 0}}')"
 frontend_digest="$(docker image inspect "$FRONTEND_IMAGE" --format '{{index .RepoDigests 0}}')"

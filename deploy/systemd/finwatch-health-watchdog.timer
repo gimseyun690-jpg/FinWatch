@@ -1,0 +1,12 @@
+[Unit]
+Description=Check FinWatch backend health every two minutes
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=2m
+AccuracySec=15s
+Persistent=true
+Unit=finwatch-health-watchdog.service
+
+[Install]
+WantedBy=timers.target

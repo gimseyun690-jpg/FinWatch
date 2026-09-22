@@ -1,0 +1,12 @@
+[Unit]
+Description=Recover an unavailable FinWatch backend container
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/finwatch/current/scripts/aws/health-watchdog.sh
+User=root
+Group=root
+PrivateTmp=true
+NoNewPrivileges=true
