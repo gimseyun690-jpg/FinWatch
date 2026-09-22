@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finwatch-shell-v12'
+const CACHE_NAME = 'finwatch-shell-v13'
 const APP_SHELL = [
   '/',
   '/offline.html',

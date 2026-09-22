@@ -85,7 +85,7 @@ public class StockDataLoadService {
         this.quoteFreshness = quoteFreshness;
         this.dailyPriceFreshness = dailyPriceFreshness;
         this.newsFreshness = newsFreshness;
-        this.executor = Executors.newFixedThreadPool(2, runnable -> {
+        this.executor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "stock-data-load");
             thread.setDaemon(true);
             return thread;

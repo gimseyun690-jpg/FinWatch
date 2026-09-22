@@ -155,25 +155,23 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
         if (needsVisiblePreparation) {
           setDataLoadMessage('실제 현재가와 가격 이력을 공급자에서 준비하고 있습니다.')
         }
-        try {
-          const resources: Array<'QUOTE' | 'DAILY_PRICES'> = stock.price == null
-            ? ['QUOTE', 'DAILY_PRICES']
-            : ['DAILY_PRICES']
-          let job = await startStockDataLoad(requestStock, resources, controller.signal)
-          for (let attempt = 0; job.status === 'SYNCING' && attempt < DATA_LOAD_POLL_ATTEMPTS; attempt += 1) {
-            await new Promise((resolve) => window.setTimeout(resolve, 500))
-            if (controller.signal.aborted) return
-            job = await getStockDataLoadJob(requestStock, job.jobId, controller.signal)
-          }
-          stock = await getStock(requestStock, controller.signal)
-          const failed = job.resources.filter((resource) => resource.status === 'FAILED')
-          if (needsVisiblePreparation) {
+        if (needsVisiblePreparation) {
+          try {
+            const resources: Array<'QUOTE' | 'DAILY_PRICES'> = stock.price == null
+              ? ['QUOTE', 'DAILY_PRICES']
+              : ['DAILY_PRICES']
+            let job = await startStockDataLoad(requestStock, resources, controller.signal)
+            for (let attempt = 0; job.status === 'SYNCING' && attempt < DATA_LOAD_POLL_ATTEMPTS; attempt += 1) {
+              await new Promise((resolve) => window.setTimeout(resolve, 500))
+              if (controller.signal.aborted) return
+              job = await getStockDataLoadJob(requestStock, job.jobId, controller.signal)
+            }
+            stock = await getStock(requestStock, controller.signal)
+            const failed = job.resources.filter((resource) => resource.status === 'FAILED')
             setDataLoadMessage(failed.length > 0
               ? '일부 공급자 데이터를 준비하지 못했습니다. 저장된 실제 데이터와 실시간 시세를 우선 표시합니다.'
               : `실제 가격 이력 ${stock.historyPoints.toLocaleString('ko-KR')}개를 준비했습니다.`)
-          }
-        } catch {
-          if (needsVisiblePreparation) {
+          } catch {
             setDataLoadMessage('가격 공급자 응답을 기다리는 중입니다. 기존 실제 데이터가 있으면 계속 표시합니다.')
           }
         }
