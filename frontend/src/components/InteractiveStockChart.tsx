@@ -70,6 +70,27 @@ const defaultChartSettings: ChartSettings = {
 
 let chartInstanceSequence = 0
 
+function chartEventMarkers(
+  events: TechnicalAnalysis['events'] | undefined,
+  candles: CandlestickData<Time>[],
+  market: string,
+  interval: PriceInterval,
+  showEvents: boolean,
+): SeriesMarker<Time>[] {
+  if (interval !== '1D' || !showEvents || !events?.length) return []
+  const availableTimes = new Set(candles.map((item) => String(item.time)))
+  return events
+    .map((event) => ({ event, time: toChartTime(event.time, market, interval) }))
+    .filter(({ time }) => availableTimes.has(String(time)))
+    .map(({ event, time }) => ({
+      time,
+      position: event.signal === 'BUY' ? 'belowBar' : 'aboveBar',
+      shape: event.signal === 'BUY' ? 'arrowUp' : event.signal === 'SELL' ? 'arrowDown' : 'circle',
+      color: event.signal === 'BUY' ? '#4be39a' : event.signal === 'SELL' ? '#ff6f7d' : '#f5bd50',
+      text: eventMarkerText(event.type),
+    }))
+}
+
 function loadChartSettings(): ChartSettings {
   try {
     const stored = window.sessionStorage.getItem('finwatch-chart-settings')
@@ -507,6 +528,7 @@ export function InteractiveStockChart({
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const eventMarkersRef = useRef<{ setMarkers: (markers: SeriesMarker<Time>[]) => void } | null>(null)
   const seriesRefs = useRef<ChartSeriesRefs>(emptySeriesRefs())
   const projectionFrameRef = useRef<number | null>(null)
   const dragFrameRef = useRef<number | null>(null)
@@ -605,6 +627,8 @@ export function InteractiveStockChart({
     }
   }, [interval, items, market])
   const chartDataRef = useRef(chartData)
+  const eventsRef = useRef(events)
+  eventsRef.current = events
   const renderedChartDataRef = useRef<typeof chartData | null>(null)
 
   useEffect(() => {
@@ -731,20 +755,10 @@ export function InteractiveStockChart({
     })
     createdSeries.candle = candleSeries
     candleSeries.setData(initialData.candles)
-    if (interval === '1D' && showEvents && events && events.length > 0) {
-      const availableTimes = new Set(initialData.candles.map((item) => String(item.time)))
-      const markers: SeriesMarker<Time>[] = events
-        .map((event) => ({ event, time: toChartTime(event.time, market, interval) }))
-        .filter(({ time }) => availableTimes.has(String(time)))
-        .map(({ event, time }) => ({
-          time,
-          position: event.signal === 'BUY' ? 'belowBar' : 'aboveBar',
-          shape: event.signal === 'BUY' ? 'arrowUp' : event.signal === 'SELL' ? 'arrowDown' : 'circle',
-          color: event.signal === 'BUY' ? '#4be39a' : event.signal === 'SELL' ? '#ff6f7d' : '#f5bd50',
-          text: eventMarkerText(event.type),
-        }))
-      createSeriesMarkers(candleSeries, markers)
-    }
+    eventMarkersRef.current = createSeriesMarkers(
+      candleSeries,
+      chartEventMarkers(eventsRef.current, initialData.candles, market, interval, showEvents),
+    )
 
     if (showMa5) {
       const series = chart.addSeries(LineSeries, {
@@ -935,13 +949,13 @@ export function InteractiveStockChart({
       chart.remove()
       chartRef.current = null
       candleSeriesRef.current = null
+      eventMarkersRef.current = null
       seriesRefs.current = emptySeriesRefs()
       renderedChartDataRef.current = null
       setHoverData(null)
     }
   }, [
     currency,
-    events,
     interval,
     market,
     oscillator,
@@ -954,6 +968,10 @@ export function InteractiveStockChart({
     showVolume,
     showVolumeMa20,
   ])
+
+  useEffect(() => {
+    eventMarkersRef.current?.setMarkers(chartEventMarkers(events, chartData.candles, market, interval, showEvents))
+  }, [chartData, events, interval, market, showEvents])
 
   useEffect(() => {
     if (!chartRef.current || !seriesRefs.current.candle) return

@@ -86,7 +86,7 @@ public class TechnicalExplanationSnapshotFactory {
         }
         TechnicalAnalysis analysis;
         try {
-            analysis = stockQueryService.getTechnicalAnalysis(stock.getMarket(), symbol);
+            analysis = stockQueryService.getTechnicalAnalysisFromDailyHistory(stock.getMarket(), symbol);
         } catch (RuntimeException exception) {
             throw new TechnicalExplanationException(
                     HttpStatus.UNPROCESSABLE_ENTITY,

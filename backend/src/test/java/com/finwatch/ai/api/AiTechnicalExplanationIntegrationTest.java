@@ -33,7 +33,10 @@ import com.finwatch.realtime.RealtimeQuoteHub;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-@SpringBootTest(properties = "app.ai.provider=mock")
+@SpringBootTest(properties = {
+        "app.ai.provider=mock",
+        "app.ai.technical-allowed-prompt-versions=technical-tick-regression-v1"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("demo")
 class AiTechnicalExplanationIntegrationTest {
@@ -108,7 +111,7 @@ class AiTechnicalExplanationIntegrationTest {
     @Test
     void intradayTicksDoNotInvalidateDailyTechnicalExplanation() throws Exception {
         String body = """
-                {"market":"KRX","symbol":"000660","interval":"1D"}
+                {"market":"KRX","symbol":"000660","interval":"1D","promptVersion":"technical-tick-regression-v1"}
                 """;
         JsonNode first = request(body);
         realtimeQuoteHub.publish(new LiveQuote(

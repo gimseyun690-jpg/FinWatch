@@ -22,6 +22,8 @@ export function DisclosurePanel({ stock, onUsageRecorded, watchlistMode = false 
   const context = useOutletContext<AppRouteContext | null>()
   const showAdminDetails = context?.showAdminDetails ?? true
   const stockKey = stock ? `${stock.market.toUpperCase()}:${stock.symbol.toUpperCase()}` : 'WATCHLIST'
+  const stockMarket = stock?.market
+  const stockSymbol = stock?.symbol
   const [items, setItems] = useState<Disclosure[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -70,11 +72,11 @@ export function DisclosurePanel({ stock, onUsageRecorded, watchlistMode = false 
       const merged = results.flat().sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
       if (!signal?.aborted) setItems(merged)
     } else {
-      if (!stock) return
-      const disclosures = await getDisclosures(stock.market, stock.symbol, signal)
+      if (!stockMarket || !stockSymbol) return
+      const disclosures = await getDisclosures(stockMarket, stockSymbol, signal)
       if (!signal?.aborted && currentStockKeyRef.current === requestedStockKey) setItems(disclosures)
     }
-  }, [stock, stockKey, watchlistMode])
+  }, [stockMarket, stockSymbol, stockKey, watchlistMode])
 
   useEffect(() => {
     currentStockKeyRef.current = stockKey

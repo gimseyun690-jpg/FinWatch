@@ -156,17 +156,23 @@ public class StockQueryService {
     }
 
     public TechnicalAnalysis getTechnicalAnalysis(String symbol) {
-        return getTechnicalAnalysis(findStock(symbol));
+        return getTechnicalAnalysis(findStock(symbol), true);
     }
 
     public TechnicalAnalysis getTechnicalAnalysis(String market, String symbol) {
-        return getTechnicalAnalysis(findStock(market, symbol));
+        return getTechnicalAnalysis(findStock(market, symbol), true);
     }
 
-    private TechnicalAnalysis getTechnicalAnalysis(Stock stock) {
+    public TechnicalAnalysis getTechnicalAnalysisFromDailyHistory(String market, String symbol) {
+        return getTechnicalAnalysis(findStock(market, symbol), false);
+    }
+
+    private TechnicalAnalysis getTechnicalAnalysis(Stock stock, boolean includeLiveQuote) {
         List<MarketPrice> dbPrices = marketPriceRepository
                 .findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), DAILY_INTERVAL);
-        var liveQuote = realtimeQuoteHub.find(stock.getMarket(), stock.getSymbol());
+        var liveQuote = includeLiveQuote
+                ? realtimeQuoteHub.find(stock.getMarket(), stock.getSymbol())
+                : java.util.Optional.<com.finwatch.realtime.LiveQuote>empty();
         List<MarketPrice> extendedPrices = dbPrices;
         if (liveQuote.isPresent() && liveQuote.get().price() != null) {
             var quote = liveQuote.get();

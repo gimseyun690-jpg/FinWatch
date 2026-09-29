@@ -111,7 +111,11 @@ function App() {
 
   useEffect(() => {
     const routeStock = stockFromPath(location.pathname)
-    if (routeStock) setSelectedStock(routeStock)
+    if (routeStock) setSelectedStock((current) => (
+      current.market === routeStock.market && current.symbol === routeStock.symbol
+        ? current
+        : routeStock
+    ))
   }, [location.pathname])
 
   useEffect(() => {
