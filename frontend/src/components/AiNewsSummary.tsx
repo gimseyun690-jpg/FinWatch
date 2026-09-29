@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router'
 import type { AppRouteContext } from '../app/context'
-import { getStockNews, summarizeNews } from '../api/news'
+import { getStockNewsWithRefresh, summarizeNews } from '../api/news'
 import { getWatchlist } from '../api/watchlists'
 import type { AiSummary, NewsArticle } from '../types/news'
 import { DataStatusBadge } from './DataStatusBadge'
@@ -77,15 +77,17 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
     if (watchlistMode) {
       getWatchlist(controller.signal)
         .then(async (watchlistItems) => {
+          let failed = 0
           const results = await Promise.all(
             watchlistItems.map(async (item) => {
               try {
-                const list = await getStockNews(item.market, item.symbol, controller.signal)
+                const list = await getStockNewsWithRefresh(item.market, item.symbol, controller.signal)
                 return list.map(newsItem => ({
                   ...newsItem,
                   stockName: item.name
                 }))
               } catch {
+                failed += 1
                 return []
               }
             })
@@ -94,6 +96,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
           if (!isCurrentRequest(controller, newsRequestRef.current) || newsRequestIdRef.current !== requestId) return
           setNews(merged)
           setSelectedId(merged[0]?.id ?? null)
+          if (failed > 0) setNewsError(`${failed}개 종목의 뉴스를 가져오지 못했습니다. 표시된 뉴스는 유지하며 다시 시도할 수 있습니다.`)
         })
         .catch(() => {
           if (controller.signal.aborted || newsRequestIdRef.current !== requestId) return
@@ -106,7 +109,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
           }
         })
     } else {
-      getStockNews(market, symbol, controller.signal)
+      getStockNewsWithRefresh(market, symbol, controller.signal)
         .then((items) => {
           if (!isCurrentRequest(controller, newsRequestRef.current) || currentStockKeyRef.current !== stockKey || newsRequestIdRef.current !== requestId) return
           setNews(items)
@@ -205,7 +208,7 @@ export function AiNewsSummary({ market = '', symbol = '', onUsageRecorded, watch
               </button>
             </div>
           )}
-          {!loadingNews && !newsError && news.length === 0 && <p>저장된 종목 뉴스가 없습니다.</p>}
+      {!loadingNews && !newsError && news.length === 0 && <p>현재 제공되는 종목 뉴스가 없습니다.</p>}
           {news.map((article) => {
             const articleStockName = (article as any).stockName || symbolNameMap[article.symbol]
             const isSelected = selectedId === article.id

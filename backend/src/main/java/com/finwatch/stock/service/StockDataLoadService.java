@@ -85,7 +85,7 @@ public class StockDataLoadService {
         this.quoteFreshness = quoteFreshness;
         this.dailyPriceFreshness = dailyPriceFreshness;
         this.newsFreshness = newsFreshness;
-        this.executor = Executors.newSingleThreadExecutor(runnable -> {
+        this.executor = Executors.newFixedThreadPool(2, runnable -> {
             Thread thread = new Thread(runnable, "stock-data-load");
             thread.setDaemon(true);
             return thread;
@@ -185,17 +185,19 @@ public class StockDataLoadService {
                     && !results.containsKey(DataLoadResource.DAILY_PRICES);
             boolean needsNews = job.resources.contains(DataLoadResource.NEWS)
                     && !results.containsKey(DataLoadResource.NEWS);
-            if (needsPrices || needsNews) {
+            if (needsPrices) {
                 var sync = externalDataSyncService.syncStock(job.stock.getMarket(), job.stock.getSymbol());
                 var stockResult = sync.stocks().getFirst();
-                if (needsPrices) {
-                    results.put(DataLoadResource.DAILY_PRICES, providerResult(
-                            job.stock, DataLoadResource.DAILY_PRICES, stockResult.marketPrices()));
-                }
+                results.put(DataLoadResource.DAILY_PRICES, providerResult(
+                        job.stock, DataLoadResource.DAILY_PRICES, stockResult.marketPrices()));
                 if (needsNews) {
                     results.put(DataLoadResource.NEWS, providerResult(
                             job.stock, DataLoadResource.NEWS, stockResult.news()));
                 }
+            } else if (needsNews) {
+                results.put(DataLoadResource.NEWS, providerResult(
+                        job.stock, DataLoadResource.NEWS,
+                        externalDataSyncService.syncNewsOnly(job.stock)));
             }
             if (job.resources.contains(DataLoadResource.DISCLOSURES)) {
                 results.put(DataLoadResource.DISCLOSURES, providerResult(

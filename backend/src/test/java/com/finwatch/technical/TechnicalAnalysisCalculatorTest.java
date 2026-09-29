@@ -45,14 +45,15 @@ class TechnicalAnalysisCalculatorTest {
     }
 
     @Test
-    void rejectsInsufficientHistory() {
+    void padsShortHistoryButRejectsEmptyHistory() {
         List<BigDecimal> closes = IntStream.range(0, 59)
                 .mapToObj(BigDecimal::valueOf)
                 .toList();
 
-        assertThatThrownBy(() -> calculator.calculate(closes))
+        assertThat(calculator.calculate(closes).ma60()).isNotNull();
+        assertThatThrownBy(() -> calculator.calculate(List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("최소 60개");
+                .hasMessageContaining("최소 1개");
     }
 
     @Test

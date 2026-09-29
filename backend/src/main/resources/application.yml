@@ -166,7 +166,7 @@ app:
       model: ${GEMINI_MODEL:gemini-3.1-flash-lite}
       base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
       connect-timeout: ${GEMINI_CONNECT_TIMEOUT:3s}
-      read-timeout: ${GEMINI_READ_TIMEOUT:15s}
+      read-timeout: ${GEMINI_READ_TIMEOUT:30s}
   news-content:
     user-agent: ${ARTICLE_USER_AGENT:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36}
     connect-timeout: ${ARTICLE_CONNECT_TIMEOUT:2s}

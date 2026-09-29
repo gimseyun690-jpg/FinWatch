@@ -32,7 +32,8 @@ class FxRateApiIntegrationTest {
 
         mockMvc.perform(get("/api/v1/market/fx-rates/USD/KRW/history?period=1M&interval=1D").with(jwt()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items.length()").value(3));
+                // Fixed July demo candles must not be presented as a current-month chart.
+                .andExpect(jsonPath("$.data.items.length()").value(0));
 
         mockMvc.perform(get("/api/v1/market/fx-rates/pairs").with(jwt()))
                 .andExpect(status().isOk())

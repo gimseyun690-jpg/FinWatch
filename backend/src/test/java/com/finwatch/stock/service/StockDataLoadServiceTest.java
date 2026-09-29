@@ -121,6 +121,25 @@ class StockDataLoadServiceTest {
         verify(disclosureSyncService).sync(stock);
     }
 
+    @Test
+    void newsOnlyLoadDoesNotFetchFiveYearsOfPrices() throws Exception {
+        service = service("LIVE");
+        when(externalDataSyncService.syncNewsOnly(stock))
+                .thenReturn(ProviderSyncResult.success("NAVER", 2));
+
+        var dispatch = service.start("KRX", "005930", Set.of(DataLoadResource.NEWS));
+        var completed = awaitCompleted(dispatch.response().jobId());
+
+        assertThat(completed.status()).isEqualTo("READY");
+        assertThat(completed.resources()).singleElement().satisfies(resource -> {
+            assertThat(resource.resource()).isEqualTo(DataLoadResource.NEWS);
+            assertThat(resource.imported()).isEqualTo(2);
+        });
+        verify(externalDataSyncService).syncNewsOnly(stock);
+        org.mockito.Mockito.verify(externalDataSyncService, org.mockito.Mockito.never())
+                .syncStock("KRX", "005930");
+    }
+
     private StockDataLoadService service(String mode) {
         return new StockDataLoadService(
                 mode,

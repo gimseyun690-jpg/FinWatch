@@ -39,6 +39,10 @@ const availabilityLabel: Record<StockCatalogItem['dataAvailability'], string> = 
   UNAVAILABLE: '상세 미지원',
 }
 
+// The dashboard route unmounts when a stock detail opens. Keep the last successful
+// list per account so returning to it does not turn every card into a skeleton.
+const watchlistCache = new Map<number, WatchlistItem[]>()
+
 export function WatchlistPanel({
   selectedStock,
   editorOpen,
@@ -49,10 +53,11 @@ export function WatchlistPanel({
 }: Props) {
   const context = useOutletContext<AppRouteContext | null>()
   const showAdminDetails = context?.showAdminDetails ?? true
-  const [items, setItems] = useState<WatchlistItem[]>([])
+  const userId = context?.session.user.id
+  const [items, setItems] = useState<WatchlistItem[]>(() => userId == null ? [] : watchlistCache.get(userId) ?? [])
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<StockCatalogItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => userId == null || !watchlistCache.has(userId))
   const [searching, setSearching] = useState(false)
   const [mutatingKey, setMutatingKey] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
@@ -68,10 +73,17 @@ export function WatchlistPanel({
 
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
+    const cached = userId == null ? undefined : watchlistCache.get(userId)
+    if (cached) {
+      setItems(cached)
+      onItemsChangeRef.current(cached)
+    }
+    setLoading(!cached)
     setErrorMessage('')
     getWatchlist(controller.signal)
       .then((watchlist) => {
+        if (controller.signal.aborted) return
+        if (userId != null) watchlistCache.set(userId, watchlist)
         setItems(watchlist)
         onItemsChangeRef.current(watchlist)
       })
@@ -83,7 +95,7 @@ export function WatchlistPanel({
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [loadAttempt])
+  }, [loadAttempt, userId])
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -115,6 +127,7 @@ export function WatchlistPanel({
   }, [editorOpen, query])
 
   function updateItems(next: WatchlistItem[]) {
+    if (userId != null) watchlistCache.set(userId, next)
     setItems(next)
     onItemsChange(next)
   }
@@ -227,7 +240,7 @@ export function WatchlistPanel({
 
       <p className="sr-only" role="status" aria-live="polite">{feedback}</p>
       {errorMessage && items.length > 0 && <p className="watchlist-error" role="alert">{errorMessage} 기존 관심종목은 그대로 표시합니다.</p>}
-      {loading ? (
+      {loading && items.length === 0 ? (
         <div className="stock-grid watchlist-skeleton-grid" role="status" aria-busy="true" aria-label="관심종목을 불러오는 중">
           {[0, 1, 2, 3].map((item) => <span className="card watchlist-card-skeleton" key={item} aria-hidden="true" />)}
         </div>

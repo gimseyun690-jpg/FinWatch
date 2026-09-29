@@ -786,7 +786,7 @@ test('US extended-hours quotes and one-minute candles update immediately without
   const globalSearch = page.getByPlaceholder('종목명 또는 심볼 검색')
   await globalSearch.fill('AAPL')
   await page.getByRole('option', { name: /AAPL/ }).click()
-  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
+  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL\/technical$/)
   await expect(page.locator('.stock-trust-meta .market-session-badge')).toHaveText('프리마켓')
 
   await page.getByRole('button', { name: '1분봉', exact: true }).click()
@@ -888,6 +888,26 @@ test('dashboard live ticks keep the watchlist mounted without refetching it', as
   expect(await originalGrid!.evaluate((element) => (
     element.isConnected && element === document.querySelector('.stock-grid')
   ))).toBe(true)
+})
+
+test('returning from a stock detail keeps cached watchlist cards during a slow refresh', async ({ page }) => {
+  await login(page)
+  await expect(page.locator('.stock-card')).toHaveCount(1)
+
+  await page.locator('.stock-card-main').first().click()
+  await expect(page).toHaveURL(/\/stocks\/KRX\/000660/)
+
+  let releaseRefresh!: () => void
+  const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve })
+  await page.route('**/api/v1/watchlists', async (route) => {
+    await refreshGate
+    await route.fallback()
+  })
+  await page.getByRole('link', { name: 'FinWatch 대시보드' }).click()
+  await expect(page).toHaveURL(/\/dashboard$/)
+  await expect(page.locator('.stock-card')).toHaveCount(1)
+  await expect(page.locator('.watchlist-skeleton-grid')).toHaveCount(0)
+  releaseRefresh()
 })
 
 test('realtime frames with the same symbol in another market never replace the selected instrument', async ({ page }) => {
@@ -1176,6 +1196,7 @@ test('global search selects a canonical market and restores every detail context
 
 test('watchlist search adds a catalog stock beyond the four demo fixtures', async ({ page }) => {
   await login(page)
+  await expect(page.locator('.stock-card')).toHaveCount(1)
 
   await page.getByRole('button', { name: /관심종목 추가/ }).click()
   const search = page.getByPlaceholder('예: 삼성전자, NAVER, Apple, AAPL')
@@ -1382,7 +1403,7 @@ test('async state matrix distinguishes loading, empty, partial and stale data', 
     })
   })
   await page.goto('/news')
-  await expect(page.getByText('저장된 종목 뉴스가 없습니다.')).toBeVisible()
+  await expect(page.getByText('현재 제공되는 종목 뉴스가 없습니다.')).toBeVisible()
 })
 
 test('captures reproducible UI polish evidence for desktop and 390px mobile', async ({ page }) => {

@@ -104,13 +104,16 @@ public class ExternalDataSyncService {
     }
 
     @Transactional
-    public void syncNewsOnly(Stock stock) {
-        if (dataMode == DataMode.DEMO) return;
-        if ("KRX".equalsIgnoreCase(stock.getMarket())) {
-            syncNaverNews(stock);
-        } else if (isUsMarket(stock.getMarket())) {
-            syncFinnhubNews(stock);
+    public ProviderSyncResult syncNewsOnly(Stock stock) {
+        if (dataMode == DataMode.DEMO) {
+            return ProviderSyncResult.skipped("DEMO", "데모 모드에서는 저장된 뉴스를 사용합니다.");
         }
+        if ("KRX".equalsIgnoreCase(stock.getMarket())) {
+            return syncNaverNews(stock);
+        } else if (isUsMarket(stock.getMarket())) {
+            return syncFinnhubNews(stock);
+        }
+        return ProviderSyncResult.skipped("UNSUPPORTED", "지원하지 않는 시장입니다.");
     }
 
     public com.finwatch.data.provider.ProviderResponses.Quote fetchLiveQuote(Stock stock) {

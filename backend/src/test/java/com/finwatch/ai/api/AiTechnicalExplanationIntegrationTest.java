@@ -27,6 +27,8 @@ import com.finwatch.stock.domain.MarketPrice;
 import com.finwatch.stock.domain.Stock;
 import com.finwatch.stock.repository.MarketPriceRepository;
 import com.finwatch.stock.repository.StockRepository;
+import com.finwatch.realtime.LiveQuote;
+import com.finwatch.realtime.RealtimeQuoteHub;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -53,6 +55,9 @@ class AiTechnicalExplanationIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private RealtimeQuoteHub realtimeQuoteHub;
 
     @BeforeEach
     void reset() {
@@ -98,6 +103,22 @@ class AiTechnicalExplanationIntegrationTest {
         assertThat(usageLogRepository.count()).isEqualTo(2);
         assertThat(usageLogRepository.findAll())
                 .allMatch(log -> "TECHNICAL_EXPLANATION".equals(log.getFeatureType()));
+    }
+
+    @Test
+    void intradayTicksDoNotInvalidateDailyTechnicalExplanation() throws Exception {
+        String body = """
+                {"market":"KRX","symbol":"000660","interval":"1D"}
+                """;
+        JsonNode first = request(body);
+        realtimeQuoteHub.publish(new LiveQuote(
+                "KRX", "000660", new BigDecimal("999999"), BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ONE, "KRW", Instant.now(), "KIS_WS", "LIVE"));
+
+        JsonNode afterTick = request(body);
+        assertThat(afterTick.path("inputHash").asText()).isEqualTo(first.path("inputHash").asText());
+        assertThat(afterTick.path("cacheHit").asBoolean()).isTrue();
+        assertThat(explanationRepository.count()).isEqualTo(1);
     }
 
     @Test

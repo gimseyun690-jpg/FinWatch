@@ -39,7 +39,7 @@ public class GeminiAiProvider implements AiProvider {
             @Value("${app.ai.gemini.model}") String model,
             @Value("${app.ai.gemini.base-url}") String baseUrl,
             @Value("${app.ai.gemini.connect-timeout:3s}") Duration connectTimeout,
-            @Value("${app.ai.gemini.read-timeout:15s}") Duration readTimeout) {
+            @Value("${app.ai.gemini.read-timeout:30s}") Duration readTimeout) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("AI_PROVIDER=gemini 사용 시 GEMINI_API_KEY가 필요합니다.");
         }
@@ -452,7 +452,7 @@ public class GeminiAiProvider implements AiProvider {
                 
                 [작성 지침]
                 1. 추세, 모멘텀, 변동성, 거래량을 전문적이고 입체적인 애널리스트 톤앤매너로 서술형 문장으로 분석하세요. (예: "~흐름을 보이고 있습니다", "~로 분석됩니다").
-                2. 지표 수치(이동평균, 현재가 등)를 언급할 때는 DATA의 displayValue에 정확히 나타나는 형식 그대로 사용하세요. 반올림하거나 변경하지 마세요.
+                2. summary, 각 explanation, signal text, riskNotes, dataLimitations에는 숫자·날짜·비율·금액을 쓰지 마세요. 수치는 응답에 별도로 표시되는 서버 근거 목록에서 확인합니다. 지표명은 숫자 없이 서술하세요.
                 3. 단순히 제공된 원천 데이터를 한 줄로 기계적으로 나열하여 복사하는 문장은 작성하지 마십시오. 각 기술 지표가 유기적으로 가격 움직임을 지지하는지 혹은 충돌하는지(예: 이평선은 데드크로스이나 RSI는 과매도 상태 등)를 설득력 있게 설명하세요.
 
                 프롬프트 버전: %s
@@ -491,7 +491,7 @@ public class GeminiAiProvider implements AiProvider {
                         "responseMimeType", "application/json",
                         "responseSchema", schema,
                         "temperature", 0.15,
-                        "maxOutputTokens", 1000));
+                        "maxOutputTokens", 1500));
     }
 
     private Map<String, Object> dailyBriefingRequestBody(DailyChangeBriefingInput input, String promptVersion) {

@@ -151,6 +151,10 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
       .then(async (initialStock) => {
         if (controller.signal.aborted) return
         let stock = initialStock
+        // Render the last verified stock/chart immediately. A slow provider backfill
+        // must not leave the entire detail page behind a 40-second skeleton.
+        setDetail({ stock, technical: null, source: 'API' })
+        setDetailLoading(false)
         const needsVisiblePreparation = !stock.historyAvailable || stock.historySource === 'DEMO'
         if (needsVisiblePreparation) {
           setDataLoadMessage('실제 현재가와 가격 이력을 공급자에서 준비하고 있습니다.')
@@ -233,7 +237,9 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
       })
 
     return () => controller.abort()
-  }, [detail?.stock.dataAvailability, interval, period, priceAttempt, priceRequestKey, requestStock])
+  }, [detail?.stock.dataAvailability, detail?.stock.historyAsOf, detail?.stock.historyPoints,
+    detail?.stock.historySource,
+    interval, period, priceAttempt, priceRequestKey, requestStock])
 
   if (detailLoading) {
     return (

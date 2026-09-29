@@ -5,7 +5,6 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.finwatch.ai.domain.AiAnalysis;
 import com.finwatch.ai.repository.AiAnalysisRepository;
 import com.finwatch.news.domain.NewsArticle;
 import com.finwatch.news.dto.NewsResponse;
@@ -30,9 +29,6 @@ public class NewsQueryService {
     public List<NewsResponse> getNews(String symbol) {
         List<NewsResponse> responses = toResponses(newsArticleRepository
                 .findAllByStockSymbolAndContentKindOrderByPublishedAtDesc(symbol, "NEWS"));
-        if (responses.isEmpty()) {
-            return getFallbackNews();
-        }
         return responses;
     }
 
@@ -42,16 +38,7 @@ public class NewsQueryService {
                         market.trim().toUpperCase(java.util.Locale.ROOT),
                         symbol.trim().toUpperCase(java.util.Locale.ROOT),
                         "NEWS"));
-        if (responses.isEmpty()) {
-            return getFallbackNews();
-        }
         return responses;
-    }
-
-    private List<NewsResponse> getFallbackNews() {
-        List<AiAnalysis> latestAnalyses = aiAnalysisRepository.findTop4ByFeatureTypeOrderByGeneratedAtDesc("NEWS_SUMMARY");
-        List<NewsArticle> articles = latestAnalyses.stream().map(AiAnalysis::getNews).toList();
-        return toResponses(articles);
     }
 
     public NewsDetailResponse getNewsDetail(Long newsId) {
