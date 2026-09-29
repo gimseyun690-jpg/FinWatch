@@ -116,6 +116,16 @@ public class ExternalDataSyncService {
         return ProviderSyncResult.skipped("UNSUPPORTED", "지원하지 않는 시장입니다.");
     }
 
+    @Transactional
+    public ProviderSyncResult syncPricesOnly(Stock stock) {
+        if (dataMode == DataMode.DEMO) {
+            return ProviderSyncResult.skipped("DEMO", "데모 모드에서는 저장된 가격을 사용합니다.");
+        }
+        if ("KRX".equalsIgnoreCase(stock.getMarket())) return syncKisPrices(stock);
+        if (isUsMarket(stock.getMarket())) return syncUsPrices(stock);
+        return ProviderSyncResult.skipped("UNSUPPORTED", "지원하지 않는 시장입니다.");
+    }
+
     public com.finwatch.data.provider.ProviderResponses.Quote fetchLiveQuote(Stock stock) {
         if (dataMode == DataMode.DEMO) return null;
         if ("KRX".equalsIgnoreCase(stock.getMarket())) {

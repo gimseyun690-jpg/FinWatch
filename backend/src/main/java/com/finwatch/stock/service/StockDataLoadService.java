@@ -186,15 +186,11 @@ public class StockDataLoadService {
             boolean needsNews = job.resources.contains(DataLoadResource.NEWS)
                     && !results.containsKey(DataLoadResource.NEWS);
             if (needsPrices) {
-                var sync = externalDataSyncService.syncStock(job.stock.getMarket(), job.stock.getSymbol());
-                var stockResult = sync.stocks().getFirst();
                 results.put(DataLoadResource.DAILY_PRICES, providerResult(
-                        job.stock, DataLoadResource.DAILY_PRICES, stockResult.marketPrices()));
-                if (needsNews) {
-                    results.put(DataLoadResource.NEWS, providerResult(
-                            job.stock, DataLoadResource.NEWS, stockResult.news()));
-                }
-            } else if (needsNews) {
+                        job.stock, DataLoadResource.DAILY_PRICES,
+                        externalDataSyncService.syncPricesOnly(job.stock)));
+            }
+            if (needsNews) {
                 results.put(DataLoadResource.NEWS, providerResult(
                         job.stock, DataLoadResource.NEWS,
                         externalDataSyncService.syncNewsOnly(job.stock)));

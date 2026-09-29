@@ -7,8 +7,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -20,9 +18,7 @@ import org.junit.jupiter.api.Test;
 
 import com.finwatch.data.provider.FinnhubMarketDataClient;
 import com.finwatch.data.provider.KisMarketDataClient;
-import com.finwatch.data.sync.DataSyncResponses.DataSyncResponse;
 import com.finwatch.data.sync.DataSyncResponses.ProviderSyncResult;
-import com.finwatch.data.sync.DataSyncResponses.StockSyncResult;
 import com.finwatch.data.sync.ExternalDataSyncService;
 import com.finwatch.disclosure.service.DisclosureSyncService;
 import com.finwatch.news.repository.NewsArticleRepository;
@@ -72,10 +68,10 @@ class StockDataLoadServiceTest {
     void concurrentRequestsReuseOneInFlightProviderCallAndJobId() throws Exception {
         CountDownLatch providerEntered = new CountDownLatch(1);
         CountDownLatch releaseProvider = new CountDownLatch(1);
-        when(externalDataSyncService.syncStock("KRX", "005930")).thenAnswer(invocation -> {
+        when(externalDataSyncService.syncPricesOnly(stock)).thenAnswer(invocation -> {
             providerEntered.countDown();
             releaseProvider.await(3, TimeUnit.SECONDS);
-            return syncResult(ProviderSyncResult.success("KIS", 3), ProviderSyncResult.success("NAVER", 0));
+            return ProviderSyncResult.success("KIS", 3);
         });
         service = service("LIVE");
 
@@ -88,7 +84,7 @@ class StockDataLoadServiceTest {
         releaseProvider.countDown();
         var completed = awaitCompleted(first.response().jobId());
         assertThat(completed.status()).isEqualTo("READY");
-        verify(externalDataSyncService).syncStock("KRX", "005930");
+        verify(externalDataSyncService).syncPricesOnly(stock);
     }
 
     @Test
@@ -154,13 +150,6 @@ class StockDataLoadServiceTest {
                 Duration.ofSeconds(15),
                 Duration.ofHours(12),
                 Duration.ofMinutes(15));
-    }
-
-    private DataSyncResponse syncResult(ProviderSyncResult prices, ProviderSyncResult news) {
-        Instant now = Instant.now();
-        return new DataSyncResponse(
-                "LIVE", now, now, prices.imported(), news.imported(),
-                List.of(new StockSyncResult("005930", "KRX", prices, news)));
     }
 
     private com.finwatch.stock.dto.StockDataLoadResponses.DataLoadResponse awaitCompleted(String jobId)
