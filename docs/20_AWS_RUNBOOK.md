@@ -235,3 +235,27 @@ DB 스키마는 이미 적용될 수 있으므로 app rollback과 DB restore를 
 - 운영·장애·비용 책임자와 공개 종료일 확정
 - 배포 과정에서 생성된 수동 RDS snapshot, ECR image, S3 release의 보존 주기와 비용 점검
 - GitHub Actions의 Node.js 20 기반 action 경고 해소를 위한 후속 버전 점검
+
+## 13. 2026-09-30 메모리 장애 원인과 인수 기준
+
+운영 DB 진단에서 일봉 9,881,301개와 가격 이력이 있는 종목 10,160개를 확인했다. 대시보드의 포트폴리오·알림 종목 선택기가 각각 `/api/v1/stocks`를 호출했으며, 기존 구현은 전체 종목의 일봉 전체를 한 read-only JPA transaction으로 읽었다. 이 과정에서 객체가 대량으로 유지돼 `Terminating due to java.lang.OutOfMemoryError: Java heap space`로 JVM이 종료됐다. JVM 자체 종료이므로 Docker `OOMKilled=false`만 보고 메모리 장애가 아니라고 판단해서는 안 된다. 같은 시각 Nginx의 대시보드 API 연결 reset/refused도 확인했다.
+
+수정 사항:
+
+- 종목 선택기 목록은 기본 50개, 최대 200개로 DB에서 페이지 처리한다. 전체 종목 검색은 기존 `/stocks/search`로 가능하며 주가 이력은 삭제하지 않는다.
+- 현재가·전일 대비 조회는 최근 일봉 2개만 읽고, 이력 존재 여부는 count/latest 조회로 확인한다.
+- EMA 재귀 계산의 중간 소수 자릿수를 12자리로 제한한다. 128MB heap에서 일봉 10,000개 계산을 검증했다.
+- 같은 시장 날짜의 현재가는 기존 일봉을 갱신한 가상 봉으로 계산하고, 새로운 하루인 것처럼 중복 추가하지 않는다. AI 근거는 저장된 일봉 스냅샷을 사용한다.
+- readiness는 DB·Redis 상태를 검사하지만, watchdog은 liveness도 실패할 때만 재시작한다. 일시적인 의존 서비스 장애만으로 살아 있는 backend를 재시작하지 않는다.
+- Nginx upstream은 Docker DNS를 재조회해 backend 교체 후 이전 IP에 고정되지 않도록 한다.
+- 기사 HTML은 최대 2MiB로 제한하며, 크기 초과 응답도 입력 스트림을 닫는다. SSRF·redirect·콘텐츠 형식·AI 입력 길이 검증은 유지한다.
+
+배포 후 인수 기준:
+
+1. backend/frontend/Redis 모두 healthy이고 backend liveness/readiness가 UP이어야 한다.
+2. 실제 로그인 계정에서 대시보드 → 국내·미국 종목 차트 → 뉴스 → 대시보드로 이동한다. 돌아온 뒤 관심종목을 잃거나 전체 목록이 무기한 로딩되지 않아야 한다.
+3. Gemini 기술 해설과 수집 가능한 원문의 뉴스 요약이 표시돼야 한다. 출처 접근 제한·본문 부족·공급자 호출 한도는 서버 전체 장애와 구분한다.
+4. 실제 요청 후 backend의 RestartCount와 시작 시각을 확인하고, 해당 배포 이후 OOM 로그가 없는지 확인한다. CloudWatch의 `ERROR` 필터만으로 JVM 종료를 검사하지 않는다.
+5. 배포 workflow의 외부 smoke와 전체 CI가 모두 성공해야 한다.
+
+현재 배포 절차는 Redis도 교체하므로 배포 후 기존 웹 로그인 세션이 초기화될 수 있다. 이는 일반 화면 이동 중 세션 만료나 backend 장애와 구분한다. 면접 시연 전 로그인, 차트, 뉴스, AI 해설을 미리 확인하고 검증된 release를 유지한다.
