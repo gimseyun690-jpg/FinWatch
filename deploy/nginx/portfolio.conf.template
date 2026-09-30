@@ -4,7 +4,9 @@ map $http_upgrade $connection_upgrade {
 }
 
 upstream finwatch_backend {
-    server backend:8080;
+    zone finwatch_backend 64k;
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    server backend:8080 resolve;
     keepalive 32;
 }
 

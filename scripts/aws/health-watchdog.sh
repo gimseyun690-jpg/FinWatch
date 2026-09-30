@@ -19,6 +19,7 @@ backend_container="$(docker ps -a \
   --format '{{.ID}}' | head -n 1)"
 
 if [[ -z "$backend_container" ]]; then
+  echo 'FinWatch backend container is missing; recreating it.'
   docker compose --env-file "$compose_env" -f "$compose_file" up -d backend
   exit 0
 fi
@@ -27,7 +28,14 @@ running="$(docker inspect --format '{{.State.Running}}' "$backend_container")"
 health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' "$backend_container")"
 
 if [[ "$running" != true ]]; then
+  echo 'FinWatch backend container is stopped; starting it.'
   docker compose --env-file "$compose_env" -f "$compose_file" up -d backend
 elif [[ "$health" == unhealthy ]]; then
-  docker restart "$backend_container" >/dev/null
+  if docker exec "$backend_container" curl --fail --silent --max-time 10 \
+    http://127.0.0.1:8080/actuator/health/liveness >/dev/null; then
+    echo 'FinWatch backend dependencies are not ready, but the JVM is live; preserving the process.'
+  else
+    echo 'FinWatch backend liveness probe also failed; restarting it.'
+    docker restart "$backend_container" >/dev/null
+  fi
 fi

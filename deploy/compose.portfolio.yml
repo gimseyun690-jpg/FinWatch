@@ -63,11 +63,13 @@ services:
       - ALL
     stop_grace_period: 40s
     healthcheck:
+      # Keep deployment gating dependent on DB and Redis. The watchdog checks
+      # liveness separately before restarting an unhealthy container.
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/actuator/health/readiness"]
       interval: 15s
-      timeout: 3s
-      retries: 5
-      start_period: 60s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
     logging:
       driver: awslogs
       options:
