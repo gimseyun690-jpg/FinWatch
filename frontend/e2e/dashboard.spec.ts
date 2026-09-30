@@ -1217,7 +1217,12 @@ test('official disclosure can fetch its source and render a Gemini summary', asy
   await summarizeButton.scrollIntoViewIfNeeded()
   await expect(summarizeButton).toBeVisible()
   await expect(page.locator('.disclosure-content-state')).toContainText('요약 시 원문 확보')
-  await summarizeButton.click()
+  const summaryRequest = page.waitForRequest((request) => (
+    new URL(request.url()).pathname === '/api/v1/ai/disclosure-summaries'
+      && request.method() === 'POST'
+  ))
+  await summarizeButton.press('Enter')
+  await summaryRequest
 
   const panel = page.locator('.disclosure-row.selected .disclosure-summary-panel')
   await expect(panel).toBeVisible()
