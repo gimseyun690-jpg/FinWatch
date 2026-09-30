@@ -1,6 +1,7 @@
 package com.finwatch.ai.provider;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,14 +30,27 @@ class TechnicalExplanationResponseValidatorTest {
     }
 
     @Test
-    void rejectsDemoResponseThatHidesDataLimitation() {
+    void addsServerVerifiedDemoLimitationWhenProviderOmitsIt() {
         TechnicalExplanationResult result = validResult(
                 List.of(new TechnicalSignalExplanation("근거 설명", List.of("I1"))),
                 List.of());
 
-        assertThatThrownBy(() -> validator.validate(result, input()))
-                .isInstanceOf(AiProviderException.class)
-                .hasMessageContaining("DEMO");
+        assertThat(validator.validate(result, input()).dataLimitations())
+                .anyMatch(value -> value.contains("DEMO"));
+    }
+
+    @Test
+    void addsServerVerifiedStaleLimitationWhenProviderOmitsIt() {
+        TechnicalExplanationResult result = validResult(
+                List.of(new TechnicalSignalExplanation("근거 설명", List.of("I1"))), List.of());
+        TechnicalExplanationInput original = input();
+        TechnicalExplanationInput stale = new TechnicalExplanationInput(
+                original.market(), original.symbol(), original.currency(), original.interval(),
+                original.latestRecordedAt(), "KIS", "STALE", original.adjusted(),
+                original.calculationVersion(), original.sampleCount(), original.summarySignal(), original.evidence());
+
+        assertThat(validator.validate(result, stale).dataLimitations())
+                .anyMatch(value -> value.contains("오래"));
     }
 
     @Test

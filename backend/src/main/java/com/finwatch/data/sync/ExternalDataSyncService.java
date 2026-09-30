@@ -190,8 +190,13 @@ public class ExternalDataSyncService {
         try {
             LocalDate today = LocalDate.now(SEOUL);
             var series = kisMarketDataClient
-                    .getDomesticDailyBars(stock.getSymbol(), today.minusDays(MARKET_LOOKBACK_DAYS), today);
+                    .getDomesticDailyBars(stock.getSymbol(), dailySyncFrom(stock, SEOUL, today), today);
             var domesticMarket = kisMarketDataClient.domesticMarket();
+            if (series == null || series.items().isEmpty()) {
+                return ProviderSyncResult.fallback(
+                        domesticMarket == null ? "KIS" : domesticMarket.persistenceSource(),
+                        "KIS 일봉 공급자가 최신 가격 이력을 반환하지 않았습니다.");
+            }
             return persistBars(
                     stock,
                     series.items(),
@@ -204,6 +209,19 @@ public class ExternalDataSyncService {
                     domesticMarket == null ? "KIS" : domesticMarket.persistenceSource(),
                     fallbackMessage(exception));
         }
+    }
+
+    private LocalDate dailySyncFrom(Stock stock, ZoneId zone, LocalDate today) {
+        LocalDate fullHistoryStart = today.minusDays(MARKET_LOOKBACK_DAYS);
+        if (marketPriceRepository.countByStockIdAndInterval(stock.getId(), "1D") < 60) {
+            return fullHistoryStart;
+        }
+        return marketPriceRepository.findTopByStockIdAndIntervalOrderByRecordedAtDesc(stock.getId(), "1D")
+                .filter(price -> !"DEMO".equalsIgnoreCase(price.getSource()))
+                .map(price -> LocalDate.ofInstant(price.getRecordedAt(), zone).minusDays(5))
+                .map(lastDate -> lastDate.isAfter(today) ? today.minusDays(5) : lastDate)
+                .filter(lastDate -> lastDate.isAfter(fullHistoryStart))
+                .orElse(fullHistoryStart);
     }
 
     private ProviderSyncResult syncNaverNews(Stock stock) {

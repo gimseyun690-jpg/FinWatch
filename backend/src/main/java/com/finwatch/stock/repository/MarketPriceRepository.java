@@ -14,6 +14,8 @@ public interface MarketPriceRepository extends JpaRepository<MarketPrice, Long> 
 
     Optional<MarketPrice> findTopByStockIdOrderByRecordedAtDesc(Long stockId);
 
+    Optional<MarketPrice> findTopByStockIdAndIntervalOrderByRecordedAtDesc(Long stockId, String interval);
+
     List<MarketPrice> findAllByStockIdAndIntervalOrderByRecordedAtAsc(Long stockId, String interval);
 
     long countByStockIdAndInterval(Long stockId, String interval);

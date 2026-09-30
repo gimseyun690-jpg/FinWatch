@@ -77,10 +77,40 @@ function signalClass(signal: Signal) {
   return signal === 'BUY' ? 'buy' : signal === 'SELL' ? 'sell' : 'neutral'
 }
 
+function marketDate(value: string, market: string): string | null {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: market === 'KRX' ? 'Asia/Seoul' : 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date)
+  const valueOf = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+  return `${valueOf('year')}-${valueOf('month')}-${valueOf('day')}`
+}
+
+function historyIsStale(asOf?: string | null): boolean {
+  return asOf != null && Number.isFinite(Date.parse(asOf))
+    && Date.now() - Date.parse(asOf) > 7 * 24 * 60 * 60 * 1000
+}
+
 function mergeLiveCandle(prices: PriceHistory | null, liveQuote?: LiveQuote): PriceHistory | null {
   if (prices == null || liveQuote == null || prices.items.length === 0) return prices
   const items = [...prices.items]
   const latest = items.at(-1)!
+  const lastSession = marketDate(latest.time, liveQuote.market)
+  const quoteSession = marketDate(liveQuote.asOf, liveQuote.market)
+  if (!lastSession || !quoteSession || quoteSession < lastSession) return prices
+  if (quoteSession > lastSession) {
+    items.push({
+      time: liveQuote.asOf,
+      open: liveQuote.price,
+      high: liveQuote.price,
+      low: liveQuote.price,
+      close: liveQuote.price,
+      volume: liveQuote.volume,
+    })
+    return { ...prices, items }
+  }
   items[items.length - 1] = {
     ...latest,
     high: Math.max(latest.high, liveQuote.price),
@@ -155,7 +185,9 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
         // must not leave the entire detail page behind a 40-second skeleton.
         setDetail({ stock, technical: null, source: 'API' })
         setDetailLoading(false)
-        const needsVisiblePreparation = !stock.historyAvailable || stock.historySource === 'DEMO'
+        const needsVisiblePreparation = !stock.historyAvailable
+          || stock.historySource === 'DEMO'
+          || historyIsStale(stock.historyAsOf)
         if (needsVisiblePreparation) {
           setDataLoadMessage('실제 현재가와 가격 이력을 공급자에서 준비하고 있습니다.')
         }
@@ -314,6 +346,7 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
     asOf: effectiveLiveQuote.asOf,
     source: effectiveLiveQuote.source,
   }
+  const historyStale = historyIsStale(catalogStock.historyAsOf)
   const chartPrices = interval === '1m'
     ? mergeIntradayCandles(priceDataKey === priceRequestKey ? prices : null, matchingLiveCandles)
     : mergeLiveCandle(priceDataKey === priceRequestKey ? prices : null, effectiveLiveQuote)
@@ -337,7 +370,8 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
   const dataSourceLabel = marketSourceLabel(dataSource)
   const chartFreshness: DataStatus = interval === '1m' && hasIntradayCandles
     ? streaming ? 'LIVE' : 'REFERENCE'
-    : priceSource.toUpperCase() === 'DEMO'
+    : historyStale ? 'STALE'
+      : priceSource.toUpperCase() === 'DEMO'
       ? 'DEMO'
       : 'REFERENCE'
 
@@ -378,6 +412,11 @@ export function StockDetail({ stockRef, liveQuote, liveCandles, headingLabel }: 
 
       <div className="detail-layout">
         <article className="card price-chart-card">
+          {historyStale && interval !== '1m' && (
+            <p className="request-error" role="status">
+              저장된 일봉이 오래되어 공급자에 갱신을 요청했습니다. 마지막 실시간 체결가는 잠정 봉으로만 표시하며, 이전 일봉의 종가를 덮어쓰지 않습니다.
+            </p>
+          )}
           <div className="quote-row">
             <div>
               <span>현재가</span>

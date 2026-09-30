@@ -1,6 +1,7 @@
 package com.finwatch.ai.provider;
 
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -38,6 +39,16 @@ public class TechnicalExplanationResponseValidator {
         validateSignals(result.conflictingSignals(), 0, 5, input, "conflictingSignals");
         validateStrings(result.riskNotes(), 1, 5, 300, "riskNotes");
         validateStrings(result.dataLimitations(), 0, 5, 300, "dataLimitations");
+        List<String> dataLimitations = new ArrayList<>(result.dataLimitations());
+        if (("DEMO".equals(input.freshness()) || "DEMO".equalsIgnoreCase(input.source()))
+                && dataLimitations.stream().noneMatch(this::mentionsDemo)) {
+            addRequiredLimitation(dataLimitations, "DEMO 데이터로 계산한 신호이므로 실제 시장 판단에 사용할 수 없습니다.");
+        }
+        if ("STALE".equals(input.freshness())
+                && dataLimitations.stream().noneMatch(value -> value.toUpperCase(Locale.ROOT).contains("STALE")
+                        || value.contains("지연") || value.contains("오래"))) {
+            addRequiredLimitation(dataLimitations, "일봉 데이터가 오래되어 현재 시장 상황과 다를 수 있습니다.");
+        }
         if (result.inputTokens() < 0 || result.outputTokens() < 0) {
             throw AiProviderException.invalid("토큰 수는 0 이상이어야 합니다.");
         }
@@ -50,24 +61,24 @@ public class TechnicalExplanationResponseValidator {
         String allText = String.join(" ", List.of(
                 result.summary(), result.trendExplanation(), result.momentumExplanation(),
                 result.volatilityExplanation(), result.volumeExplanation(),
-                signalText, String.join(" ", result.riskNotes()), String.join(" ", result.dataLimitations())));
+                signalText, String.join(" ", result.riskNotes()), String.join(" ", dataLimitations)));
         String normalized = allText.toLowerCase(Locale.ROOT);
         for (String prohibited : PROHIBITED_PHRASES) {
             if (normalized.contains(prohibited.toLowerCase(Locale.ROOT))) {
                 throw AiProviderException.invalid("투자 권유 또는 예측으로 해석될 수 있는 출력이 포함되었습니다.");
             }
         }
-        if (("DEMO".equals(input.freshness()) || "DEMO".equalsIgnoreCase(input.source()))
-                && result.dataLimitations().stream().noneMatch(this::mentionsDemo)) {
-            throw AiProviderException.invalid("DEMO 데이터 한계가 누락되었습니다.");
-        }
-        if ("STALE".equals(input.freshness())
-                && result.dataLimitations().stream().noneMatch(value -> value.toUpperCase(Locale.ROOT).contains("STALE")
-                        || value.contains("지연") || value.contains("오래"))) {
-            throw AiProviderException.invalid("STALE 데이터 한계가 누락되었습니다.");
-        }
         validateNumbers(allText, input);
-        return result;
+        return new TechnicalExplanationResult(
+                result.modelName(), result.summary(), result.trendExplanation(), result.momentumExplanation(),
+                result.volatilityExplanation(), result.volumeExplanation(), result.supportingSignals(),
+                result.conflictingSignals(), result.riskNotes(), List.copyOf(dataLimitations),
+                result.inputTokens(), result.outputTokens());
+    }
+
+    private void addRequiredLimitation(List<String> limitations, String value) {
+        if (limitations.size() == 5) limitations.removeLast();
+        limitations.add(value);
     }
 
     private void validateNumbers(String output, TechnicalExplanationInput input) {

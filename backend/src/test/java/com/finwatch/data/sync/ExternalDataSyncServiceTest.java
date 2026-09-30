@@ -123,6 +123,27 @@ class ExternalDataSyncServiceTest {
     }
 
     @Test
+    void existingKrxHistoryOnlyRequestsRecentKisBars() {
+        Stock stock = stock(1L, "005930", "삼성전자", "KRX");
+        LocalDate lastSession = LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).minusDays(14);
+        MarketPrice latest = MarketPrice.create(stock, "1D", decimal("80000"), decimal("81000"),
+                decimal("79000"), decimal("80500"), decimal("1000"),
+                lastSession.atTime(15, 30).atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant(), "KIS");
+        when(marketPriceRepository.countByStockIdAndInterval(1L, "1D")).thenReturn(100L);
+        when(marketPriceRepository.findTopByStockIdAndIntervalOrderByRecordedAtDesc(1L, "1D"))
+                .thenReturn(Optional.of(latest));
+        when(kisMarketDataClient.getDomesticDailyBars(anyString(), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(new BarSeries("005930", "1D", "kis", Instant.now(), List.of()));
+
+        service("LIVE").syncPricesOnly(stock);
+
+        ArgumentCaptor<LocalDate> from = ArgumentCaptor.forClass(LocalDate.class);
+        verify(kisMarketDataClient).getDomesticDailyBars(org.mockito.ArgumentMatchers.eq("005930"),
+                from.capture(), any(LocalDate.class));
+        assertThat(from.getValue()).isEqualTo(lastSession.minusDays(5));
+    }
+
+    @Test
     void liveUsSyncPersistsFinnhubDailyBarsAndNews() {
         Stock stock = stock(2L, "AAPL", "Apple", "NASDAQ");
         when(stockRepository.findFirstBySymbolAndActiveTrue("AAPL")).thenReturn(Optional.of(stock));
