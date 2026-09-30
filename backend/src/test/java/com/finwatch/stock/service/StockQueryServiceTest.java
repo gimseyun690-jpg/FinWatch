@@ -10,12 +10,15 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.time.temporal.ChronoUnit;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
 
 import com.finwatch.realtime.RealtimeCandleAggregator;
 import com.finwatch.realtime.RealtimeQuoteHub;
+import com.finwatch.realtime.LiveQuote;
 import com.finwatch.stock.domain.MarketPrice;
 import com.finwatch.stock.domain.Stock;
 import com.finwatch.stock.repository.MarketPriceRepository;
@@ -78,6 +81,63 @@ class StockQueryServiceTest {
         assertThat(result.historyAsOf()).isEqualTo(latest.getRecordedAt());
         assertThat(result.dataAvailability()).isEqualTo("READY");
         verify(prices, never()).findAllByStockIdAndIntervalOrderByRecordedAtAsc(1L, "1D");
+    }
+
+    @Test
+    void sameDayUnchangedQuoteDoesNotAddAnExtraDailyCandle() {
+        Stock stock = stock();
+        when(stocks.findByMarketAndSymbolAndActiveTrue("KRX", "005930"))
+                .thenReturn(Optional.of(stock));
+        Instant lastClose = Instant.parse("2026-09-30T06:30:00Z");
+        List<MarketPrice> history = IntStream.range(0, 90)
+                .mapToObj(index -> price(stock, Integer.toString(100 + index),
+                        lastClose.minus(89 - index, ChronoUnit.DAYS).toString()))
+                .toList();
+        when(prices.findAllByStockIdAndIntervalOrderByRecordedAtAsc(1L, "1D"))
+                .thenReturn(history);
+        when(quotes.find("KRX", "005930")).thenReturn(Optional.of(new LiveQuote(
+                "KRX", "005930", new BigDecimal("189"), BigDecimal.ONE, BigDecimal.ONE,
+                BigDecimal.TEN, "KRW", Instant.parse("2026-09-30T10:00:00Z"), "KIS_WS", "AFTER_MARKET")));
+
+        var daily = service.getTechnicalAnalysisFromDailyHistory("KRX", "005930");
+        var live = service.getTechnicalAnalysis("KRX", "005930");
+
+        assertThat(live.movingAverages()).isEqualTo(daily.movingAverages());
+        assertThat(live.rsi()).isEqualTo(daily.rsi());
+        assertThat(live.macd()).isEqualTo(daily.macd());
+        assertThat(live.bollingerBands()).isEqualTo(daily.bollingerBands());
+        assertThat(live.atr()).isEqualTo(daily.atr());
+        assertThat(live.volumeMa20()).isEqualByComparingTo(daily.volumeMa20());
+        assertThat(history.getLast().getRecordedAt()).isEqualTo(lastClose);
+        assertThat(history.getLast().getClosePrice()).isEqualByComparingTo("189");
+    }
+
+    @Test
+    void sameDayChangedQuoteReplacesCloseButNextDayQuoteAddsCandle() {
+        Stock stock = stock();
+        when(stocks.findByMarketAndSymbolAndActiveTrue("KRX", "005930"))
+                .thenReturn(Optional.of(stock));
+        Instant lastClose = Instant.parse("2026-09-30T06:30:00Z");
+        List<MarketPrice> history = IntStream.range(0, 90)
+                .mapToObj(index -> price(stock, Integer.toString(100 + index),
+                        lastClose.minus(89 - index, ChronoUnit.DAYS).toString()))
+                .toList();
+        when(prices.findAllByStockIdAndIntervalOrderByRecordedAtAsc(1L, "1D"))
+                .thenReturn(history);
+        when(quotes.find("KRX", "005930")).thenReturn(Optional.of(new LiveQuote(
+                "KRX", "005930", new BigDecimal("200"), BigDecimal.ONE, BigDecimal.ONE,
+                new BigDecimal("20"), "KRW", Instant.parse("2026-09-30T10:00:00Z"), "KIS_WS", "AFTER_MARKET")));
+
+        var sameDay = service.getTechnicalAnalysis("KRX", "005930");
+        assertThat(sameDay.movingAverages().ma5()).isEqualByComparingTo("189.2");
+        assertThat(sameDay.volumeMa20()).isEqualByComparingTo("10.5");
+        assertThat(history.getLast().getClosePrice()).isEqualByComparingTo("189");
+
+        when(quotes.find("KRX", "005930")).thenReturn(Optional.of(new LiveQuote(
+                "KRX", "005930", new BigDecimal("200"), BigDecimal.ONE, BigDecimal.ONE,
+                new BigDecimal("20"), "KRW", Instant.parse("2026-10-01T01:00:00Z"), "KIS_WS", "REGULAR")));
+        var nextDay = service.getTechnicalAnalysis("KRX", "005930");
+        assertThat(nextDay.movingAverages().ma5()).isEqualByComparingTo("190");
     }
 
     private Stock stock() {

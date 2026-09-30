@@ -188,13 +188,26 @@ public class StockQueryService {
         if (liveQuote.isPresent() && liveQuote.get().price() != null) {
             var quote = liveQuote.get();
             if (dbPrices.isEmpty() || quote.asOf().isAfter(dbPrices.getLast().getRecordedAt())) {
+                MarketPrice latest = dbPrices.isEmpty() ? null : dbPrices.getLast();
+                boolean sameTradingDate = latest != null && latest.getRecordedAt().atZone(zoneFor(stock)).toLocalDate()
+                        .equals(quote.asOf().atZone(zoneFor(stock)).toLocalDate());
+                BigDecimal volume = quote.volume() != null ? quote.volume() : BigDecimal.ZERO;
                 MarketPrice virtualBar = MarketPrice.create(
                         stock, DAILY_INTERVAL,
-                        quote.price(), quote.price(), quote.price(), quote.price(),
-                        quote.volume() != null ? quote.volume() : BigDecimal.ZERO,
+                        sameTradingDate ? latest.getOpenPrice() : quote.price(),
+                        sameTradingDate ? latest.getHighPrice().max(quote.price()) : quote.price(),
+                        sameTradingDate ? latest.getLowPrice().min(quote.price()) : quote.price(),
+                        quote.price(),
+                        sameTradingDate ? latest.getVolume().max(volume) : volume,
                         quote.asOf(), quote.source() != null ? quote.source() : "live");
                 extendedPrices = new java.util.ArrayList<>(dbPrices);
-                extendedPrices.add(virtualBar);
+                // A newer tick on the same market date updates today's candle;
+                // it must not become an extra daily observation for indicators.
+                if (sameTradingDate) {
+                    extendedPrices.set(extendedPrices.size() - 1, virtualBar);
+                } else {
+                    extendedPrices.add(virtualBar);
+                }
             }
         }
         final List<MarketPrice> prices = extendedPrices;
