@@ -23,7 +23,7 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
               and exists (select p.id from MarketPrice p where p.stock = s)
             order by s.market asc, s.name asc
             """)
-    List<Stock> findAllActiveWithPrices();
+    List<Stock> findActiveWithPrices(Pageable pageable);
 
     Optional<Stock> findFirstBySymbolAndActiveTrue(String symbol);
 

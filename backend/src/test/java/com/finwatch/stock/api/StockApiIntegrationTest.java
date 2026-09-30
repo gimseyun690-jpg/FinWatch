@@ -31,6 +31,22 @@ class StockApiIntegrationTest {
     }
 
     @Test
+    void stockPickerListIsPaginatedAndRejectsUnboundedRequests() throws Exception {
+        mockMvc.perform(get("/api/v1/stocks").with(jwt()).queryParam("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1));
+        mockMvc.perform(get("/api/v1/stocks").with(jwt()).queryParam("page", "1000").queryParam("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
+        for (String size : new String[] { "0", "201", "10000" }) {
+            mockMvc.perform(get("/api/v1/stocks").with(jwt()).queryParam("size", size))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(get("/api/v1/stocks").with(jwt()).queryParam("page", "-1"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void returnsStockPriceHistoryAndTechnicalAnalysis() throws Exception {
         mockMvc.perform(get("/api/v1/stocks/000660").with(jwt()))
                 .andExpect(status().isOk())

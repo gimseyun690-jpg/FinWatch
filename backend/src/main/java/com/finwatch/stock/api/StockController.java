@@ -44,8 +44,10 @@ public class StockController {
     }
 
     @GetMapping
-    public ApiResponse<List<StockSummary>> stocks() {
-        return ApiResponse.success(stockQueryService.getStocks(), "종목 목록 조회 성공");
+    public ApiResponse<List<StockSummary>> stocks(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return ApiResponse.success(stockQueryService.getStocks(page, size), "종목 목록 조회 성공");
     }
 
     @GetMapping("/search")

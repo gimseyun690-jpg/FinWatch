@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -74,7 +75,17 @@ public class StockQueryService {
     }
 
     public List<StockSummary> getStocks() {
-        return stockRepository.findAllActiveWithPrices().stream()
+        return getStocks(0, 50);
+    }
+
+    public List<StockSummary> getStocks(int page, int size) {
+        if (page < 0 || size < 1 || size > 200) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page는 0 이상, size는 1~200 범위여야 합니다.");
+        }
+        // This is a picker preview, not a full catalog export. Loading every
+        // priced instrument retained millions of historical bars in one request.
+        // Full-market discovery remains available through paginated /search.
+        return stockRepository.findActiveWithPrices(PageRequest.of(page, size)).stream()
                 .map(this::toSummary)
                 .toList();
     }

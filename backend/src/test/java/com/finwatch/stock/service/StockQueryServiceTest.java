@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageRequest;
 
 import com.finwatch.realtime.RealtimeCandleAggregator;
 import com.finwatch.realtime.RealtimeQuoteHub;
@@ -34,7 +35,7 @@ class StockQueryServiceTest {
         Stock stock = stock();
         MarketPrice latest = price(stock, "100", "2026-09-30T06:30:00Z");
         MarketPrice previous = price(stock, "90", "2026-09-29T06:30:00Z");
-        when(stocks.findAllActiveWithPrices()).thenReturn(List.of(stock));
+        when(stocks.findActiveWithPrices(PageRequest.of(0, 50))).thenReturn(List.of(stock));
         when(prices.findTopByStockIdOrderByRecordedAtDesc(1L)).thenReturn(Optional.of(latest));
         when(prices.findTop2ByStockIdAndIntervalOrderByRecordedAtDesc(1L, "1D"))
                 .thenReturn(List.of(latest, previous));
@@ -44,7 +45,17 @@ class StockQueryServiceTest {
         assertThat(result.price()).isEqualByComparingTo("100");
         assertThat(result.change()).isEqualByComparingTo("10");
         assertThat(result.changeRate()).isEqualByComparingTo("11.1111");
+        verify(stocks).findActiveWithPrices(PageRequest.of(0, 50));
         verify(prices, never()).findAllByStockIdAndIntervalOrderByRecordedAtAsc(1L, "1D");
+    }
+
+    @Test
+    void stockListPassesPaginationToDatabaseInsteadOfLoadingAllInstruments() {
+        when(stocks.findActiveWithPrices(PageRequest.of(2, 20))).thenReturn(List.of());
+
+        assertThat(service.getStocks(2, 20)).isEmpty();
+
+        verify(stocks).findActiveWithPrices(PageRequest.of(2, 20));
     }
 
     @Test
