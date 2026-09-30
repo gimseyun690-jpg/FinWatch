@@ -1211,6 +1211,9 @@ test('watchlist search adds a catalog stock beyond the four demo fixtures', asyn
 test('official disclosure can fetch its source and render a Gemini summary', async ({ page }) => {
   await login(page)
   await page.goto('/stocks/KRX/000660/disclosures')
+  // AppShell focuses the route heading on the next animation frame. Wait for
+  // that navigation effect before activating a button so it cannot steal focus.
+  await expect(page.locator('#main-content h1')).toBeFocused()
 
   const summarizeButton = page.getByRole('button', { name: 'AI 공시 요약' })
   await summarizeButton.scrollIntoViewIfNeeded()
@@ -1220,7 +1223,7 @@ test('official disclosure can fetch its source and render a Gemini summary', asy
     new URL(request.url()).pathname === '/api/v1/ai/disclosure-summaries'
       && request.method() === 'POST'
   ))
-  await summarizeButton.press('Enter')
+  await summarizeButton.click()
   await summaryRequest
 
   const panel = page.locator('.disclosure-row.selected .disclosure-summary-panel')
