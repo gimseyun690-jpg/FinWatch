@@ -1492,6 +1492,8 @@ test('captures AI cache miss, cache hit and provider failure evidence', async ({
   await page.addStyleTag({
     content: '.shell-topbar, .stock-route-tabs { position: static !important; }',
   })
+  await expect(page.locator('#main-content h1')).toBeFocused()
+  await expect(page.getByRole('img', { name: /000660 3M 일봉/ })).toBeVisible()
 
   const aiCard = page.locator('.ai-technical-card')
   await page.getByRole('button', { name: 'AI 기술 해설 실행' }).click()
@@ -1508,6 +1510,8 @@ test('captures AI cache miss, cache hit and provider failure evidence', async ({
   await page.addStyleTag({
     content: '.shell-topbar, .stock-route-tabs { position: static !important; }',
   })
+  await expect(page.locator('#main-content h1')).toBeFocused()
+  await expect(page.getByRole('img', { name: /000660 3M 일봉/ })).toBeVisible()
   await page.getByRole('button', { name: 'AI 기술 해설 실행' }).click()
   await expect(aiCard.getByRole('alert')).toContainText('Gemini 공급자 연결에 실패했습니다.')
   await expect(aiCard.getByRole('alert')).toContainText('[AI_PROVIDER_UNAVAILABLE]')
