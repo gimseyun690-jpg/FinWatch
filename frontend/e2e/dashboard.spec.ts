@@ -1184,10 +1184,9 @@ test('global search selects a canonical market and restores every detail context
   await expect(page.getByRole('option', { name: /AAPL/ })).toBeVisible()
   await search.press('Enter')
 
-  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL$/)
+  await expect(page).toHaveURL(/\/stocks\/NASDAQ\/AAPL\/technical$/)
   await expect(page.getByRole('heading', { name: 'Apple 기술적 분석' })).toBeVisible()
   await expect(page.getByRole('img', { name: /AAPL 3M 일봉 캔들 및 거래량\(주\) 차트/ })).toBeVisible()
-  await page.getByRole('link', { name: '차트·기술분석' }).click()
   await expect(page.locator('.ai-technical-card')).toContainText('NASDAQ · AAPL')
 
   await page.goBack()
