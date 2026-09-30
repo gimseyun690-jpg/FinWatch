@@ -47,12 +47,12 @@ public class JdkArticleHttpTransport implements ArticleHttpTransport {
             HttpResponse<InputStream> response = httpClient.send(
                     requestBuilder.build(),
                     HttpResponse.BodyHandlers.ofInputStream());
-            long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
-            if (contentLength > maxResponseBytes) {
-                throw responseTooLarge();
-            }
             byte[] body;
             try (InputStream inputStream = response.body()) {
+                long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+                if (contentLength > maxResponseBytes) {
+                    throw responseTooLarge();
+                }
                 body = readLimited(inputStream);
             }
             return new ArticleHttpResponse(response.statusCode(), response.headers().map(), body);

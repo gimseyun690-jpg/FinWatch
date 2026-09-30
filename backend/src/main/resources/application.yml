@@ -171,7 +171,7 @@ app:
     user-agent: ${ARTICLE_USER_AGENT:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36}
     connect-timeout: ${ARTICLE_CONNECT_TIMEOUT:2s}
     read-timeout: ${ARTICLE_READ_TIMEOUT:5s}
-    max-response-bytes: ${ARTICLE_MAX_RESPONSE_BYTES:1048576}
+    max-response-bytes: ${ARTICLE_MAX_RESPONSE_BYTES:2097152}
     max-redirects: ${ARTICLE_MAX_REDIRECTS:3}
     on-demand-min-interval-ms: ${ARTICLE_ON_DEMAND_MIN_INTERVAL_MS:1000}
     opendart-api-key: ${OPENDART_API_KEY:}
