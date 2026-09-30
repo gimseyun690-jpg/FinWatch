@@ -2,6 +2,7 @@ package com.finwatch.technical;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -15,6 +16,31 @@ import com.finwatch.technical.TechnicalAnalysisCalculator.Candle;
 class TechnicalAnalysisCalculatorTest {
 
     private final TechnicalAnalysisCalculator calculator = new TechnicalAnalysisCalculator();
+
+    @Test
+    void longHistoryKeepsMacdPrecisionWithoutUnboundedDecimalGrowth() {
+        List<BigDecimal> closes = IntStream.range(0, 10_000)
+                .mapToObj(day -> BigDecimal.valueOf(100_000 + day * 17L + day % 19 * 31L))
+                .toList();
+        double fast = closes.getFirst().doubleValue();
+        double slow = fast;
+        double signal = 0;
+        double macd = 0;
+        for (int index = 1; index < closes.size(); index++) {
+            double close = closes.get(index).doubleValue();
+            fast += (close - fast) * 2 / 13;
+            slow += (close - slow) * 2 / 27;
+            macd = fast - slow;
+            signal += (macd - signal) * 2 / 10;
+        }
+
+        TechnicalAnalysisCalculator.Result result = calculator.calculate(closes);
+
+        assertThat(result.macd().value().doubleValue()).isCloseTo(macd, within(0.0001));
+        assertThat(result.macd().signalLine().doubleValue()).isCloseTo(signal, within(0.0001));
+        assertThat(result.macd().histogram().doubleValue()).isCloseTo(macd - signal, within(0.0001));
+        assertThat(result.crossoverEvents()).hasSizeLessThanOrEqualTo(20);
+    }
 
     @Test
     void risingPricesProduceBuyTrendAndHighRsi() {

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 public class TechnicalAnalysisCalculator {
 
     private static final int SCALE = 4;
+    private static final int COMPUTATION_SCALE = 12;
     public static final int MOVING_AVERAGE_SHORT_PERIOD = 5;
     public static final int MOVING_AVERAGE_MEDIUM_PERIOD = 20;
     public static final int MOVING_AVERAGE_LONG_PERIOD = 60;
@@ -255,12 +256,15 @@ public class TechnicalAnalysisCalculator {
 
     private List<BigDecimal> emaSeries(List<BigDecimal> values, int period) {
         BigDecimal multiplier = BigDecimal.valueOf(2)
-                .divide(BigDecimal.valueOf(period + 1L), 12, RoundingMode.HALF_UP);
+                .divide(BigDecimal.valueOf(period + 1L), COMPUTATION_SCALE, RoundingMode.HALF_UP);
         List<BigDecimal> result = new ArrayList<>(values.size());
-        BigDecimal current = values.getFirst();
+        BigDecimal current = values.getFirst().setScale(COMPUTATION_SCALE, RoundingMode.HALF_UP);
         result.add(current);
         for (int index = 1; index < values.size(); index++) {
-            current = values.get(index).subtract(current).multiply(multiplier).add(current);
+            // Without rounding each recurrence, scale grows by 12 digits per bar.
+            // Retaining the EMA/MACD series then consumes quadratic heap space.
+            current = values.get(index).subtract(current).multiply(multiplier).add(current)
+                    .setScale(COMPUTATION_SCALE, RoundingMode.HALF_UP);
             result.add(current);
         }
         return result;

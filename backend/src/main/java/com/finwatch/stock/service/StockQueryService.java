@@ -249,9 +249,9 @@ public class StockQueryService {
                     quote.source());
         }
         List<MarketPrice> history = marketPriceRepository
-                .findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), DAILY_INTERVAL);
+                .findTop2ByStockIdAndIntervalOrderByRecordedAtDesc(stock.getId(), DAILY_INTERVAL);
         BigDecimal previousClose = history.size() > 1
-                ? history.get(history.size() - 2).getClosePrice()
+                ? history.get(1).getClosePrice()
                 : latest.getClosePrice();
         BigDecimal change = latest.getClosePrice().subtract(previousClose);
         BigDecimal changeRate = previousClose.signum() == 0
@@ -272,11 +272,9 @@ public class StockQueryService {
     }
 
     private CanonicalStockDetail toCanonicalDetail(Stock stock) {
-        List<MarketPrice> dailyHistory = marketPriceRepository
-                .findAllByStockIdAndIntervalOrderByRecordedAtAsc(stock.getId(), DAILY_INTERVAL);
-        Optional<MarketPrice> latest = dailyHistory.isEmpty()
-                ? Optional.empty()
-                : Optional.of(dailyHistory.getLast());
+        long historyPoints = marketPriceRepository.countByStockIdAndInterval(stock.getId(), DAILY_INTERVAL);
+        Optional<MarketPrice> latest = marketPriceRepository
+                .findTopByStockIdAndIntervalOrderByRecordedAtDesc(stock.getId(), DAILY_INTERVAL);
         var live = realtimeQuoteHub.find(stock.getMarket(), stock.getSymbol());
         StockSummary quote = latest.isPresent()
                 ? toSummary(stock)
@@ -308,8 +306,8 @@ public class StockQueryService {
                 availability,
                 stock.getProvider(),
                 stock.getCatalogUpdatedAt(),
-                !dailyHistory.isEmpty(),
-                dailyHistory.size(),
+                historyPoints > 0,
+                Math.toIntExact(historyPoints),
                 latest.map(MarketPrice::getRecordedAt).orElse(null),
                 latest.map(MarketPrice::getSource).orElse(null),
                 quote == null ? null : quote.price(),
