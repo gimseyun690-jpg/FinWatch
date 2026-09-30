@@ -69,6 +69,7 @@ public class TechnicalExplanationResponseValidator {
             }
         }
         validateNumbers(allText, input);
+        if (dataLimitations.equals(result.dataLimitations())) return result;
         return new TechnicalExplanationResult(
                 result.modelName(), result.summary(), result.trendExplanation(), result.momentumExplanation(),
                 result.volatilityExplanation(), result.volumeExplanation(), result.supportingSignals(),
